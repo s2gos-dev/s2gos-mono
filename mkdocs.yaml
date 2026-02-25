@@ -1,0 +1,37 @@
+site_name: S2GOS
+site_description: Synthetic scene generation and observation simulation for Earth observation.
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+
+plugins:
+  - search
+  - monorepo
+
+nav:
+  - Home: index.md
+  - Packages:
+    - Generator:  "!include ./packages/s2gos-generator/mkdocs.yml"
+    - Simulator:  "!include ./packages/s2gos-simulator/mkdocs.yml"
+    - Utils:      "!include ./packages/s2gos-utils/mkdocs.yml"
+    - Apps:       "!include ./packages/s2gos-apps/mkdocs.yml"

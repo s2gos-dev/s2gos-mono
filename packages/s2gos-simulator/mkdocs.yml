@@ -1,0 +1,57 @@
+site_name: s2gos-simulator
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            docstring_style: google
+            separate_signature: true
+            show_signature_annotations: true
+            merge_init_into_class: true
+            group_by_category: true
+            show_category_heading: true
+            show_attributes: true
+            extensions:
+              - griffe_pydantic
+
+nav:
+  - Introduction: index.md
+  - Setup: setup.md
+  - About: about.md
+  - API:
+    - SimulationConfig: api/simulation.md
+    - Illumination: api/illumination.md
+    - Sensors: api/sensors.md
+    - Measurements: api/measurements.md
+    - Viewing: api/viewing.md
+    - Spectral: api/spectral.md

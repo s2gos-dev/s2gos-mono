@@ -1,0 +1,100 @@
+{
+  "version": "0.0.1",
+  "materials": {
+    "treecover": {
+      "type": "diffuse",
+      "reflectance": {
+        "type": "uniform",
+        "value": 0.4
+      }
+    },
+    "shrubland": {
+      "type": "diffuse",
+      "reflectance": {
+        "type": "uniform",
+        "value": 0.4
+      }
+    },
+    "cropland": {
+      "type": "diffuse",
+      "reflectance": {
+        "type": "uniform",
+        "value": 0.4
+      }
+    },
+    "mangroves": {
+      "type": "diffuse",
+      "reflectance": {
+        "type": "uniform",
+        "value": 0.4
+      }
+    },
+    "grassland": {
+      "type": "diffuse",
+      "reflectance": {
+        "type": "uniform",
+        "value": 0.4
+      }
+    },
+    "baresoil": {
+      "type": "diffuse",
+      "reflectance": {
+        "type": "uniform",
+        "value": 0.4
+      }
+    },
+    "wetland": {
+      "type": "diffuse",
+      "reflectance": {
+        "type": "uniform",
+        "value": 0.4
+      }
+    },
+    "concrete": {
+      "type": "diffuse",
+      "reflectance": {
+        "type": "uniform",
+        "value": 0.4
+      }
+    },
+    "snow": {
+      "type": "diffuse",
+      "reflectance": {
+        "type": "uniform",
+        "value": 0.4
+      }
+    },
+    "moss": {
+      "type": "diffuse",
+      "reflectance": {
+        "type": "uniform",
+        "value": 0.4
+      }
+    },
+    "water": {
+      "type": "ocean_legacy",
+      "chlorinity": 0.0,
+      "pigmentation": 5.0,
+      "wind_speed": 2.0,
+      "wind_direction": 90.0
+    },
+    "rough_aluminum": {
+      "type": "rough_conductor",
+      "material": "Al",
+      "roughness": 1.0
+    }
+  },
+  "landcover_mapping": {
+    "tree_cover": "treecover",
+    "shrubland": "shrubland",
+    "grassland": "grassland",
+    "cropland": "cropland",
+    "built_up": "concrete",
+    "bare_sparse_vegetation": "baresoil",
+    "snow_and_ice": "snow",
+    "permanent_water_bodies": "water",
+    "herbaceous_wetland": "wetland",
+    "mangroves": "mangroves",
+    "moss_and_lichen": "moss"
+  }
+}

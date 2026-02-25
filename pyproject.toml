@@ -1,0 +1,106 @@
+[project]
+name = "s2gos-mono"
+version = "0.0.1"
+description = "S2GOS monorepo: synthetic scene generation and observation simulation."
+authors = [
+    { name = "Misael Gonzalez (Rayference)" },
+    { name = "Nicolae Marton (Rayference)" },
+]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+# ── prod (default) — runtime + Jupyter, no dev tooling ─────────────
+[tool.pixi.dependencies]
+python = ">=3.10,<3.12"
+jupyterlab = ">=4"
+numpy = "<2"
+s3fs = "*"
+dask = "*"
+xarray = "<2025"
+zarr = "<3"
+
+[tool.pixi.pypi-dependencies]
+# Runtime framework (OGC-API, service, config)
+click = "*"
+fastapi = "*"
+pydantic = "*"
+pydantic-settings = "*"
+pyyaml = "*"
+typer = "*"
+uvicorn = "*"
+# Monorepo packages — editable installs
+s2gos_utils     = { path = "packages/s2gos-utils",     editable = true }
+s2gos_generator = { path = "packages/s2gos-generator", editable = true }
+s2gos_simulator = { path = "packages/s2gos-simulator", editable = true }
+s2gos_apps      = { path = "packages/s2gos-apps",      editable = true }
+# External sibling repos (s2gos-controller / eozilla)
+s2gos-client = { path = "../s2gos-controller/s2gos-client", editable = true }
+s2gos-server = { path = "../s2gos-controller/s2gos-server", editable = true }
+appligator   = { path = "../eozilla/appligator",            editable = true }
+cuiman       = { path = "../eozilla/cuiman",                editable = true }
+gavicore     = { path = "../eozilla/gavicore",              editable = true }
+procodile    = { path = "../eozilla/procodile",             editable = true }
+wraptile     = { path = "../eozilla/wraptile",              editable = true }
+
+# ── notebook feature — interactive widget support ───────────────────
+[tool.pixi.feature.notebook.pypi-dependencies]
+ipywidgets = "*"
+
+# ── dev — adds testing, linting, docs, memory profiling ────────────
+[tool.pixi.feature.dev.dependencies]
+pytest      = "*"
+ruff        = "*"
+ipython     = "*"
+ipykernel   = "*"
+snakeviz    = "*"
+mkdocs                  = "*"
+mkdocs-monorepo-plugin  = "*"
+mkdocs-material         = "*"
+mkdocstrings            = "*"
+
+[tool.pixi.feature.dev.pypi-dependencies]
+memray = "*"
+
+# ── environments ────────────────────────────────────────────────────
+[tool.pixi.environments]
+default  = { solve-group = "default" }
+notebook = { features = ["notebook"], solve-group = "default" }
+dev      = { features = ["dev"], solve-group = "default" }
+
+# ── tasks ───────────────────────────────────────────────────────────
+[tool.pixi.tasks]
+lab           = "jupyter lab"
+eradiate-init = "eradiate data install core gecko"
+
+[tool.pixi.feature.dev.tasks]
+test       = "pytest"
+lint       = "ruff check ."
+format     = "ruff format ."
+docs       = "mkdocs serve"
+docs-build = "mkdocs build"
+
+[project.scripts]
+s2gos_apps = "s2gos_apps.cli:cli"
+
+[tool.pytest.ini_options]
+testpaths = [
+    "packages/s2gos-utils/tests",
+    "packages/s2gos-generator/tests",
+    "packages/s2gos-simulator/tests",
+    "packages/s2gos-apps/tests",
+]
+
+[tool.ruff]
+include = ["pyproject.toml", "packages/*/src/**/*.py", "packages/*/tests/**/*.py"]
+
+[tool.ruff.lint]
+ignore = ["E501", "F821"]
+select = ["I", "F", "E"]
+
+[tool.ruff.lint.isort]
+relative-imports-order = "closest-to-furthest"
+
+[tool.ruff.lint.per-file-ignores]
+"*.ipynb" = ["E402"]

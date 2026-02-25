@@ -1,0 +1,3 @@
+# Default paths for S2GOS Simulator
+# Add simulation-specific defaults here as needed
+output_dir: "./simulation_output"

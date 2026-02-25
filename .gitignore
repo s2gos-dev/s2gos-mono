@@ -1,0 +1,31 @@
+# Pixi
+.pixi/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+
+# Large binary / data files
+*.tar.gz
+*.pkl
+*.mp4
+*.bsp
+de421.bsp
+
+# NetCDF data files (large scientific data; use S3/external storage instead)
+*.nc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# mkdocs build output
+site/

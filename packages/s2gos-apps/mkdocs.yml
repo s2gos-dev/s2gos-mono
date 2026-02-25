@@ -1,0 +1,53 @@
+site_name: s2gos-apps
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            docstring_style: google
+            separate_signature: true
+            show_signature_annotations: true
+            merge_init_into_class: true
+            group_by_category: true
+            show_category_heading: true
+            show_attributes: true
+            extensions:
+              - griffe_pydantic
+
+nav:
+  - Introduction: index.md
+  - Processes:
+    - MTR Demo: processes/mtr_demo_processors.md
+    - Vegetation Placement: processes/vegetation_placement.md
+    - Impact Assessment Outputs: processes/impact_assessment_outputs.md
+  - About: about.md
