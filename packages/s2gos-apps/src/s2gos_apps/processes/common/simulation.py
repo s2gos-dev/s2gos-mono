@@ -6,17 +6,17 @@ from s2gos_utils.typing import PathLike
 from s2gos_apps.registry import registry
 
 
-@registry.process(id="common/simulation")
+@registry.process(id="common-simulation", title="Scene Simulation")
 def simulation(
     scene_description_path: Annotated[
-        PathLike, Field(..., description="Path to scene description yaml file.")
+        str, Field(..., description="Path to scene description yaml file.")
     ],
     config_path: Annotated[
-        PathLike,
+        str,
         Field(..., description="Path to the simulation configuration JSON file."),
     ],
     simulation_output_dir: Annotated[
-        PathLike | None,
+        str | None,
         Field(..., description="Path to the simulation output directory."),
     ] = None,
 ) -> PathLike | None:

@@ -10,7 +10,6 @@ def generation_from_config(config: SceneGenConfig):
 
     # Step 1: Create and validate configuration
     print("Configuration validation")
-    # TODO: raise as exception that can be reported back to the JobContext
     if not config:
         return None
 
@@ -25,36 +24,35 @@ def generation_from_config(config: SceneGenConfig):
 
     print("Generating scene with configuration")
 
-    # try:
-    pipeline = SceneGenerationPipeline(config)
+    try:
+        pipeline = SceneGenerationPipeline(config)
 
-    # Generate DAG visualization
-    print("\nGenerating DAG visualization")
-    dag_path = pipeline.visualize_dag()
-    if dag_path:
-        print(f"DAG saved to: {dag_path}")
+        # Generate DAG visualization
+        print("\nGenerating DAG visualization")
+        dag_path = pipeline.visualize_dag()
+        if dag_path:
+            print(f"DAG saved to: {dag_path}")
 
-    # Print execution schedule
-    print("\nResource execution order:")
-    dependencies = pipeline.get_resource_dependencies()
-    for resource_id, deps in dependencies.items():
-        print(f"  {resource_id} (depends on: {deps or 'none'})")
+        # Print execution schedule
+        print("\nResource execution order:")
+        dependencies = pipeline.get_resource_dependencies()
+        for resource_id, deps in dependencies.items():
+            print(f"  {resource_id} (depends on: {deps or 'none'})")
 
-    pipeline.run()
+        pipeline.run()
 
-    print("Scene generated successfully!")
-    print(f" Location: {config.location.center_lat}, {config.location.center_lon}")
-    print(f" Target: {config.location.aoi_size_km}km² at {config.target_resolution_m}m")
-    if config.buffer is not None:
-        print(f"  Buffer: {config.buffer.size_km}km at {config.buffer.resolution_m}m")
-    if config.background is not None:
-        print(
-            f"  Background: {config.background.size_km}km at {config.background.resolution_m}m"
-        )
-    print(f"  Output: {config.scene_output_dir}")
-
-    # except Exception as e:
-    #     print(f"Scene generation failed: {e}")
+        print("Scene generated successfully!")
+        print(f" Location: {config.location.center_lat}, {config.location.center_lon}")
+        print(f" Target: {config.location.aoi_size_km}km² at {config.target_resolution_m}m")
+        if config.buffer is not None:
+            print(f"  Buffer: {config.buffer.size_km}km at {config.buffer.resolution_m}m")
+        if config.background is not None:
+            print(
+                f"  Background: {config.background.size_km}km at {config.background.resolution_m}m"
+            )
+        print(f"  Output: {config.scene_output_dir}")
+    except Exception:
+        raise
 
     # Summary
     print("\n" + "=" * 60)

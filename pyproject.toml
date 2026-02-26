@@ -30,6 +30,8 @@ pydantic-settings = "*"
 pyyaml = "*"
 typer = "*"
 uvicorn = "*"
+coverage = "*"
+ipyleaflet = "*"    # required by s2gos-apps
 # Monorepo packages — editable installs
 s2gos_utils     = { path = "packages/s2gos-utils",     editable = true }
 s2gos_generator = { path = "packages/s2gos-generator", editable = true }
@@ -38,15 +40,19 @@ s2gos_apps      = { path = "packages/s2gos-apps",      editable = true }
 # External sibling repos (s2gos-controller / eozilla)
 s2gos-client = { path = "../s2gos-controller/s2gos-client", editable = true }
 s2gos-server = { path = "../s2gos-controller/s2gos-server", editable = true }
-appligator   = { path = "../eozilla/appligator",            editable = true }
-cuiman       = { path = "../eozilla/cuiman",                editable = true }
-gavicore     = { path = "../eozilla/gavicore",              editable = true }
-procodile    = { path = "../eozilla/procodile",             editable = true }
-wraptile     = { path = "../eozilla/wraptile",              editable = true }
+
 
 # ── notebook feature — interactive widget support ───────────────────
 [tool.pixi.feature.notebook.pypi-dependencies]
 ipywidgets = "*"
+
+# ── local-eozilla — swap PyPI eozilla for local sources ─────────────
+[tool.pixi.feature.local-eozilla.pypi-dependencies]
+appligator = { path = "../eozilla/appligator", editable = true }
+cuiman     = { path = "../eozilla/cuiman",     editable = true }
+gavicore   = { path = "../eozilla/gavicore",   editable = true }
+procodile  = { path = "../eozilla/procodile",  editable = true }
+wraptile   = { path = "../eozilla/wraptile",   editable = true }
 
 # ── dev — adds testing, linting, docs, memory profiling ────────────
 [tool.pixi.feature.dev.dependencies]
@@ -67,7 +73,10 @@ memray = "*"
 [tool.pixi.environments]
 default  = { solve-group = "default" }
 notebook = { features = ["notebook"], solve-group = "default" }
-dev      = { features = ["dev"], solve-group = "default" }
+dev      = { features = ["dev"],      solve-group = "default" }
+# ── local eozilla ─────
+local     = { features = ["local-eozilla"],        solve-group = "local-eozilla" }
+dev-local = { features = ["dev", "local-eozilla"], solve-group = "local-eozilla" }
 
 # ── tasks ───────────────────────────────────────────────────────────
 [tool.pixi.tasks]

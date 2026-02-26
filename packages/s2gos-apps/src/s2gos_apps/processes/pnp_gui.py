@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""MTR Demo Processors - Self-contained generation and simulation workflows.
+"""PNP GUI Demo – Patagonia National Park generation and simulation demo for the GUI.
 
-This module provides two processors for the MTR (Multi-Temporal Radiometric) demo:
-1. mtr_demo/generation - Creates scene with seasonal variations
-2. mtr_demo/simulation - Runs simulation with configurable observation types
+This module provides two processors for the PNP GUI demo:
+1. pnp_gui/generation - Creates scene with seasonal variations
+2. pnp_gui/simulation - Runs simulation with configurable observation types
 
 The demo showcases:
 - Seasonal variations (December=summer, June=winter in Patagonia)
@@ -44,14 +44,14 @@ coord_system = CoordinateSystem(PNP_LAT, PNP_LON)
 
 
 class Month(enum.StrEnum):
-    """Month selection for MTR demo (limited to solstice dates)."""
+    """Month selection for PNP GUI demo (limited to solstice dates)."""
 
     DECEMBER = "december"  # Summer in Patagonia
     JUNE = "june"  # Winter in Patagonia
 
 
 class ObservationType(enum.StrEnum):
-    """Available observation types for MTR demo."""
+    """Available observation types for PNP GUI demo."""
 
     CHIME = "chime"
     MSI = "msi"
@@ -118,8 +118,8 @@ def _get_seasonal_config(month: Month) -> dict:
 # ============================================================================
 
 
-@registry.process(id="mtr_demo_generation", title="Scene Generation Demo")
-def mtr_demo_generation(
+@registry.process(id="pnp_gui/generation", title="Scene Generation Demo")
+def pnp_gui_generation(
     month: Annotated[
         Month,
         Field(
@@ -145,7 +145,7 @@ def mtr_demo_generation(
         ),
     ] = None,
 ) -> str | None:
-    """Generate 3D scene for MTR demo with seasonal variations.
+    """Generate 3D scene for PNP GUI demo with seasonal variations.
 
     This processor:
     1. Creates a scene generation configuration based on season/month
@@ -188,7 +188,7 @@ def mtr_demo_generation(
 
     print("\n")
     print("=" * 60)
-    print("MTR DEMO - SCENE GENERATION")
+    print("PNP GUI DEMO - SCENE GENERATION")
     print("=" * 60)
     print(f"Season: {month.value}")
     print(f"Random seed: {random_seed}")
@@ -207,7 +207,7 @@ def mtr_demo_generation(
         output_dir=gen_path,
         data_overrides={"material_config_path": seasonal["material_config"]},
         target_resolution_m=10.0,
-        description=f"PNP MTR demo scene - {month.value}",
+        description=f"PNP GUI demo scene - {month.value}",
     )
 
     config.buffer = BufferConfig(size_km=30.0, resolution_m=60.0)
@@ -323,9 +323,9 @@ def mtr_demo_generation(
 
 
 @registry.process(
-    id="mtr_demo_simulation", title="Simulation Demo", inputs={"spp": advanced_input}
+    id="pnp_gui/simulation", title="Simulation Demo", inputs={"spp": advanced_input}
 )
-def mtr_demo_simulation(
+def pnp_gui_simulation(
     scene_name: Annotated[
         str,
         Field(
@@ -371,7 +371,7 @@ def mtr_demo_simulation(
         ),
     ] = None,
 ) -> str | None:
-    """Run simulation for MTR demo with configurable observation types.
+    """Run simulation for PNP GUI demo with configurable observation types.
 
     This processor:
     1. Creates a simulation configuration based on observation type
@@ -420,11 +420,11 @@ def mtr_demo_simulation(
     )
     from upath import UPath
 
-    from s2gos_apps.sim_util_mtr import simulation_from_config
+    from s2gos_apps.sim_util import simulation_from_config
 
     print("\n")
     print("=" * 60)
-    print("MTR DEMO - SIMULATION")
+    print("PNP GUI DEMO - SIMULATION")
     print("=" * 60)
 
     print(f"Observation type: {observation}")
@@ -567,28 +567,12 @@ def mtr_demo_simulation(
             PNP_LAT - 0.0010, PNP_LON + 0.0015
         )
 
-        # sensors.append(
-        #     UAVSensor(
-        #         id="nice_rgb_camera",
-        #         instrument=UAVInstrumentType.PERSPECTIVE_CAMERA,
-        #         viewing=LookAtViewing(
-        #             origin=[-430, 430, 70.0],  # 50m height
-        #             target=[0, 0, 15],
-        #             up=[0, 0, 1],
-        #             relative_to_asset="only_tower_v0_1.xml",
-        #         ),
-        #         srf=SpectralResponse(type="delta", wavelengths=[440.0, 550.0, 660.0]),
-        #         fov=50.0,
-        #         resolution=[1920, 1080],
-        #         samples_per_pixel=64,
-        #     )
-        # )
         sensors.append(
             UAVSensor(
                 id="nice_rgb_camera",
                 instrument=UAVInstrumentType.PERSPECTIVE_CAMERA,
                 viewing=LookAtViewing(
-                    origin=[0, 0, 35000.0],  # 50m height
+                    origin=[0, 0, 35000.0],
                     target=[0, 0, 15],
                     up=[0, 1, 0],
                     relative_to_asset="only_tower_v0_1.xml",
@@ -604,39 +588,11 @@ def mtr_demo_simulation(
                 ),
             )
         )
-        # multiplier = 1.0
-        # speed = 0.25
-        # acceleration = 1.05
-        # for i in range(100):
-        #     sensors.append(
-        #         UAVSensor(
-        #             id=f"rgb_camera_{i}",
-        #             instrument=UAVInstrumentType.PERSPECTIVE_CAMERA,
-        #             viewing=LookAtViewing(
-        #                 origin=[
-        #                     -20 * multiplier,
-        #                     20 * multiplier,
-        #                     20.0 * multiplier,
-        #                 ],  # 50m height
-        #                 target=[0, 0, 15],
-        #                 up=[0, 0, 1],
-        #                 relative_to_asset="only_tower_v0_1.xml",
-        #             ),
-        #             srf=SpectralResponse(
-        #                 type="delta", wavelengths=[440.0, 550.0, 660.0]
-        #             ),
-        #             fov=50.0,
-        #             resolution=[1280, 720],
-        #             samples_per_pixel=spp,
-        #         )
-        #     )
-        #     multiplier += speed
-        #     speed *= acceleration
 
     # Create simulation configuration
     simulation_config = SimulationConfig(
-        name=f"mtr_demo_{observation}",
-        description=f"MTR demo simulation - {observation}",
+        name=f"pnp_gui_{observation}",
+        description=f"PNP GUI demo simulation - {observation}",
         illumination=DirectionalIllumination.from_date_and_location(
             observation_date,
             PNP_LAT,
@@ -649,7 +605,7 @@ def mtr_demo_simulation(
     )
 
     # Save simulation configuration
-    config_filename = f"mtr_demo_{observation}_sim_config.json"
+    config_filename = f"pnp_gui_{observation}_sim_config.json"
 
     sim_output_dir = UPath(f"./{scene_name}/sim_output")
     sim_output_dir.mkdir(parents=True, exist_ok=True)

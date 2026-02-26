@@ -6,10 +6,10 @@ from s2gos_utils.typing import PathLike
 from s2gos_apps.registry import registry
 
 
-@registry.process(id="common/generation")
+@registry.process(id="common-generation", title="Scene Generation")
 def generation(
     config_path: Annotated[
-        PathLike, Field(..., description="Path to the configuration JSON file.")
+        str, Field(..., description="Path to the configuration JSON file.")
     ],
 ) -> PathLike | None:
     """General process to generate a 3D scene from a scene configuration."""

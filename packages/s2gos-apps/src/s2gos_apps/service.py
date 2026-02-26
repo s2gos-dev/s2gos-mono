@@ -1,6 +1,6 @@
 from wraptile.services.local import LocalService
 
-from .processes.mtr_demo import registry
+from s2gos_apps.processes import registry
 
 service = LocalService(
     title="S2GOS Demo-Server",

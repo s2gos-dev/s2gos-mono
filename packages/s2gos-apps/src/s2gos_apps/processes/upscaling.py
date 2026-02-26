@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 import enum
-import time
 from typing import Annotated
 
 from pydantic import BaseModel, Field
 from s2gos_utils.io import PathRef
-from upath import UPath
 
 from s2gos_apps.registry import registry
 
@@ -28,24 +26,10 @@ target_data = {
 class Locations(enum.StrEnum):
     PNP = "pnp"
     PISA = "pisa"
-    # GOBABEB = "gobabeb"
-    # FRASCATI = "frascati"
-    # KAIROUAN = "kairouan"
 
 
 class Month(enum.StrEnum):
-    JANUARY = "January"
-    # FEBRUARY = "February"
-    # MARCH = "March"
-    # APRIL = "April"
-    # MAY = "May"
     JUNE = "June"
-    # JULY = "July"
-    # AUGUST = "August"
-    # SEPTEMBER = "September"
-    # OCTOBER = "October"
-    # NOVEMBER = "November"
-    # DECEMBER = "December"
 
 
 class SatelliteInstrument(enum.StrEnum):
@@ -90,10 +74,6 @@ class GroundObservation(BaseModel):
 
 class SurfaceL2Type(enum.StrEnum):
     HDRF = "HDRF"
-    # BRF = "BRF"
-    # BHR = "BHR"
-    # ALBEDO = "albedo"
-    # REFLECTANCE = "reflectance"
 
 
 class SurfaceL2(BaseModel):
@@ -124,7 +104,7 @@ class SimulationType(enum.StrEnum):
     HDRF = "HDRF"
 
 
-@registry.process(id="upscaling-demo")
+@registry.process(id="upscaling-demo", title="Upscaling Demo")
 def upscaling(
     # Common
     scene_name: Annotated[
@@ -160,10 +140,4 @@ def upscaling(
     """
     Create the scene confifuration corresponding the PNP scene.
     """
-
-    # generate configs
-
-    # generate scene
-    time.sleep(3)
-    # observation simulation
-    return UPath("./some/path")
+    raise NotImplementedError("Upscaling process not yet implemented")

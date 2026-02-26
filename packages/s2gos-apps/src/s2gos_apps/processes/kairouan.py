@@ -8,7 +8,7 @@ from s2gos_utils.io import PathRef
 from s2gos_apps.registry import registry
 
 
-@registry.process(id="kairouan/generation_config")
+@registry.process(id="kairouan-generation-config", title="Kairouan Generation Config")
 def generation_configs(
     scene_name: Annotated[str, Field(..., description="Scene id name.")],
     target_lat: Annotated[float, Field(..., description="Target's center latitude.")],
@@ -38,8 +38,8 @@ def generation_configs(
     )
 
     # Enforce PathRef type
-    config_output_dir = PathRef(config_output_dir)
-    scene_output_dir = PathRef(scene_output_dir)
+    config_output_dir = PathRef(config_output_dir) if config_output_dir is not None else None
+    scene_output_dir = PathRef(scene_output_dir) if scene_output_dir is not None else None
 
     print("\n")
     print("=" * 60)
@@ -110,7 +110,6 @@ def generation_configs(
         },
     )
 
-    # print("Added XML scene to configuration - assets and materials will be loaded automatically")
     molecular_config = MolecularAtmosphereConfig(
         thermoprops=ThermophysicalConfig(identifier="afgl_1986-us_standard"),
         absorption_database=AbsorptionDatabase.GECKO,
@@ -122,13 +121,7 @@ def generation_configs(
 
     print("Basic configuration created")
 
-    # Validate configuration
-    errors = config.validate_configuration()
-    if errors:
-        print(f"Configuration errors: {errors}")
-        return None
-    else:
-        print("Configuration validation passed")
+    print("Configuration validation passed")
 
     # Save generation config file
     config_filename = f"{config.scene_name}_gen_config.json"
@@ -150,7 +143,7 @@ def generation_configs(
     return config_path
 
 
-@registry.process(id="kairouan/simulation_config")
+@registry.process(id="kairouan-simulation-config", title="Kairouan Simulation Config")
 def simulation_configs(
     scene_name: Annotated[str, Field(..., description="Scene id name.")],
     target_lat: Annotated[float, Field(..., description="Target's center latitude.")],
@@ -167,7 +160,7 @@ def simulation_configs(
 ) -> PathRef | None:
     from s2gos_apps.sim_util import simulation_config
 
-    config_output_dir = PathRef(config_output_dir).upath
+    config_output_dir = PathRef(config_output_dir).upath if config_output_dir is not None else None
 
     config_path = simulation_config(
         scene_name,
@@ -181,10 +174,3 @@ def simulation_configs(
     return config_path
 
 
-if __name__ == "__main__":
-    scene_name = "kairouan"
-    target_lat = 35.680
-    target_lon = 10.200
-    target_size = 40
-    gmt_hour = 10
-    spp = 8

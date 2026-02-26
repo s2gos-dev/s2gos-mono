@@ -11,6 +11,7 @@ dependencies = [
     "s2gos-utils",
     "s2gos-generator",
     "s2gos-simulator",
+    "ipyleaflet",
 ]
 
 [build-system]
@@ -30,6 +31,7 @@ s2gos_apps      = { path = ".",               editable = true }
 s2gos_utils     = { path = "../s2gos-utils",     editable = true }
 s2gos_generator = { path = "../s2gos-generator", editable = true }
 s2gos_simulator = { path = "../s2gos-simulator", editable = true }
+
 
 [tool.pixi.environments]
 default = { solve-group = "default" }
