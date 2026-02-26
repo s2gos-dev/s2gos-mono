@@ -27,6 +27,28 @@ theme:
 plugins:
   - search
   - monorepo
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - packages/s2gos-utils/src
+            - packages/s2gos-generator/src
+            - packages/s2gos-simulator/src
+            - packages/s2gos-apps/src
+          options:
+            show_source: false
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            docstring_style: google
+            separate_signature: true
+            show_signature_annotations: true
+            merge_init_into_class: true
+            group_by_category: true
+            show_category_heading: true
+            show_attributes: true
+            extensions:
+              - griffe_pydantic
 
 nav:
   - Home: index.md

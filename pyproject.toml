@@ -37,22 +37,25 @@ s2gos_utils     = { path = "packages/s2gos-utils",     editable = true }
 s2gos_generator = { path = "packages/s2gos-generator", editable = true }
 s2gos_simulator = { path = "packages/s2gos-simulator", editable = true }
 s2gos_apps      = { path = "packages/s2gos-apps",      editable = true }
-# External sibling repos (s2gos-controller / eozilla)
-s2gos-client = { path = "../s2gos-controller/s2gos-client", editable = true }
-s2gos-server = { path = "../s2gos-controller/s2gos-server", editable = true }
-
-
 # ── notebook feature — interactive widget support ───────────────────
 [tool.pixi.feature.notebook.pypi-dependencies]
 ipywidgets = "*"
 
-# ── local-eozilla — swap PyPI eozilla for local sources ─────────────
+# ── remote-controller — s2gos-controller from GitHub (default solve) ─
+[tool.pixi.feature.remote-controller.pypi-dependencies]
+s2gos-client = { git = "https://github.com/s2gos-dev/s2gos-controller.git", subdirectory = "s2gos-client" }
+s2gos-server = { git = "https://github.com/s2gos-dev/s2gos-controller.git", subdirectory = "s2gos-server" }
+
+# ── local-eozilla — swap GitHub sources for local sibling repos ──────
+# Use:  pixi install -e local   or   pixi install -e dev-local
 [tool.pixi.feature.local-eozilla.pypi-dependencies]
-appligator = { path = "../eozilla/appligator", editable = true }
-cuiman     = { path = "../eozilla/cuiman",     editable = true }
-gavicore   = { path = "../eozilla/gavicore",   editable = true }
-procodile  = { path = "../eozilla/procodile",  editable = true }
-wraptile   = { path = "../eozilla/wraptile",   editable = true }
+appligator   = { path = "../eozilla/appligator",                 editable = true }
+cuiman       = { path = "../eozilla/cuiman",                     editable = true }
+gavicore     = { path = "../eozilla/gavicore",                   editable = true }
+procodile    = { path = "../eozilla/procodile",                  editable = true }
+wraptile     = { path = "../eozilla/wraptile",                   editable = true }
+s2gos-client = { path = "../s2gos-controller/s2gos-client",     editable = true }
+s2gos-server = { path = "../s2gos-controller/s2gos-server",     editable = true }
 
 # ── dev — adds testing, linting, docs, memory profiling ────────────
 [tool.pixi.feature.dev.dependencies]
@@ -65,18 +68,17 @@ mkdocs                  = "*"
 mkdocs-monorepo-plugin  = "*"
 mkdocs-material         = "*"
 mkdocstrings            = "*"
+mkdocstrings-python     = "*"
 
 [tool.pixi.feature.dev.pypi-dependencies]
-memray = "*"
+memray         = "*"
+griffe-pydantic = "*"
 
 # ── environments ────────────────────────────────────────────────────
 [tool.pixi.environments]
-default  = { solve-group = "default" }
-notebook = { features = ["notebook"], solve-group = "default" }
-dev      = { features = ["dev"],      solve-group = "default" }
-# ── local eozilla ─────
-local     = { features = ["local-eozilla"],        solve-group = "local-eozilla" }
-dev-local = { features = ["dev", "local-eozilla"], solve-group = "local-eozilla" }
+default  = { features = ["remote-controller"],                    solve-group = "default" }
+notebook = { features = ["remote-controller", "notebook"],        solve-group = "default" }
+dev      = { features = ["remote-controller", "dev"],             solve-group = "default" }
 
 # ── tasks ───────────────────────────────────────────────────────────
 [tool.pixi.tasks]
@@ -87,8 +89,9 @@ eradiate-init = "eradiate data install core gecko"
 test       = "pytest"
 lint       = "ruff check ."
 format     = "ruff format ."
-docs       = "mkdocs serve"
-docs-build = "mkdocs build"
+docs        = "mkdocs serve"
+docs-build  = "mkdocs build"
+docs-deploy = "mkdocs gh-deploy --force"
 
 [project.scripts]
 s2gos_apps = "s2gos_apps.cli:cli"
