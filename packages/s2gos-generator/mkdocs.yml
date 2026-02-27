@@ -46,6 +46,7 @@ plugins:
 
 nav:
   - Introduction: index.md
+  - Concepts: concepts.md
   - Configuration: configuration.md
   - About: about.md
   - Examples:

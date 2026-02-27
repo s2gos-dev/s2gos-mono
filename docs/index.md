@@ -24,7 +24,6 @@ git clone git@github.com:s2gos-dev/s2gos-mono.git
 cd s2gos-mono
 pixi install
 pixi run apps-init   # initialises Eradiate data (required once)
-pixi run lab         # launch Jupyter Lab
 ```
 
 For development (adds testing, linting, docs tools):
@@ -35,14 +34,11 @@ pixi run -e dev test
 pixi run -e dev docs
 ```
 
-### Basic Usage
+## Examples
 
-```python
-from s2gos_apps.processes.mtr_demo import mtr_demo_generation
-
-# Run the MTR demo generation process
-result = mtr_demo_generation(output_dir="./output")
-```
+| Example | Description |
+|---|---|
+| [**HYPSTAR Gobabeb**](hypstar_simulations.md) | Ground sensor simulations over the Gobabeb validation site driven by a real HYPERNETS L2A dataset |
 
 ## Configuration
 

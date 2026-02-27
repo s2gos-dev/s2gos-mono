@@ -23,7 +23,7 @@ jobs:
         with:
           manifest-path: pyproject.toml
           environments: dev
-          locked: false
+          frozen: true
 
       - name: Deploy documentation
-        run: pixi run -e dev docs-deploy
+        run: pixi run --frozen -e dev docs-deploy

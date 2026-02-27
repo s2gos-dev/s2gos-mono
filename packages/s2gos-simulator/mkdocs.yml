@@ -46,7 +46,9 @@ plugins:
 
 nav:
   - Introduction: index.md
+  - Concepts: concepts.md
   - Setup: setup.md
+  - Configuration: configuration.md
   - About: about.md
   - Examples:
     - Gobabeb Quickstart: examples/gobabeb_quickstart.md

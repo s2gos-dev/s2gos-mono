@@ -1,24 +1,14 @@
 # Configuration
 
-The S2GOS generator is configured through `s2gos_settings.yaml`. The package searches for this file by climbing up the directory tree from your script's location.
-
-## Installation Modes
-
-The configuration structure depends on your installation:
-
-- `common`: Shared settings (see s2gos-utils configuration)
-- `generator`: Generator-specific settings (this page)
-- `simulator`: Simulator-specific settings (see s2gos-simulator docs)
+The S2GOS generator reads its settings from `s2gos_settings.yaml`, which is located by
+walking up the directory tree from your script. Shared settings (`common:` section) are
+documented in the [s2gos-utils Configuration](../../s2gos-utils/docs/configuration.md) page.
 
 ## Configuration Example
 
 ```yaml
-# s2gos_settings.yaml
-common:
-    search_paths:
-        - "./resources/data"
-        - "./data"
-
+# s2gos_settings.yaml — generator-specific section only
+# For the common: section see s2gos-utils configuration.
 generator:
     dataset:
         dem:
@@ -44,10 +34,6 @@ generator:
 ```
 
 ## Configuration Sections
-
-### `common` - Shared Settings
-
-See s2gos-utils documentation.
 
 ### `generator.dataset` - Dataset Sources
 

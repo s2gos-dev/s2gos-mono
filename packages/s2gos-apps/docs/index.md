@@ -4,45 +4,6 @@
 
 Each process is a Python function decorated with `@registry.process()`. This single definition is enough to expose it as an OGC API endpoint, a GUI form in Jupyter, and a CLI command — powered by the [s2gos-controller](https://s2gos-dev.github.io/s2gos-controller/) stack (procodile, wraptile, s2gos-client).
 
-## Architecture overview
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Jupyter Lab / Notebook                                         │
-│                                                                 │
-│   from s2gos_client.gui import Client                           │
-│   client = Client(api_url="http://127.0.0.1:8008")             │
-│   client.show()          # process selection & input form       │
-│   client.show_jobs()     # job monitoring panel                 │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │  HTTP (OGC API – Processes)
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  LocalService  (wraptile / FastAPI)                             │
-│  s2gos-server run -- s2gos_apps.service:service                 │
-│                                                                 │
-│   Wraps the ProcessRegistry as a standards-compliant server     │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  ProcessRegistry  (procodile)                                   │
-│                                                                 │
-│   @registry.process(id="gobabeb-generation-config", ...)        │
-│   def generation_configs(scene_name, target_lat, ...): ...      │
-│                                                                 │
-│   Function parameters (Pydantic Field annotations) become       │
-│   GUI input fields, CLI arguments, and JSON schema properties   │
-│   automatically.                                                │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-              ┌────────────────┼────────────────┐
-              ▼                ▼                ▼
-     s2gos-generator   s2gos-simulator   s2gos-utils
-     (scene creation)  (radiative        (shared types,
-                        transfer)         settings, I/O)
-```
-
 ## Key components
 
 | Module | Role |
@@ -59,6 +20,7 @@ Each process is a Python function decorated with `@registry.process()`. This sin
 ### Site-specific configuration processes
 
 Each site provides a pair of processes that expand a few high-level parameters (location, size, observation time) into full configuration files.
+This is still very early but will be developed into the use cases for teh S2GOS Project
 
 | Process ID | Title | Description |
 |---|---|---|

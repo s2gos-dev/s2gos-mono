@@ -15,18 +15,10 @@ import enum
 from datetime import datetime
 from typing import Annotated
 
-from gavicore.models import InputDescription
-from procodile import additional_parameters
 from pydantic import Field
 from s2gos_utils.coordinates import CoordinateSystem
 
 from s2gos_apps.registry import registry
-
-# noinspection PyTypeChecker
-advanced_input = InputDescription(
-    additionalParameters=additional_parameters({"level": "advanced"}),
-    schema={},
-)
 
 # ============================================================================
 # Constants
@@ -323,8 +315,7 @@ def pnp_gui_generation(
 
 
 @registry.process(
-    id="pnp_gui/simulation", title="Simulation Demo", inputs={"spp": advanced_input}
-)
+    id="pnp_gui/simulation", title="Simulation Demo")
 def pnp_gui_simulation(
     scene_name: Annotated[
         str,
@@ -572,14 +563,14 @@ def pnp_gui_simulation(
                 id="nice_rgb_camera",
                 instrument=UAVInstrumentType.PERSPECTIVE_CAMERA,
                 viewing=LookAtViewing(
-                    origin=[0, 0, 35000.0],
+                    origin=[0, 0, 39000.0],
                     target=[0, 0, 15],
                     up=[0, 1, 0],
                     relative_to_asset="only_tower_v0_1.xml",
                 ),
                 srf=SpectralResponse(type="delta", wavelengths=[440.0, 550.0, 660.0]),
                 fov=50.0,
-                resolution=[1080, 1080],
+                resolution=[1280, 1280],
                 samples_per_pixel=32,
                 post_processing=PostProcessingOptions(
                     generate_rgb_image=True,
