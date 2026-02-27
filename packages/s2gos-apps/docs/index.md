@@ -1,6 +1,94 @@
 # S2GOS-APPS
 
-This package contains applications of the S2GOS generator and simulator.
+**s2gos-apps** is the integration layer of the S2GOS framework. It connects scene generation (`s2gos-generator`) and observation simulation (`s2gos-simulator`) into ready-to-run **processes** that can be executed through a GUI, a CLI, or directly from Python.
+
+Each process is a Python function decorated with `@registry.process()`. This single definition is enough to expose it as an OGC API endpoint, a GUI form in Jupyter, and a CLI command — powered by the [s2gos-controller](https://s2gos-dev.github.io/s2gos-controller/) stack (procodile, wraptile, s2gos-client).
+
+## Architecture overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Jupyter Lab / Notebook                                         │
+│                                                                 │
+│   from s2gos_client.gui import Client                           │
+│   client = Client(api_url="http://127.0.0.1:8008")             │
+│   client.show()          # process selection & input form       │
+│   client.show_jobs()     # job monitoring panel                 │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │  HTTP (OGC API – Processes)
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  LocalService  (wraptile / FastAPI)                             │
+│  s2gos-server run -- s2gos_apps.service:service                 │
+│                                                                 │
+│   Wraps the ProcessRegistry as a standards-compliant server     │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  ProcessRegistry  (procodile)                                   │
+│                                                                 │
+│   @registry.process(id="gobabeb-generation-config", ...)        │
+│   def generation_configs(scene_name, target_lat, ...): ...      │
+│                                                                 │
+│   Function parameters (Pydantic Field annotations) become       │
+│   GUI input fields, CLI arguments, and JSON schema properties   │
+│   automatically.                                                │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                ▼
+     s2gos-generator   s2gos-simulator   s2gos-utils
+     (scene creation)  (radiative        (shared types,
+                        transfer)         settings, I/O)
+```
+
+## Key components
+
+| Module | Role |
+|---|---|
+| `registry.py` | `ProcessRegistry` singleton — all processes register here on import |
+| `service.py` | `LocalService` — wraps the registry as a FastAPI / OGC API server |
+| `cli.py` | Generates a CLI (`s2gos_apps`) from the registry using `procodile` |
+| `processes/` | Process definitions grouped by site (Gobabeb, Frascati, …) and common operations |
+| `gen_util.py` | Shared generation logic — runs the `SceneGenerationPipeline` DAG |
+| `sim_util.py` | Shared simulation logic — builds `SimulationConfig`, runs `EradiateBackend` |
+
+## Available processes
+
+### Site-specific configuration processes
+
+Each site provides a pair of processes that expand a few high-level parameters (location, size, observation time) into full configuration files.
+
+| Process ID | Title | Description |
+|---|---|---|
+| `gobabeb-generation-config` | Gobabeb Generation Config | Scene generation config for the Gobabeb PICS site (Namibia) |
+| `gobabeb-simulation-config` | Gobabeb Simulation Config | Simulation config for Gobabeb with configurable GMT hour and samples |
+| `frascati-generation-config` | Frascati Generation Config | Scene generation config for Frascati (Italy) with vegetation placement |
+| `frascati-simulation-config` | Frascati Simulation Config | Simulation config for the Frascati scene |
+| `kairouan-generation-config` | Kairouan Generation Config | Scene generation config for Kairouan (Tunisia) with vegetation |
+| `kairouan-simulation-config` | Kairouan Simulation Config | Simulation config for the Kairouan scene |
+| `pisa-generation-config` | Pisa Generation Config | Scene generation config for San Rossore / Pisa (Italy) with vegetation |
+| `pisa-simulation-config` | Pisa Simulation Config | Simulation config for the Pisa scene |
+| `pnp-generation-config` | PNP Generation Config | Scene generation config for Patagonia National Park (Chile) with heterogeneous atmosphere |
+| `pnp-simulation-config` | PNP Simulation Config | Simulation config for the PNP scene |
+
+### Common processes
+
+These processes accept a configuration file path and run the full pipeline.
+
+| Process ID | Title | Description |
+|---|---|---|
+| `common-generation` | Scene Generation | Runs the generation pipeline from a config JSON — produces meshes, textures, and a scene description YAML |
+| `common-simulation` | Scene Simulation | Runs the Eradiate radiative transfer simulation from a scene description and simulation config |
+
+### Demo processes
+
+| Process ID | Title | Description |
+|---|---|---|
+| `pnp_gui/generation` | Scene Generation Demo | PNP GUI demo with seasonal variations — runs generation pipeline directly |
+| `pnp_gui/simulation` | Simulation Demo | PNP GUI demo with multiple observation types — runs simulation pipeline directly |
+| `upscaling-demo` | Upscaling Demo | Experimental upscaling workflow (not yet implemented) |
 
 ## Installation
 

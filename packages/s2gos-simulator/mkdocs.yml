@@ -48,6 +48,8 @@ nav:
   - Introduction: index.md
   - Setup: setup.md
   - About: about.md
+  - Examples:
+    - Gobabeb Quickstart: examples/gobabeb_quickstart.md
   - API:
     - SimulationConfig: api/simulation.md
     - Illumination: api/illumination.md

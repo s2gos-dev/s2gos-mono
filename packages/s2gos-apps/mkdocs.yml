@@ -51,5 +51,5 @@ nav:
     - Vegetation Placement: processes/vegetation_placement.md
     - Impact Assessment Outputs: processes/impact_assessment_outputs.md
   - Examples:
-    - Gobabeb GUI: examples/gobabeb_gui.md
+    - Gobabeb GUI Walkthrough: examples/gobabeb_gui.md
   - About: about.md

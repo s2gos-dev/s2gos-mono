@@ -48,6 +48,8 @@ nav:
   - Introduction: index.md
   - Configuration: configuration.md
   - About: about.md
+  - Examples:
+    - Gobabeb Quickstart: examples/gobabeb_quickstart.md
   - API Reference:
     - Scene Config: api/scene_config.md
     - Pipeline: api/pipeline.md
