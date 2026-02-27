@@ -1,3 +1,7 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
 [project]
 name = "s2gos-apps"
 version = "0.0.1"
@@ -11,17 +15,18 @@ dependencies = [
     "s2gos-utils",
     "s2gos-generator",
     "s2gos-simulator",
+    "procodile",
     "ipyleaflet",
 ]
 
-[build-system]
-build-backend = "hatchling.build"
-requires = ["hatchling"]
+[project.scripts]
+s2gos_apps = "s2gos_apps.cli:cli"
 
-[project.optional-dependencies]
+[dependency-groups]
 test = ["pytest"]
-dev  = ["jupyterlab>=4", "ipykernel>=6"]
+dev = ["jupyterlab>=4", "ipykernel>=6"]
 
+# ── pixi ─────────────────────────────────────────────────────
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
@@ -32,15 +37,12 @@ s2gos_utils     = { path = "../s2gos-utils",     editable = true }
 s2gos_generator = { path = "../s2gos-generator", editable = true }
 s2gos_simulator = { path = "../s2gos-simulator", editable = true }
 
-
 [tool.pixi.environments]
 default = { solve-group = "default" }
 test    = { features = ["test"], solve-group = "default" }
 dev     = { features = ["dev"], solve-group = "default" }
 
-[project.scripts]
-s2gos_apps = "s2gos_apps.cli:cli"
-
+# ── tools ────────────────────────────────────────────────────
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
 testpaths = "tests"
@@ -50,10 +52,6 @@ include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py"]
 
 [tool.ruff.lint]
 ignore = ["E501", "F821"]
+isort = { relative-imports-order = "closest-to-furthest" }
+per-file-ignores = { "*.ipynb" = ["E402"] }
 select = ["I", "F", "E"]
-
-[tool.ruff.lint.isort]
-relative-imports-order = "closest-to-furthest"
-
-[tool.ruff.lint.per-file-ignores]
-"*.ipynb" = ["E402"]
