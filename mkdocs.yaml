@@ -52,6 +52,8 @@ plugins:
 
 nav:
   - Home: index.md
+  - Examples:
+    - HYPSTAR Gobabeb: hypstar_simulations.md
   - Packages:
     - Generator:  "!include ./packages/s2gos-generator/mkdocs.yml"
     - Simulator:  "!include ./packages/s2gos-simulator/mkdocs.yml"
