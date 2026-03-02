@@ -41,3 +41,19 @@ Ground-based sensors are placed at low heights for in-situ validation measuremen
 - **Radiancemeter** — Directional radiance measurement
 
 See the [Sensors API reference](api/sensors.md) for full configuration details and helper functions like `create_chime_sensor()` and `create_hypstar_sensor()`.
+
+## Measurements
+
+Every simulation includes top of atmosphere solar irradiance automatically. All other quantities are BOA (bottom-of-atmosphere) measurements and must be explicitly requested by listing them under `measurements` in `SimulationConfig`.
+
+| Quantity | Illumination | Outgoing geometry |
+|---|---|---|
+| **Irradiance** | — | Downwelling flux at the surface (BOA) |
+| **BRF** | Direct beam only | Single direction |
+| **HDRF** | Direct + diffuse (atmosphere) | Single direction |
+| **HCRF** | Direct + diffuse (atmosphere) | Finite cone (camera FOV) |
+| **BHR** | Isotropic | All directions (albedo) |
+
+`PixelBRFConfig`, `PixelHDRFConfig`, and `PixelBHRConfig` compute the same quantities at locations derived from a satellite sensor's pixel footprint.
+
+See the [Measurements API reference](api/measurements.md) for full configuration details.

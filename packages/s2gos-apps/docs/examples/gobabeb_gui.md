@@ -1,7 +1,7 @@
 # Gobabeb GUI Walkthrough
 
 This tutorial walks through a complete scene generation and simulation workflow
-for the **Gobabeb PICS site** (Namibia) using the GUI client in Jupyter Lab.
+for the **Gobabeb site** (Namibia) using the GUI client in Jupyter Lab.
 By the end you will have generated a 3D scene from real DEM and landcover data,
 simulated an observation with Eradiate, and retrieved a rendered RGB image —
 all driven from interactive GUI widgets.
@@ -20,25 +20,6 @@ wraptile + s2gos-client), which automatically exposes it as an OGC API endpoint,
 a GUI form in Jupyter, and a CLI command.  Function parameters annotated with
 Pydantic `Field` become input fields, defaults, and descriptions — no extra
 wiring needed.
-
----
-
-## Prerequisites
-
-1. **Install the environment**
-
-    ```bash
-    pixi install
-    pixi run apps-init   # downloads Eradiate spectral data
-    ```
-
-2. **Configure data sources** — create or edit `s2gos_settings.yaml` in your
-   working directory with paths to DEM tiles and landcover data.
-   See the [Configuration](../index.md#configuration) section for a template.
-
-3. **Set up credentials** — S3 or Sentinel Hub credentials go in environment
-   variables or a `.secrets.yaml` file.
-   See the [credentials page](../../s2gos-utils/credentials.md) for details.
 
 ---
 
@@ -281,42 +262,4 @@ sim_output_dir = simulation.simulation(
 # Display result
 from IPython.display import Image, display
 display(Image(filename=f"{sim_output_dir}/rgb_camera_rgb.png"))
-```
-
----
-
-## Alternative: CLI
-
-The `s2gos_apps` CLI is auto-generated from the same process registry.
-Each process ID becomes a subcommand, and each parameter becomes a CLI argument:
-
-```bash
-# Create generation config
-s2gos_apps gobabeb-generation-config \
-    --scene-name gobabeb \
-    --target-lat -23.6015417 \
-    --target-lon 15.1258696 \
-    --target-size 10 \
-    --config-output-dir ./cli_output/gen_config \
-    --scene-output-dir ./cli_output/gen_output
-
-# Run generation
-s2gos_apps common-generation \
-    --config-path ./cli_output/gen_config/gobabeb_gen_config.json
-
-# Create simulation config
-s2gos_apps gobabeb-simulation-config \
-    --scene-name gobabeb \
-    --target-lat -23.6015417 \
-    --target-lon 15.1258696 \
-    --target-size 10 \
-    --gmt-hour 9 \
-    --spp 8 \
-    --config-output-dir ./cli_output/sim_config
-
-# Run simulation
-s2gos_apps common-simulation \
-    --scene-description-path ./cli_output/gen_output/gobabeb/gobabeb.yml \
-    --config-path ./cli_output/sim_config/gobabeb_sim_config.json \
-    --simulation-output-dir ./cli_output/sim_output/gobabeb
 ```

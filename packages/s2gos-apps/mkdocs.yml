@@ -46,11 +46,6 @@ plugins:
 
 nav:
   - Introduction: index.md
-  - Processes:
-    - MTR Demo: processes/mtr_demo_processors.md
-    - Vegetation Placement: processes/vegetation_placement.md
-    - Impact Assessment Outputs: processes/impact_assessment_outputs.md
   - Examples:
     - Gobabeb GUI Walkthrough: examples/gobabeb_gui.md
-    - HYPSTAR Simulations: examples/hypstar_simulations.md
   - About: about.md

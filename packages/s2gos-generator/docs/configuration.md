@@ -2,7 +2,7 @@
 
 The S2GOS generator reads its settings from `s2gos_settings.yaml`, which is located by
 walking up the directory tree from your script. Shared settings (`common:` section) are
-documented in the [s2gos-utils Configuration](../../s2gos-utils/docs/configuration.md) page.
+documented in the [s2gos-utils Configuration](../../s2gos-utils/configuration.md) page.
 
 ## Configuration Example
 
