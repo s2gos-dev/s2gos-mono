@@ -7,9 +7,10 @@ from typing import Dict, List, Optional
 from s2gos_utils.io.paths import mkdir
 from s2gos_utils.scene import SceneDescription
 
+from .cache import CachedDAGExecutor
 from .config import SceneGenConfig
 from .context import SceneResourceContext
-from .resource_registry import DAGExecutor, ResourceRegistry
+from .resource_registry import ResourceRegistry
 
 
 class SceneGenerationPipeline:
@@ -29,7 +30,7 @@ class SceneGenerationPipeline:
         self.xml_assets = []
         self.xml_material_libraries = []
         self.registry = ResourceRegistry()
-        self.executor = DAGExecutor(self.registry)
+        self.executor = CachedDAGExecutor(self.registry)
         self._initialized = False
 
     def initialize(self):
@@ -81,8 +82,11 @@ class SceneGenerationPipeline:
         self.registry.register("target_dem", ["aoi"], process_target_dem)
         self.registry.register("target_landcover", ["aoi"], process_target_landcover)
         self.registry.register("target_mesh", ["target_dem"], generate_target_mesh)
+        target_texture_deps = ["target_landcover"]
+        if self.config.snow is not None:
+            target_texture_deps.append("target_dem")
         self.registry.register(
-            "target_texture", ["target_landcover"], generate_target_texture
+            "target_texture", target_texture_deps, generate_target_texture
         )
 
         if self.config.buffer is not None:
@@ -92,8 +96,11 @@ class SceneGenerationPipeline:
                 "buffer_landcover", ["buffer_aoi"], process_buffer_landcover
             )
             self.registry.register("buffer_mesh", ["buffer_dem"], generate_buffer_mesh)
+            buffer_texture_deps = ["buffer_landcover"]
+            if self.config.snow is not None:
+                buffer_texture_deps.append("buffer_dem")
             self.registry.register(
-                "buffer_texture", ["buffer_landcover"], generate_buffer_texture
+                "buffer_texture", buffer_texture_deps, generate_buffer_texture
             )
 
         if self.config.background is not None:
@@ -130,6 +137,9 @@ class SceneGenerationPipeline:
 
             if self.config.vegetation_exclusion_zones:
                 veg_deps.append("vegetation_exclusion_zones")
+
+            if "user_assets" in self.registry.resources:
+                veg_deps.append("user_assets")
 
             self.registry.register(
                 "target_vegetation",
@@ -230,8 +240,13 @@ class SceneGenerationPipeline:
                 f"  Optional ({len(optional_resources)}): {', '.join(optional_resources)}"
             )
 
-    def run(self) -> SceneDescription:
+    def run(self, use_cache: bool = True) -> SceneDescription:
         """Execute the complete scene generation pipeline.
+
+        Args:
+            use_cache: When ``True`` (default), skip resources whose config
+                hash and output files match the stored manifest.  Set to
+                ``False`` to force a full rebuild.
 
         Returns:
             SceneDescription instance with complete scene configuration
@@ -256,8 +271,8 @@ class SceneGenerationPipeline:
             if region_materials:
                 ctx.region_materials = region_materials
 
-            # Execute all resources using DAG executor
-            _ = self.executor.execute(ctx)
+            # Execute all resources using DAG executor (with optional caching)
+            _ = self.executor.execute(ctx, use_cache=use_cache)
             scene_description = getattr(ctx, "scene_description", None)
             if scene_description is None:
                 raise RuntimeError("Scene description not found in pipeline results")
@@ -269,6 +284,18 @@ class SceneGenerationPipeline:
         except Exception as e:
             logging.error(f"Pipeline failed: {e}")
             raise
+
+    def clear_cache(self) -> None:
+        """Remove the on-disk cache for this scene.
+
+        The next call to :meth:`run` will regenerate all cacheable resources
+        from scratch.
+        """
+        from .cache import CacheManifest
+
+        output_dir = self.config.scene_output_dir.upath
+        CacheManifest(output_dir).clear()
+        logging.info(f"Cache cleared for scene '{self.config.scene_name}'")
 
     @property
     def scene_name(self) -> str:
