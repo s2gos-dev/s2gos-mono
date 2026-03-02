@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: prefix-dev/setup-pixi@v0.8.1
+        with:
+          manifest-path: pyproject.toml
+          environments: dev
+          frozen: true
+
+      - name: Create minimal settings file
+        run: |
+          cat > s2gos_settings.yaml << 'EOF'
+          common:
+            search_paths:
+              - "${{ github.workspace }}/packages/s2gos-generator/resources/data"
+            local_fsspec_cache: "/tmp/fsspec_cache"
+            credential_provider: "dynaconf"
+          EOF
+
+      - name: Run tests
+        run: pixi run --frozen -e dev test
