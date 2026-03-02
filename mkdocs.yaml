@@ -1,4 +1,4 @@
-site_name: S2GOS
+site_name: DTE-S2GOS
 site_description: Synthetic scene generation and observation simulation for Earth observation.
 
 theme:
@@ -23,6 +23,12 @@ theme:
     - search.highlight
     - search.suggest
     - content.code.copy
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
 
 plugins:
   - search

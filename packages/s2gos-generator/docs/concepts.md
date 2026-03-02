@@ -60,14 +60,4 @@ After generation, the output directory looks like:
 ## Atmosphere
 
 The atmosphere is defined at generation time and stored in the scene description YAML. It controls how the simulator models scattering and absorption during radiative transfer.
-
-Three atmosphere types are supported:
-
-| Type | Description |
-|---|---|
-| **Molecular** | Rayleigh scattering + gas absorption. Uses a standard thermophysical profile (e.g. `afgl_1986-us_standard`) or a CAMS NetCDF file. Optionally includes an absorption database. |
-| **Homogeneous** | Single spatially-uniform aerosol layer on top of the atmosphere. Defined by an aerosol dataset (e.g. `sixsv-continental`), optical thickness, and scale height. |
-| **Heterogeneous** | Combines a molecular background with one or more discrete particle layers, each with its own aerosol type, altitude range, and vertical distribution (exponential, Gaussian, or uniform). |
-
-
-See the [Atmosphere API reference](api/atmosphere.md) for the full configuration schema and helper functions.
+See the [Atmosphere API reference](api/atmosphere.md) for the full configuration schema and helper functions as well as [Eradiate](https://eradiate.readthedocs.io/en/stable/) for more information.

@@ -1,6 +1,6 @@
-# S2GOS
+# DTE-S2GOS
 
-**S2GOS** (Sentinel-2 Ground Observation Simulator) is a modular Python framework for
+**DTE-S2GOS** (Digital Twin Earth Synthetic Scene Generator and Observation Simulator) is a modular Python framework for
 synthetic scene generation and Earth observation simulation. It enables the creation of
 physically realistic synthetic landscapes and simulates satellite, airborne, and ground-based
 sensor observations over them.
@@ -30,18 +30,16 @@ For development (adds testing, linting, docs tools):
 
 ```bash
 pixi install -e dev
-pixi run -e dev test
-pixi run -e dev docs
 ```
-
-## Examples
-
-| Example | Description |
-|---|---|
-| [**HYPSTAR Gobabeb**](hypstar_simulations.md) | Ground sensor simulations over the Gobabeb validation site driven by a real HYPERNETS L2A dataset |
 
 ## Configuration
 
 S2GOS is configured via a `s2gos_settings.yaml` file placed in your working directory or
 any parent directory. See the [s2gos-apps documentation](s2gos-apps/index.md) for a
 full configuration reference.
+
+## Examples
+
+| Example | Description |
+|---|---|
+| [**HYPSTAR Gobabeb**](hypstar_simulations.md) | Ground sensor simulations over the Gobabeb validation site driven by a real HYPERNETS L2A dataset |

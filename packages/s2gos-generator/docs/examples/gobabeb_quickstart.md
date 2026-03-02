@@ -5,8 +5,7 @@ Gobabeb site in the Namib Desert, Namibia. You will create a scene configuration
 generation pipeline, and produce the meshes, textures, and scene description YAML
 that feed into the simulator.
 
-By the end you will have a `gobabeb.yml` scene description file ready for
-radiative transfer simulation.
+By the end you will have a `gobabeb.yml` scene description file ready to use for simulations.
 
 ---
 
