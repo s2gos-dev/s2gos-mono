@@ -27,6 +27,12 @@ class SceneAssets:
     background_selection_texture_file: Optional[UPath] = None
     background_preview_texture_file: Optional[UPath] = None
 
+    vegetation_objects_file: Optional[UPath] = None
+    user_assets_file: Optional[UPath] = None
+    region_indices_file: Optional[UPath] = None
+    hamster_paths_file: Optional[UPath] = None
+    exclusion_zones_file: Optional[UPath] = None
+
     def to_dict(self) -> Dict:
         """Convert assets to dictionary."""
         return {
@@ -53,4 +59,9 @@ class SceneAssets:
             "background_preview_texture_file": optional_str(
                 self.background_preview_texture_file
             ),
+            "vegetation_objects_file": optional_str(self.vegetation_objects_file),
+            "user_assets_file": optional_str(self.user_assets_file),
+            "region_indices_file": optional_str(self.region_indices_file),
+            "hamster_paths_file": optional_str(self.hamster_paths_file),
+            "exclusion_zones_file": optional_str(self.exclusion_zones_file),
         }

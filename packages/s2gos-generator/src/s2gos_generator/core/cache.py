@@ -1,18 +1,20 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import random
 import shutil
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import yaml
 from upath import UPath
 
 from .context import SceneResourceContext
-from .resource_registry import DAGExecutor, ResourceRegistry
+from .fingerprints import compute_all_hashes
+from .resource_registry import DAGExecutor
 
 try:
     from ..._version import get_version as _get_version
@@ -31,239 +33,6 @@ def get_version() -> Optional[str]:
         return _get_version()
     except Exception:
         return None
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Utilities
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-def _stable_hash(data: dict) -> str:
-    """Return a 16-character deterministic hex digest of a dict."""
-    canonical = json.dumps(data, sort_keys=True, default=str)
-    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Per-resource config fingerprints
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-class ResourceFingerprints:
-    """Per-resource config fingerprints for Merkle-tree cache invalidation.
-
-    Each static method returns *only* the config fields that the resource
-    directly reads.  Upstream fields are automatically captured through the
-    dependency hash chain.
-    """
-
-    @staticmethod
-    def get(resource_id: str, config) -> dict:
-        """Return the own fingerprint dict for *resource_id*."""
-        method = getattr(ResourceFingerprints, f"_{resource_id}", None)
-        if method is None:
-            return {}
-        return method(config)
-
-    # ── AOI resources ─────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _aoi(config) -> dict:
-        return config.location.model_dump()
-
-    @staticmethod
-    def _buffer_aoi(config) -> dict:
-        return {
-            "center_lat": config.location.center_lat,
-            "center_lon": config.location.center_lon,
-            "buffer_size_km": config.buffer.size_km if config.buffer else None,
-        }
-
-    @staticmethod
-    def _background_aoi(config) -> dict:
-        return {
-            "center_lat": config.location.center_lat,
-            "center_lon": config.location.center_lon,
-            "background_size_km": config.background.size_km
-            if config.background
-            else None,
-        }
-
-    # ── DEM resources ─────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _target_dem(config) -> dict:
-        return {
-            "target_resolution_m": config.target_resolution_m,
-            "dem": config.data_sources.dem.model_dump(),
-            "dem_fillna_value": config.processing.dem_fillna_value,
-            "flatten_dem": config.processing.flatten_dem,
-        }
-
-    @staticmethod
-    def _buffer_dem(config) -> dict:
-        return {
-            "buffer_resolution_m": config.buffer.resolution_m
-            if config.buffer
-            else None,
-            "dem": config.data_sources.dem.model_dump(),
-            "dem_fillna_value": config.processing.dem_fillna_value,
-            "flatten_dem": config.processing.flatten_dem,
-        }
-
-    # ── Landcover resources ───────────────────────────────────────────────────
-
-    @staticmethod
-    def _target_landcover(config) -> dict:
-        return {
-            "target_resolution_m": config.target_resolution_m,
-            "landcover": config.data_sources.landcover.model_dump(),
-        }
-
-    @staticmethod
-    def _buffer_landcover(config) -> dict:
-        return {
-            "buffer_resolution_m": config.buffer.resolution_m
-            if config.buffer
-            else None,
-            "landcover": config.data_sources.landcover.model_dump(),
-        }
-
-    @staticmethod
-    def _background_landcover(config) -> dict:
-        return {
-            "background_resolution_m": (
-                config.background.resolution_m if config.background else None
-            ),
-            "landcover": config.data_sources.landcover.model_dump(),
-        }
-
-    # ── Mesh resources ────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _target_mesh(config) -> dict:
-        return {"handle_dem_nans": config.processing.handle_dem_nans}
-
-    @staticmethod
-    def _buffer_mesh(config) -> dict:
-        return {"handle_dem_nans": config.processing.handle_dem_nans}
-
-    # ── Texture resources ─────────────────────────────────────────────────────
-
-    @staticmethod
-    def _target_texture(config) -> dict:
-        target_regions = [
-            r.model_dump() for r in config.material_regions if "target" in r.applies_to
-        ]
-        return {
-            "snow": config.snow.model_dump() if config.snow else None,
-            "material_regions": target_regions,
-            "generate_texture_preview": config.processing.generate_texture_preview,
-        }
-
-    @staticmethod
-    def _buffer_texture(config) -> dict:
-        buffer_regions = [
-            r.model_dump() for r in config.material_regions if "buffer" in r.applies_to
-        ]
-        return {
-            "snow": config.snow.model_dump() if config.snow else None,
-            "material_regions": buffer_regions,
-            "generate_texture_preview": config.processing.generate_texture_preview,
-        }
-
-    @staticmethod
-    def _background_texture(config) -> dict:
-        bg_regions = [
-            r.model_dump()
-            for r in config.material_regions
-            if "background" in r.applies_to
-        ]
-        return {
-            "material_regions": bg_regions,
-            "generate_texture_preview": config.processing.generate_texture_preview,
-        }
-
-    # ── Optional resources ────────────────────────────────────────────────────
-
-    @staticmethod
-    def _user_assets(config) -> dict:
-        return {
-            "user_assets": [a.model_dump() for a in config.user_assets],
-            "xml_scenes": [x.model_dump() for x in config.xml_scenes],
-        }
-
-    @staticmethod
-    def _vegetation_exclusion_zones(config) -> dict:
-        return {
-            "vegetation_exclusion_zones": [
-                z.model_dump() for z in config.vegetation_exclusion_zones
-            ],
-        }
-
-    @staticmethod
-    def _target_vegetation(config) -> dict:
-        return {
-            "vegetation_placement": (
-                config.vegetation_placement.model_dump()
-                if config.vegetation_placement
-                else None
-            ),
-            "random_seed": config.random_seed,
-        }
-
-    @staticmethod
-    def _hamster_data(config) -> dict:
-        return {
-            "hamster": config.hamster.model_dump() if config.hamster else None,
-            "target_resolution_m": config.target_resolution_m,
-            "buffer_resolution_m": config.buffer.resolution_m
-            if config.buffer
-            else None,
-            "background_resolution_m": (
-                config.background.resolution_m if config.background else None
-            ),
-        }
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Merkle hash computation
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-def compute_all_hashes(config, registry: ResourceRegistry) -> Dict[str, str]:
-    """Compute effective Merkle hashes for every resource in *registry*.
-
-    ``effective_hash(R) = sha256(own_fingerprint(R) || sorted dep hashes)``
-    """
-    memo: Dict[str, str] = {}
-
-    def _compute(resource_id: str) -> str:
-        if resource_id in memo:
-            return memo[resource_id]
-
-        own_fp = ResourceFingerprints.get(resource_id, config)
-        resource = registry.get_resource(resource_id)
-        dep_hashes = [_compute(dep) for dep in sorted(resource.dependencies)]
-
-        combined = hashlib.sha256()
-        combined.update(_stable_hash(own_fp).encode())
-        for dh in dep_hashes:
-            combined.update(dh.encode())
-
-        result = combined.hexdigest()[:16]
-        memo[resource_id] = result
-        return result
-
-    for resource_id in registry.resources:
-        _compute(resource_id)
-
-    return memo
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Cache manifest
-# ──────────────────────────────────────────────────────────────────────────────
 
 
 class CacheManifest:
@@ -325,57 +94,104 @@ class CacheManifest:
             shutil.rmtree(str(self.cache_dir))
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Asset / context field mappings
-# ──────────────────────────────────────────────────────────────────────────────
+@dataclass
+class ResourceCacheSpec:
+    asset_fields: List[str]
+    result_field: Optional[str]
 
-# ctx.assets fields that each resource sets
-_ASSET_FIELDS: Dict[str, List[str]] = {
-    "target_dem": ["dem_file"],
-    "buffer_dem": ["buffer_dem_file"],
-    "target_landcover": ["landcover_file"],
-    "buffer_landcover": ["buffer_landcover_file"],
-    "background_landcover": ["background_landcover_file"],
-    "target_mesh": ["mesh_file"],
-    "buffer_mesh": ["buffer_mesh_file"],
-    "target_texture": ["selection_texture_file", "preview_texture_file"],
-    "buffer_texture": ["buffer_selection_texture_file", "buffer_preview_texture_file"],
-    "background_texture": [
+
+_RESOURCE_CACHE_SPECS: Dict[str, ResourceCacheSpec] = {
+    "target_dem": ResourceCacheSpec(["dem_file"], "dem_file"),
+    "buffer_dem": ResourceCacheSpec(["buffer_dem_file"], "buffer_dem_file"),
+    "target_landcover": ResourceCacheSpec(["landcover_file"], "landcover_file"),
+    "buffer_landcover": ResourceCacheSpec(
+        ["buffer_landcover_file"], "buffer_landcover_file"
+    ),
+    "background_landcover": ResourceCacheSpec(
+        ["background_landcover_file"], "background_landcover_file"
+    ),
+    "target_mesh": ResourceCacheSpec(["mesh_file"], "mesh_file"),
+    "buffer_mesh": ResourceCacheSpec(["buffer_mesh_file"], "buffer_mesh_file"),
+    "target_texture": ResourceCacheSpec(
+        [
+            "selection_texture_file",
+            "preview_texture_file",
+            "region_material_indices_file",
+        ],
+        "selection_texture_file",
+    ),
+    "buffer_texture": ResourceCacheSpec(
+        ["buffer_selection_texture_file", "buffer_preview_texture_file"],
+        "buffer_selection_texture_file",
+    ),
+    "background_texture": ResourceCacheSpec(
+        ["background_selection_texture_file", "background_preview_texture_file"],
         "background_selection_texture_file",
-        "background_preview_texture_file",
-    ],
-}
-
-# Which ctx.assets field holds the primary return value (None = custom logic)
-_RESULT_FIELD: Dict[str, Optional[str]] = {
-    "target_dem": "dem_file",
-    "buffer_dem": "buffer_dem_file",
-    "target_landcover": "landcover_file",
-    "buffer_landcover": "buffer_landcover_file",
-    "background_landcover": "background_landcover_file",
-    "target_mesh": "mesh_file",
-    "buffer_mesh": "buffer_mesh_file",
-    "target_texture": "selection_texture_file",
-    "buffer_texture": "buffer_selection_texture_file",
-    "background_texture": "background_selection_texture_file",
-    "user_assets": None,
-    "target_vegetation": None,
-    "hamster_data": None,
+    ),
+    "user_assets": ResourceCacheSpec(["user_assets_file"], "user_assets_file"),
+    "target_vegetation": ResourceCacheSpec(
+        ["vegetation_objects_file"], "vegetation_objects_file"
+    ),
+    "hamster_data": ResourceCacheSpec(["hamster_paths_file"], "hamster_paths_file"),
 }
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Context restorer
-# ──────────────────────────────────────────────────────────────────────────────
+def _validate_vegetation_files(ctx: SceneResourceContext) -> bool:
+    """Check that every .npy referenced in vegetation_objects.yml exists."""
+    veg_file = ctx.assets.vegetation_objects_file
+    if veg_file is None or not veg_file.exists():
+        return False
+    try:
+        from s2gos_utils.io.paths import open_file
+
+        with open_file(veg_file, "r") as f:
+            data = yaml.safe_load(f)
+        for obj in data.get("objects", []):
+            if obj.get("type") == "vegetation_collection":
+                data_file = obj.get("data_file")
+                if data_file and not (ctx.output_dir / data_file).exists():
+                    logging.info(
+                        "Cache miss: target_vegetation (secondary file missing: %s)",
+                        data_file,
+                    )
+                    return False
+    except Exception as exc:
+        logging.warning("Deep validation failed for vegetation: %s", exc)
+        return False
+    return True
+
+
+def _validate_user_asset_files(ctx: SceneResourceContext) -> bool:
+    """Check that every .ply mesh referenced in user_assets.yml exists."""
+    assets_file = ctx.assets.user_assets_file
+    if assets_file is None or not assets_file.exists():
+        return False
+    try:
+        from s2gos_utils.io.paths import open_file
+
+        with open_file(assets_file, "r") as f:
+            data = yaml.safe_load(f)
+        for obj in data.get("objects", []):
+            mesh = obj.get("mesh")
+            if mesh and not (ctx.output_dir / mesh).exists():
+                logging.info(
+                    "Cache miss: user_assets (secondary file missing: %s)", mesh
+                )
+                return False
+    except Exception as exc:
+        logging.warning("Deep validation failed for user_assets: %s", exc)
+        return False
+    return True
+
+
+_DEEP_VALIDATORS = {
+    "target_vegetation": _validate_vegetation_files,
+    "user_assets": _validate_user_asset_files,
+}
 
 
 class ContextRestorer:
-    """Saves and restores per-resource context state to/from disk."""
-
-    def __init__(self, cache_dir: UPath) -> None:
-        self.cache_dir = cache_dir
-
-    # ── save ──────────────────────────────────────────────────────────────────
+    """Saves and restores per-resource asset paths to/from disk."""
 
     def save_assets(
         self,
@@ -384,7 +200,10 @@ class ContextRestorer:
         assets_before: Dict[str, Any],
     ) -> Dict[str, str]:
         """Return a ``{field: rel_path}`` dict for newly-set asset files."""
-        fields = _ASSET_FIELDS.get(resource_id, [])
+        fields = _RESOURCE_CACHE_SPECS.get(
+            resource_id, ResourceCacheSpec([], None)
+        ).asset_fields
+
         asset_paths: Dict[str, str] = {}
         for field in fields:
             value = getattr(ctx.assets, field, None)
@@ -396,202 +215,36 @@ class ContextRestorer:
                     asset_paths[field] = str(value)
         return asset_paths
 
-    def save_complex_state(
-        self, resource_id: str, ctx: SceneResourceContext
-    ) -> Optional[str]:
-        """Persist complex context state; return relative path or ``None``."""
-        if resource_id == "user_assets":
-            return self._save_user_assets(ctx)
-        if resource_id == "target_vegetation":
-            return self._save_vegetation(ctx)
-        if resource_id == "hamster_data":
-            return self._save_hamster(ctx)
-        if resource_id in ("target_texture", "buffer_texture", "background_texture"):
-            return self._save_region_material_indices(ctx)
-        return None
-
-    def _save_user_assets(self, ctx: SceneResourceContext) -> Optional[str]:
-        state: Dict[str, Any] = {
-            "processed_objects": [],
-            "inline_materials": {},
-            "exclusion_zones": [],
-        }
-
-        for obj in getattr(ctx, "processed_objects", []):
-            try:
-                state["processed_objects"].append(_serialize_obj(obj))
-            except Exception as exc:
-                logging.warning("Could not serialize processed_object: %s", exc)
-
-        inline = getattr(ctx, "inline_materials", {})
-        if inline:
-            state["inline_materials"] = {
-                k: _serialize_obj(v) for k, v in inline.items()
-            }
-
-        for zone in getattr(ctx, "vegetation_exclusion_zones", []):
-            source = zone.get("source", "") if isinstance(zone, dict) else ""
-            if source.startswith("asset_"):
-                entry = dict(zone)
-                geom = entry.pop("geometry", None)
-                if geom is not None:
-                    try:
-                        entry["geometry_wkt"] = geom.wkt
-                    except Exception:
-                        entry["geometry_wkt"] = str(geom)
-                state["exclusion_zones"].append(entry)
-
-        return self._write_state("user_assets_state.json", state)
-
-    def _save_vegetation(self, ctx: SceneResourceContext) -> Optional[str]:
-        instances = getattr(ctx, "vegetation_instances", [])
-        return self._write_state("vegetation_state.json", instances)
-
-    def _save_hamster(self, ctx: SceneResourceContext) -> Optional[str]:
-        paths = getattr(ctx, "hamster_data_paths", {}) or {}
-        return self._write_state(
-            "hamster_state.json", {k: str(v) for k, v in paths.items()}
-        )
-
-    def _save_region_material_indices(self, ctx: SceneResourceContext) -> Optional[str]:
-        indices = getattr(ctx, "region_material_indices", None)
-        if indices is None:
-            return None
-        return self._write_state("region_material_indices.json", indices)
-
-    def _write_state(self, filename: str, data: Any) -> str:
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        path = self.cache_dir / filename
-        with path.open("w") as f:
-            json.dump(data, f, indent=2, default=str)
-        return f".cache/{filename}"
-
-    # ── restore ───────────────────────────────────────────────────────────────
-
     def restore(
         self,
         resource_id: str,
         entry: dict,
         ctx: SceneResourceContext,
     ) -> Any:
-        """Restore context state from *entry* and return the cached result."""
-        # Restore ctx.assets fields
+        """Restore asset paths from *entry* and return the cached result."""
         for field, rel_path in entry.get("asset_fields", {}).items():
             setattr(ctx.assets, field, ctx.output_dir / rel_path)
-
-        # Restore complex state
-        state_rel = entry.get("context_state_file")
-        if state_rel:
-            state_path = ctx.output_dir / state_rel
-            if resource_id == "user_assets":
-                self._restore_user_assets(ctx, state_path)
-            elif resource_id == "target_vegetation":
-                self._restore_vegetation(ctx, state_path)
-            elif resource_id == "hamster_data":
-                self._restore_hamster(ctx, state_path)
-            elif resource_id in (
-                "target_texture",
-                "buffer_texture",
-                "background_texture",
-            ):
-                self._restore_region_material_indices(ctx, state_path)
-
         return self._get_result(resource_id, entry, ctx)
-
-    def _restore_user_assets(self, ctx: SceneResourceContext, path: UPath) -> None:
-        if not path.exists():
-            return
-        with path.open("r") as f:
-            state = json.load(f)
-        ctx.processed_objects = state.get("processed_objects", [])
-        ctx.inline_materials = state.get("inline_materials", {})
-        for zone in state.get("exclusion_zones", []):
-            entry = dict(zone)
-            wkt_str = entry.pop("geometry_wkt", None)
-            if wkt_str:
-                try:
-                    from shapely import wkt as shapely_wkt
-
-                    entry["geometry"] = shapely_wkt.loads(wkt_str)
-                except Exception:
-                    pass
-            ctx.vegetation_exclusion_zones.append(entry)
-
-    def _restore_vegetation(self, ctx: SceneResourceContext, path: UPath) -> None:
-        if not path.exists():
-            return
-        with path.open("r") as f:
-            ctx.vegetation_instances = json.load(f)
-
-    def _restore_hamster(self, ctx: SceneResourceContext, path: UPath) -> None:
-        if not path.exists():
-            return
-        with path.open("r") as f:
-            data = json.load(f)
-        ctx.hamster_data_paths = {k: UPath(v) for k, v in data.items()}
-
-    def _restore_region_material_indices(
-        self, ctx: SceneResourceContext, path: UPath
-    ) -> None:
-        if not path.exists():
-            return
-        with path.open("r") as f:
-            ctx.region_material_indices = json.load(f)
 
     def _get_result(
         self, resource_id: str, entry: dict, ctx: SceneResourceContext
     ) -> Any:
         """Return the value to store in ``results[resource_id]``."""
-        result_field = _RESULT_FIELD.get(resource_id)
+        result_field = _RESOURCE_CACHE_SPECS.get(
+            resource_id, ResourceCacheSpec([], None)
+        ).result_field
         if result_field is not None:
             return getattr(ctx.assets, result_field, None)
-
-        if resource_id == "user_assets":
-            asset_fields = entry.get("asset_fields", {})
-            if asset_fields:
-                first_rel = next(iter(asset_fields.values()))
-                return ctx.output_dir / first_rel
-            return None
-
-        if resource_id == "target_vegetation":
-            return getattr(ctx, "vegetation_instances", [])
-
-        if resource_id == "hamster_data":
-            return getattr(ctx, "hamster_data_paths", {})
-
         return None
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Serialisation helpers
-# ──────────────────────────────────────────────────────────────────────────────
-
-
-def _serialize_obj(obj: Any) -> Any:
-    """Recursively convert *obj* to a JSON-compatible structure."""
-    if isinstance(obj, dict):
-        return {k: _serialize_obj(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_serialize_obj(v) for v in obj]
-    try:
-        json.dumps(obj)
-        return obj
-    except (TypeError, ValueError):
-        return str(obj)
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Cached DAG executor
-# ──────────────────────────────────────────────────────────────────────────────
-
-
 class CachedDAGExecutor(DAGExecutor):
-    """DAGExecutor that skips up-to-date resources using Merkle hashing.
+    """DAGExecutor that skips up-to-date resources using hashing.
 
     Resources are grouped into three categories:
 
     * **ALWAYS_EXECUTE** — cheap in-memory resources; always run but their
-      hashes still feed downstream Merkle checks.
+      hashes still feed downstream checks.
     * **NEVER_CACHE** — always regenerate (e.g. ``scene_description``).
     * **CACHEABLE** — all other resources; skipped when hash matches and all
       output files still exist on disk.
@@ -611,7 +264,7 @@ class CachedDAGExecutor(DAGExecutor):
         manifest_helper = CacheManifest(context.output_dir)
         manifest = manifest_helper.load() if use_cache else {}
         effective_hashes = compute_all_hashes(context.config, self.registry)
-        restorer = ContextRestorer(context.output_dir / ".cache")
+        restorer = ContextRestorer()
         resources_entry: dict = manifest.setdefault("resources", {})
         results: Dict[str, Any] = {}
 
@@ -674,8 +327,6 @@ class CachedDAGExecutor(DAGExecutor):
 
         return results
 
-    # ── private helpers ───────────────────────────────────────────────────────
-
     def _is_cache_valid(
         self,
         resource_id: str,
@@ -693,6 +344,15 @@ class CachedDAGExecutor(DAGExecutor):
         for rel_path in entry.get("asset_fields", {}).values():
             if not (context.output_dir / rel_path).exists():
                 return False
+
+        # Deep validation: check secondary files (e.g. .npy, .ply)
+        validator = _DEEP_VALIDATORS.get(resource_id)
+        if validator is not None:
+            for field, rel_path in entry.get("asset_fields", {}).items():
+                setattr(context.assets, field, context.output_dir / rel_path)
+            if not validator(context):
+                return False
+
         return True
 
     def _update_manifest_entry(
@@ -705,11 +365,9 @@ class CachedDAGExecutor(DAGExecutor):
         resources_entry: dict,
     ) -> None:
         asset_fields = restorer.save_assets(resource_id, context, assets_snapshot)
-        state_file = restorer.save_complex_state(resource_id, context)
         resources_entry[resource_id] = {
             "effective_hash": hashes.get(resource_id, ""),
             "asset_fields": asset_fields,
-            "context_state_file": state_file,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
 

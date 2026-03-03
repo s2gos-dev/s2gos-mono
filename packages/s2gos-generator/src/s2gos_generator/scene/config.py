@@ -312,18 +312,6 @@ def create_s2gos_scene(
 
     materials = load_materials(material_config_path)
 
-    inline_materials = kwargs.get("inline_materials", {})
-    if inline_materials:
-        logging.info(
-            f"Adding {len(inline_materials)} inline material definitions from UserAssets"
-        )
-        for mat_id, mat_def in inline_materials.items():
-            if mat_id in materials:
-                logging.warning(
-                    f"Inline material '{mat_id}' overwrites existing material from materials.json"
-                )
-            materials[mat_id] = Material.from_dict(mat_def, id=mat_id)
-
     if additional_material_libraries:
         for library in additional_material_libraries:
             for mat_id, mat_def in library.items():
@@ -355,93 +343,6 @@ def create_s2gos_scene(
 
     processed_objects = kwargs.get("processed_objects", [])
     objects = processed_objects if processed_objects else []
-
-    vegetation_collection_references = kwargs.get(
-        "vegetation_collection_references", None
-    )
-    if vegetation_collection_references:
-        from ..assets.xml_importer import create_tree_shapegroup
-        from ..resources.vegetation import load_vegetation_collection_binary
-
-        logging.info(
-            f"Loading {len(vegetation_collection_references)} vegetation collections from binary format"
-        )
-        for vegetation_collection in vegetation_collection_references:
-            try:
-                data_file = vegetation_collection["data_file"]
-                if output_dir:
-                    binary_path = output_dir / data_file
-                else:
-                    binary_path = data_file
-
-                vegetation_data_array = load_vegetation_collection_binary(binary_path)
-
-                if len(vegetation_data_array) > 0:
-                    species_name = vegetation_collection["name"]
-                    vegetation_xml_file = vegetation_collection.get(
-                        "model_file", "tree.xml"
-                    )
-                    vegetation_xml_path = vegetation_xml_file.upath
-                    asset_basename = vegetation_xml_path.stem
-
-                    vegetation_shapegroup, vegetation_materials = (
-                        create_tree_shapegroup(vegetation_xml_path, output_dir)
-                    )
-                    for mat_id, mat_def in vegetation_materials.items():
-                        namespaced_mat_id = f"{species_name}_{asset_basename}_{mat_id}"
-                        if namespaced_mat_id not in materials:
-                            materials[namespaced_mat_id] = Material.from_dict(
-                                mat_def, id=namespaced_mat_id
-                            )
-
-                    for component_key, component in vegetation_shapegroup.items():
-                        if isinstance(component, dict) and "bsdf" in component:
-                            original_mat_id = component["bsdf"]["id"]
-                            if original_mat_id.startswith("_mat_"):
-                                raw_mat_id = original_mat_id[
-                                    5:
-                                ]  # Remove '_mat_' prefix
-                                component["bsdf"]["id"] = (
-                                    f"_mat_{species_name}_{asset_basename}_{raw_mat_id}"
-                                )
-
-                    species_shapegroup_id = (
-                        f"vegetation_shapegroup_{species_name}_{asset_basename}"
-                    )
-                    species_group_id = (
-                        f"vegetation_group_{species_name}_{asset_basename}"
-                    )
-
-                    vegetation_shapegroup["id"] = species_group_id
-
-                    objects.append(
-                        {
-                            "object_id": species_shapegroup_id,
-                            "type": "shapegroup",
-                            **vegetation_shapegroup,
-                        }
-                    )
-
-                    vegetation_collection_obj = {
-                        "object_id": f"vegetation_collection_{species_name}_{asset_basename}",
-                        "type": "vegetation_collection",
-                        "shapegroup_ref": species_group_id,
-                        "data_file": data_file
-                        if not output_dir
-                        else str(binary_path.relative_to(output_dir)),
-                        "count": len(vegetation_data_array),
-                        "collection_name": f"{species_name}_{asset_basename}",
-                    }
-                    objects.append(vegetation_collection_obj)
-
-                    logging.info(
-                        f"Added vegetation collection '{species_name}_{asset_basename}' with {len(vegetation_data_array)} instances (model: {vegetation_xml_file})"
-                    )
-
-            except Exception as e:
-                logging.warning(
-                    f"Failed to load binary vegetation collection '{vegetation_collection.get('name', 'unknown')}': {e}"
-                )
 
     scene_description = SceneDescription(
         name=scene_name,

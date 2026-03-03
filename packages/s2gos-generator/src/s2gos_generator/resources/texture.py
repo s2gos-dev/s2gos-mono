@@ -6,10 +6,28 @@ from typing import Optional
 
 import numpy as np
 import xarray as xr
+import yaml
 from PIL import Image
+from s2gos_utils.io.paths import open_file
 
 from ..assets.terrain_material import TerrainMaterialGenerator
 from ..core.context import SceneResourceContext
+
+
+def _get_or_create_region_material_indices(ctx: SceneResourceContext) -> dict:
+    """Get region material indices, loading from sidecar or creating fresh."""
+    # Try to load from existing sidecar (written by target_texture)
+    if (
+        ctx.assets.region_indices_file is not None
+        and ctx.assets.region_indices_file.exists()
+    ):
+        with open_file(ctx.assets.region_indices_file, "r") as f:
+            return yaml.safe_load(f) or {}
+
+    region_materials = set(r.material_name for r in ctx.config.material_regions)
+    return {
+        mat_name: idx for idx, mat_name in enumerate(sorted(region_materials), start=11)
+    }
 
 
 def _apply_region_materials_to_texture(
@@ -61,15 +79,11 @@ def _apply_region_materials_to_texture(
         else texture_array.copy()
     )
 
-    if not hasattr(ctx, "region_material_indices"):
-        ctx.region_material_indices = {}
-        region_materials = set(r.material_name for r in ctx.config.material_regions)
-        for idx, mat_name in enumerate(sorted(region_materials), start=11):
-            ctx.region_material_indices[mat_name] = idx
+    region_material_indices = _get_or_create_region_material_indices(ctx)
 
     modified = False
     for region_config in applicable_regions:
-        material_idx = ctx.region_material_indices[region_config.material_name]
+        material_idx = region_material_indices[region_config.material_name]
 
         try:
             geometry = geometry_from_dict(region_config.geometry)
@@ -185,6 +199,19 @@ def generate_target_texture(ctx: SceneResourceContext) -> Optional[Path]:
     ctx.assets.selection_texture_file = selection_texture_path
     if preview_texture_path:
         ctx.assets.preview_texture_file = preview_texture_path
+
+    region_indices = (
+        _get_or_create_region_material_indices(ctx)
+        if ctx.config.material_regions
+        else None
+    )
+    if region_indices:
+        sidecar_path = ctx.data_dir / "region_material_indices.yml"
+        ctx.data_dir.mkdir(parents=True, exist_ok=True)
+        with open_file(sidecar_path, "w") as f:
+            yaml.dump(region_indices, f, default_flow_style=False, indent=2)
+        ctx.assets.region_indices_file = sidecar_path
+        logging.info(f"Saved region material indices sidecar: {sidecar_path}")
 
     logging.info(f"Target texture: {selection_texture_path}")
     return selection_texture_path

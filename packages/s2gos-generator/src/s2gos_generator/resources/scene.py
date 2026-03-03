@@ -4,8 +4,26 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import yaml
+from s2gos_utils.io.paths import open_file
+from s2gos_utils.scene import SceneDescription
+from upath import UPath
+
 from ..core.context import SceneResourceContext
 from ..scene import create_s2gos_scene
+
+
+def _relative_to(path, base) -> str:
+    """Return a relative path string from *path* to *base*."""
+    return str(path.relative_to(base))
+
+
+def _read_sidecar_yaml(path: Optional[UPath]) -> dict:
+    """Read a YAML sidecar file, returning {} if path is None or missing."""
+    if path is None or not path.exists():
+        return {}
+    with open_file(path, "r") as f:
+        return yaml.safe_load(f) or {}
 
 
 def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
@@ -63,10 +81,10 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
     if ctx.has_buffer and ctx.assets.buffer_dem_file:
         buffer_dem_file = str(ctx.assets.buffer_dem_file.relative_to(ctx.output_dir))
 
-    processed_objects = getattr(ctx, "processed_objects", None)
-    inline_materials = getattr(ctx, "inline_materials", {})
-
-    hamster_data_paths = getattr(ctx, "hamster_data_paths", None)
+    hamster_data_paths = {
+        k: UPath(v)
+        for k, v in _read_sidecar_yaml(ctx.assets.hamster_paths_file).items()
+    } or None
     if hamster_data_paths:
         logging.info(
             f"Scene description found HAMSTER data paths: {hamster_data_paths}"
@@ -74,68 +92,22 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
     else:
         logging.info("Scene description: No HAMSTER data paths found in context")
 
-    additional_material_libraries = getattr(ctx, "additional_material_libraries", None)
+    additional_material_libraries = ctx.additional_material_libraries
 
-    vegetation_instances = getattr(ctx, "vegetation_instances", None)
-    vegetation_collection_references = []
+    region_material_indices = _read_sidecar_yaml(ctx.assets.region_indices_file) or None
 
-    region_materials = getattr(ctx, "region_materials", None)
-    if region_materials:
-        logging.info(f"Adding {len(region_materials)} region materials to scene")
-        if additional_material_libraries is None:
-            additional_material_libraries = []
-        additional_material_libraries.append(region_materials)
-
-    if vegetation_instances:
-        logging.info(
-            f"Processing {len(vegetation_instances)} vegetation instances for hybrid scene format"
+    # Build include_files from available sidecars
+    include_files = []
+    if ctx.assets.user_assets_file:
+        include_files.append(ctx.assets.user_assets_file.relative_to(ctx.output_dir))
+    if ctx.assets.vegetation_objects_file:
+        include_files.append(
+            ctx.assets.vegetation_objects_file.relative_to(ctx.output_dir)
         )
 
-        from .vegetation import save_vegetation_collection_binary
-
-        species_groups = {}
-        for instance in vegetation_instances:
-            species_name = instance.get("species", "unknown")
-            asset_xml = instance.get("asset_xml", "tree.xml")
-            key = (species_name, asset_xml)
-
-            if key not in species_groups:
-                species_groups[key] = []
-            species_groups[key].append(instance)
-
-        logging.info(f"Found {len(species_groups)} distinct species groups")
-
-        for (species_name, asset_xml), instances in species_groups.items():
-            asset_basename = asset_xml.upath.stem  # Extract filename without extension
-            binary_filename = f"{ctx.scene_name}_{species_name}_{asset_basename}.npy"
-            binary_path = ctx.output_dir / binary_filename
-
-            vegetation_metadata = save_vegetation_collection_binary(
-                instances, binary_path
-            )
-
-            if vegetation_metadata["count"] > 0:
-                vegetation_collection_references.append(
-                    {
-                        "type": "vegetation_collection",
-                        "name": species_name,
-                        "material": "forest_tree",
-                        "data_file": binary_filename,
-                        "model_file": asset_xml,
-                        "count": vegetation_metadata["count"],
-                        "bounds": vegetation_metadata["bounds"],
-                        "file_size_bytes": vegetation_metadata["file_size_bytes"],
-                        "format": "numpy_structured_array",
-                        "dtype_info": vegetation_metadata["dtype_info"],
-                    }
-                )
-
-                logging.info(
-                    f"Saved {species_name} vegetation: {vegetation_metadata['count']} instances "
-                    f"({vegetation_metadata['file_size_bytes']} bytes) → {binary_filename}"
-                )
-
-        vegetation_instances = None
+    # Inline materials from user assets (not in sidecar — they're in user_assets.yml
+    # which gets merged via include_files)
+    inline_materials = getattr(ctx, "inline_materials", {})
 
     scene_description = create_s2gos_scene(
         scene_name=ctx.scene_name,
@@ -158,24 +130,28 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         dem_name=ctx.config.data_sources.dem.name,
         landcover_name=ctx.config.data_sources.landcover.name,
         material_config_path=ctx.config.data_sources.material_config_path.upath,
-        # Use baresoil for tree areas - 3D trees handle the vegetation, surface should be soil
-        landcover_mapping_overrides={
-            # "tree_cover": "baresoil",  # Surface under 3D trees
-            # "shrubland": "baresoil",  # Surface under 3D shrubs
-        },
+        landcover_mapping_overrides={},
         atmosphere_config=ctx.config.atmosphere,
         hamster_data_paths=hamster_data_paths,
-        processed_objects=processed_objects,
         inline_materials=inline_materials,
         additional_material_libraries=additional_material_libraries,
-        vegetation_collection_references=vegetation_collection_references,
         region_material_indices=getattr(ctx, "region_material_indices", None),
         random_seed=ctx.config.random_seed,
     )
 
+    # Set include_files on the scene description
+    scene_description.include_files = include_files
+
     # Save scene description to file
     scene_description_file = ctx.output_dir / f"{ctx.scene_name}.yml"
     scene_description.save_yaml(scene_description_file)
+
+    # Merge includes in-memory for the return value for downstream consumers
+    for rel_path in include_files:
+        SceneDescription._merge_include(
+            scene_description,
+            SceneDescription._load_include_file(ctx.output_dir / rel_path),
+        )
 
     # Store in assets
     ctx.assets.config_file = scene_description_file
@@ -186,6 +162,8 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
 
     logging.info("=== Scene Generation Complete ===")
     logging.info(f"Scene description saved to: {scene_description_file}")
+    if include_files:
+        logging.info(f"  Include files: {include_files}")
 
     # Log summary of generated assets
     logging.info("Generated Assets Summary:")
@@ -199,6 +177,7 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
     if background_selection_texture:
         logging.info(f"  Background texture: {background_texture_file}")
 
+    processed_objects = getattr(ctx, "processed_objects", None)
     if processed_objects:
         logging.info(f"  User assets: {len(processed_objects)} objects")
 

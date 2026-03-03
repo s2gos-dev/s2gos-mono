@@ -6,7 +6,8 @@ from typing import Optional
 
 import numpy as np
 import xarray as xr
-from s2gos_utils.io.paths import mkdir
+import yaml
+from s2gos_utils.io.paths import mkdir, open_file
 from upath import UPath
 from xarray_regrid import Regridder
 
@@ -118,11 +119,22 @@ def process_hamster_data(ctx: SceneResourceContext) -> Optional[Path]:
                 result_paths["background"] = path
 
         if result_paths:
-            ctx.hamster_data_paths = result_paths
             logging.info(f"HAMSTER data processed for {len(result_paths)} areas")
             for area, path in result_paths.items():
                 logging.info(f"  {area}: {path}")
-            return ctx.data_dir
+
+            sidecar_path = ctx.data_dir / "hamster_paths.yml"
+            with open_file(sidecar_path, "w") as f:
+                yaml.dump(
+                    {k: str(v) for k, v in result_paths.items()},
+                    f,
+                    default_flow_style=False,
+                    indent=2,
+                )
+            ctx.assets.hamster_paths_file = sidecar_path
+            logging.info(f"Saved HAMSTER paths sidecar: {sidecar_path}")
+
+            return ctx.assets.hamster_paths_file
         else:
             logging.warning(
                 "No HAMSTER result paths - ctx.hamster_data_paths will not be set"

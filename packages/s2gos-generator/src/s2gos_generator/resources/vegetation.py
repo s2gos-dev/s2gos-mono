@@ -2,10 +2,12 @@
 
 import logging
 import random
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import xarray as xr
+import yaml
+from s2gos_utils.io.paths import open_file
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import distance_transform_edt
 
@@ -13,15 +15,43 @@ from ..core.context import SceneResourceContext
 from ..core.exceptions import DataNotFoundError
 
 
+def _load_exclusion_zones(ctx: SceneResourceContext) -> List[Dict[str, Any]]:
+    """Load all exclusion zones from sidecar files.
+
+    Reads exclusion zones from both the config-derived sidecar
+    (exclusion_zones.yml) and user-asset-derived sidecar (user_assets.yml).
+
+    Returns:
+        List of exclusion zone dicts with 'geometry' (shapely) and 'source' keys.
+    """
+    from shapely import wkt as shapely_wkt
+
+    zones: List[Dict[str, Any]] = []
+
+    for path in [ctx.assets.exclusion_zones_file, ctx.assets.user_assets_file]:
+        if path is None or not path.exists():
+            continue
+        with open_file(path, "r") as f:
+            data = yaml.safe_load(f) or {}
+        for zone in data.get("exclusion_zones", []):
+            entry = dict(zone)
+            wkt_str = entry.pop("geometry_wkt", None)
+            if wkt_str:
+                entry["geometry"] = shapely_wkt.loads(wkt_str)
+                zones.append(entry)
+
+    return zones
+
+
 def _filter_by_exclusion_zones(
     vegetation_instances: List[Dict[str, Any]],
-    ctx: SceneResourceContext,
+    exclusion_zones: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """Filter vegetation instances by exclusion zones.
 
     Args:
         vegetation_instances: List of vegetation placement dicts
-        ctx: Scene resource context with exclusion zones
+        exclusion_zones: List of exclusion zone dicts with 'geometry' keys
 
     Returns:
         Filtered list with instances outside exclusion zones
@@ -32,17 +62,16 @@ def _filter_by_exclusion_zones(
     if not vegetation_instances:
         return vegetation_instances
 
-    all_exclusion_zones = getattr(ctx, "vegetation_exclusion_zones", [])
-    if not all_exclusion_zones:
+    if not exclusion_zones:
         logging.info("No exclusion zones to apply")
         return vegetation_instances
 
     logging.info(
-        f"Applying {len(all_exclusion_zones)} exclusion zones to "
+        f"Applying {len(exclusion_zones)} exclusion zones to "
         f"{len(vegetation_instances)} vegetation instances"
     )
 
-    geometries = [zone["geometry"] for zone in all_exclusion_zones]
+    geometries = [zone["geometry"] for zone in exclusion_zones]
     spatial_index = STRtree(geometries)
 
     filtered_instances = []
@@ -71,7 +100,7 @@ def _filter_by_exclusion_zones(
 
 def process_target_vegetation(
     ctx: SceneResourceContext,
-) -> List[Dict[str, Any]]:
+) -> Any:
     """Process multi-species vegetation placement using landcover data.
 
     Args:
@@ -87,7 +116,7 @@ def process_target_vegetation(
     vegetation_config = ctx.config.vegetation_placement
     if vegetation_config is None or not vegetation_config.enabled:
         logging.info("Vegetation disabled - skipping vegetation placement")
-        return []
+        return None
 
     landcover_path = ctx.dependency_outputs.get("target_landcover")
     dem_path = ctx.dependency_outputs.get("target_dem")
@@ -114,12 +143,120 @@ def process_target_vegetation(
     vegetation_instances = _process_vegetation_with_shared_datasets(
         landcover_path, dem_path, vegetation_config
     )
-    if getattr(ctx, "vegetation_exclusion_zones", []):
-        vegetation_instances = _filter_by_exclusion_zones(vegetation_instances, ctx)
 
-    ctx.vegetation_instances = vegetation_instances
+    exclusion_zones = _load_exclusion_zones(ctx)
+    if exclusion_zones:
+        vegetation_instances = _filter_by_exclusion_zones(
+            vegetation_instances, exclusion_zones
+        )
 
-    return vegetation_instances
+    if not vegetation_instances:
+        return None
+
+    vegetation_objects, vegetation_materials = _build_vegetation_objects(
+        vegetation_instances, ctx
+    )
+
+    if vegetation_objects:
+        sidecar_data = {"objects": vegetation_objects}
+        if vegetation_materials:
+            sidecar_data["materials"] = vegetation_materials
+        sidecar_path = ctx.data_dir / "vegetation_objects.yml"
+        ctx.data_dir.mkdir(parents=True, exist_ok=True)
+        with open_file(sidecar_path, "w") as f:
+            yaml.dump(sidecar_data, f, default_flow_style=False, indent=2)
+        ctx.assets.vegetation_objects_file = sidecar_path
+        logging.info(f"Saved vegetation objects sidecar: {sidecar_path}")
+
+    return ctx.assets.vegetation_objects_file
+
+
+def _build_vegetation_objects(
+    vegetation_instances: List[Dict[str, Any]],
+    ctx: SceneResourceContext,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Group vegetation instances by species/asset, save .npy binaries, and build SD objects.
+
+    Returns:
+        List of SceneDescription-format object dicts (shapegroups + vegetation_collections).
+    """
+    from ..assets.xml_importer import create_tree_shapegroup
+
+    species_groups: Dict[tuple, List[Dict[str, Any]]] = {}
+    for instance in vegetation_instances:
+        species_name = instance.get("species", "unknown")
+        asset_xml = instance.get("asset_xml", "tree.xml")
+        key = (species_name, asset_xml)
+        if key not in species_groups:
+            species_groups[key] = []
+        species_groups[key].append(instance)
+
+    logging.info(f"Found {len(species_groups)} distinct vegetation species groups")
+
+    objects: List[Dict[str, Any]] = []
+    all_materials: Dict[str, Any] = {}  # namespaced materials for the sidecar
+
+    for (species_name, asset_xml), instances in species_groups.items():
+        asset_xml_path = asset_xml.upath
+        asset_basename = asset_xml_path.stem
+
+        binary_filename = f"{ctx.scene_name}_{species_name}_{asset_basename}.npy"
+        binary_path = ctx.data_dir / binary_filename
+        ctx.data_dir.mkdir(parents=True, exist_ok=True)
+
+        vegetation_metadata = save_vegetation_collection_binary(instances, binary_path)
+
+        if vegetation_metadata["count"] == 0:
+            continue
+
+        vegetation_shapegroup, vegetation_materials = create_tree_shapegroup(
+            asset_xml_path, ctx.output_dir
+        )
+
+        for mat_id, mat_def in vegetation_materials.items():
+            namespaced_mat_id = f"{species_name}_{asset_basename}_{mat_id}"
+            all_materials[namespaced_mat_id] = mat_def
+
+        for component_key, component in vegetation_shapegroup.items():
+            if isinstance(component, dict) and "bsdf" in component:
+                original_mat_id = component["bsdf"]["id"]
+                if original_mat_id.startswith("_mat_"):
+                    raw_mat_id = original_mat_id[5:]
+                    component["bsdf"]["id"] = (
+                        f"_mat_{species_name}_{asset_basename}_{raw_mat_id}"
+                    )
+
+        species_shapegroup_id = f"vegetation_shapegroup_{species_name}_{asset_basename}"
+        species_group_id = f"vegetation_group_{species_name}_{asset_basename}"
+        vegetation_shapegroup["id"] = species_group_id
+
+        shapegroup_obj = {
+            "object_id": species_shapegroup_id,
+            "type": "shapegroup",
+            **vegetation_shapegroup,
+        }
+
+        # Relative data_file path from output_dir
+        data_file_rel = str(binary_path.relative_to(ctx.output_dir))
+
+        vegetation_collection_obj = {
+            "object_id": f"vegetation_collection_{species_name}_{asset_basename}",
+            "type": "vegetation_collection",
+            "shapegroup_ref": species_group_id,
+            "data_file": data_file_rel,
+            "count": len(instances),
+            "collection_name": f"{species_name}_{asset_basename}",
+        }
+
+        objects.append(shapegroup_obj)
+        objects.append(vegetation_collection_obj)
+
+        logging.info(
+            f"Built vegetation objects for {species_name}/{asset_basename}: "
+            f"{vegetation_metadata['count']} instances → {binary_filename}"
+        )
+
+    return objects, all_materials
 
 
 def _process_vegetation_with_shared_datasets(

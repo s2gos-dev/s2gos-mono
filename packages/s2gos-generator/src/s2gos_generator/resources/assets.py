@@ -4,6 +4,9 @@ import logging
 from pathlib import Path
 from typing import List, Literal, Optional, Tuple, Union
 
+import yaml
+from s2gos_utils.io.paths import open_file
+
 from ..core.context import SceneResourceContext
 
 
@@ -152,10 +155,6 @@ def process_user_assets(ctx: SceneResourceContext) -> Optional[Path]:
                 f"Failed to process user asset {asset.object_id}: {e}"
             ) from e
 
-    ctx.processed_objects = processed_objects
-    ctx.inline_materials = inline_materials
-    ctx.vegetation_exclusion_zones.extend(exclusion_zones)
-
     logging.info(f"Processed {len(processed_objects)} user assets")
     if inline_materials:
         logging.info(f"Extracted {len(inline_materials)} inline material definitions")
@@ -163,17 +162,43 @@ def process_user_assets(ctx: SceneResourceContext) -> Optional[Path]:
         logging.info(
             f"Extracted {len(exclusion_zones)} vegetation exclusion zones from assets"
         )
-    return objects_dir
+
+    if processed_objects or inline_materials or exclusion_zones:
+        sidecar_data = {}
+        if processed_objects:
+            sidecar_data["objects"] = processed_objects
+        if inline_materials:
+            sidecar_data["materials"] = inline_materials
+        if exclusion_zones:
+            sidecar_data["exclusion_zones"] = [
+                {
+                    "source": z["source"],
+                    "geometry_wkt": z["geometry"].wkt,
+                }
+                for z in exclusion_zones
+            ]
+
+        sidecar_path = ctx.data_dir / "user_assets.yml"
+        ctx.data_dir.mkdir(parents=True, exist_ok=True)
+
+        with open_file(sidecar_path, "w") as f:
+            yaml.dump(sidecar_data, f, default_flow_style=False, indent=2)
+        ctx.assets.user_assets_file = sidecar_path
+        logging.info(f"Saved user assets sidecar: {sidecar_path}")
+
+    return ctx.assets.user_assets_file
 
 
-def process_vegetation_exclusion_zones(ctx: SceneResourceContext) -> list[dict]:
+def process_vegetation_exclusion_zones(ctx: SceneResourceContext) -> None:
     """Process standalone vegetation exclusion zones.
+
+    Saves exclusion zones to a sidecar YAML file.
 
     Args:
         ctx: Scene resource context
 
     Returns:
-        List of exclusion zone dictionaries with shapely geometries
+        None
     """
     from shapely.geometry import Point, Polygon, box
 
@@ -181,7 +206,7 @@ def process_vegetation_exclusion_zones(ctx: SceneResourceContext) -> list[dict]:
 
     if not ctx.config.vegetation_exclusion_zones:
         logging.info("No standalone vegetation exclusion zones configured")
-        return []
+        return None
 
     coords = ctx.coordinate_system
     exclusion_zones = []
@@ -236,8 +261,25 @@ def process_vegetation_exclusion_zones(ctx: SceneResourceContext) -> list[dict]:
                 f"Failed to process exclusion zone '{zone_config.zone_id}': {e}"
             )
 
-    ctx.vegetation_exclusion_zones.extend(exclusion_zones)
     logging.info(
         f"Processed {len(exclusion_zones)} standalone vegetation exclusion zones"
     )
+
+    if exclusion_zones:
+        sidecar_data = {
+            "exclusion_zones": [
+                {
+                    "source": z["source"],
+                    "geometry_wkt": z["geometry"].wkt,
+                }
+                for z in exclusion_zones
+            ]
+        }
+        sidecar_path = ctx.data_dir / "exclusion_zones.yml"
+        ctx.data_dir.mkdir(parents=True, exist_ok=True)
+        with open_file(sidecar_path, "w") as f:
+            yaml.dump(sidecar_data, f, default_flow_style=False, indent=2)
+        ctx.assets.exclusion_zones_file = sidecar_path
+        logging.info(f"Saved exclusion zones sidecar: {sidecar_path}")
+
     return None

@@ -56,10 +56,7 @@ class SceneResourceContext:
         # Scene-specific data
         self.assets = SceneAssets()
         self.additional_material_libraries = additional_material_libraries or []
-        self.processed_objects: List = []
-        self.vegetation_exclusion_zones: List = []
         self.scene_description: Optional[object] = None
-        self.hamster_data_paths: Optional[Dict[str, UPath]] = None
 
         # AOI polygon storage for geometric operations
         self._target_aoi_polygon: Optional[object] = None
