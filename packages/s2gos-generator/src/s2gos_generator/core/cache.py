@@ -116,7 +116,7 @@ _RESOURCE_CACHE_SPECS: Dict[str, ResourceCacheSpec] = {
         [
             "selection_texture_file",
             "preview_texture_file",
-            "region_material_indices_file",
+            "region_indices_file",
         ],
         "selection_texture_file",
     ),

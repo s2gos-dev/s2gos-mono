@@ -33,9 +33,6 @@ class SceneDescription:
 
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-    _LIST_FIELDS = ("objects", "material_regions")
-    _DICT_FIELDS = ("materials", "material_indices")
-
     def add_material(self, name: str, material_type: str, **properties) -> None:
         """Add a material definition."""
         material_dict = {"type": material_type, **properties}
@@ -113,6 +110,22 @@ class SceneDescription:
 
         return cls.from_dict(validated_data, base_dir=UPath(file_path).parent)
 
+    @staticmethod
+    def _deep_merge(target: dict, source: dict) -> None:
+        """Merge *source* into *target* recursively.  *target* wins on conflicts.
+
+        - Dicts: merge recursively, only adding keys missing from *target*
+        - Lists: extend *target* with *source* items
+        - Scalars: *target* wins (never overwritten)
+        """
+        for key, value in source.items():
+            if key not in target:
+                target[key] = value
+            elif isinstance(target[key], dict) and isinstance(value, dict):
+                SceneDescription._deep_merge(target[key], value)
+            elif isinstance(target[key], list) and isinstance(value, list):
+                target[key].extend(value)
+
     @classmethod
     def from_dict(
         cls, data: Dict[str, Any], base_dir: Optional[UPath] = None
@@ -124,33 +137,7 @@ class SceneDescription:
             base_dir: Directory used to resolve ``include_files`` paths.
                 When *None*, includes are stored but not resolved.
         """
-        # Handle backward compatibility: move extent_km to target.size_km if needed
-        target = data.get("target", {})
-        if "extent_km" in data and "size_km" not in target:
-            target = dict(target)  # Make a copy
-            target["size_km"] = data["extent_km"]
-
         include_files = data.pop("include_files", [])
-
-        scene = cls(
-            name=data["name"],
-            location=data["location"],
-            resolution_m=data["resolution_m"],
-            schema_version=data.get("schema_version", get_version()),
-            atmosphere=data.get("atmosphere"),
-            target=target,
-            buffer=data.get("buffer"),
-            background=data.get("background"),
-            objects=data.get("objects", []),
-            material_indices=data.get("material_indices", {}),
-            metadata=data.get("metadata", {}),
-            include_files=include_files,
-        )
-
-        if "materials" in data:
-            for name, mat_data in data["materials"].items():
-                mat_type = mat_data.pop("type")
-                scene.add_material(name, mat_type, **mat_data)
 
         if base_dir:
             for rel_path in include_files:
@@ -160,9 +147,40 @@ class SceneDescription:
                         f"Include file not found: {ext_path} "
                         f"(referenced from scene description)"
                     )
-                cls._merge_include(scene, cls._load_include_file(ext_path))
+                cls._deep_merge(data, cls._load_include_file(ext_path))
 
-        return scene
+        materials: Dict[str, Material] = {}
+        if "materials" in data:
+            for name, mat_data in data["materials"].items():
+                materials[name] = Material.from_dict(mat_data, id=name)
+
+        return cls(
+            name=data["name"],
+            location=data["location"],
+            resolution_m=data["resolution_m"],
+            schema_version=data.get("schema_version", get_version()),
+            materials=materials,
+            atmosphere=data.get("atmosphere"),
+            target=target,
+            buffer=data.get("buffer"),
+            background=data.get("background"),
+            objects=data.get("objects", []),
+            material_indices=data.get("material_indices", {}),
+            material_regions=data.get("material_regions", []),
+            metadata=data.get("metadata", {}),
+            include_files=include_files,
+        )
+
+    def resolve_includes(self, base_dir: UPath) -> "SceneDescription":
+        """Return a new SceneDescription with include files merged.
+
+        Round-trips through dict form so that ``from_dict`` handles includes
+        uniformly at the data level.  Returns *self* unchanged when there are
+        no include files.
+        """
+        if not self.include_files:
+            return self
+        return self.from_dict(self.to_dict(), base_dir=base_dir)
 
     @staticmethod
     def _load_include_file(path: UPath) -> Dict[str, Any]:
@@ -173,33 +191,3 @@ class SceneDescription:
                 return json.load(f)
             else:
                 return yaml.safe_load(f) or {}
-
-    @classmethod
-    def _merge_include(cls, scene: "SceneDescription", data: Dict[str, Any]) -> None:
-        """Merge data from an include file into *scene*.
-
-        Rules:
-        - List fields (objects, material_regions): extend
-        - Dict fields (materials, material_indices): update, main wins on conflict
-        - All other fields: ignored
-        """
-        for field_name in cls._LIST_FIELDS:
-            if field_name in data:
-                getattr(scene, field_name).extend(data[field_name])
-
-        for field_name in cls._DICT_FIELDS:
-            if field_name not in data:
-                continue
-            existing = getattr(scene, field_name)
-            incoming = data[field_name]
-            if field_name == "materials":
-                # Materials need Material.from_dict conversion
-                for name, mat_data in incoming.items():
-                    if name not in existing:
-                        mat_type = mat_data.pop("type")
-                        scene.add_material(name, mat_type, **mat_data)
-            else:
-                # For dicts like material_indices, merge with main winning
-                for k, v in incoming.items():
-                    if k not in existing:
-                        existing[k] = v

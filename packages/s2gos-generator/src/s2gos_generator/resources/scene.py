@@ -6,7 +6,6 @@ from typing import Optional
 
 import yaml
 from s2gos_utils.io.paths import open_file
-from s2gos_utils.scene import SceneDescription
 from upath import UPath
 
 from ..core.context import SceneResourceContext
@@ -99,10 +98,12 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
     # Build include_files from available sidecars
     include_files = []
     if ctx.assets.user_assets_file:
-        include_files.append(ctx.assets.user_assets_file.relative_to(ctx.output_dir))
+        include_files.append(
+            str(ctx.assets.user_assets_file.relative_to(ctx.output_dir))
+        )
     if ctx.assets.vegetation_objects_file:
         include_files.append(
-            ctx.assets.vegetation_objects_file.relative_to(ctx.output_dir)
+            str(ctx.assets.vegetation_objects_file.relative_to(ctx.output_dir))
         )
 
     # Inline materials from user assets (not in sidecar — they're in user_assets.yml
@@ -135,7 +136,7 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         hamster_data_paths=hamster_data_paths,
         inline_materials=inline_materials,
         additional_material_libraries=additional_material_libraries,
-        region_material_indices=getattr(ctx, "region_material_indices", None),
+        region_material_indices=region_material_indices,
         random_seed=ctx.config.random_seed,
     )
 
@@ -145,13 +146,7 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
     # Save scene description to file
     scene_description_file = ctx.output_dir / f"{ctx.scene_name}.yml"
     scene_description.save_yaml(scene_description_file)
-
-    # Merge includes in-memory for the return value for downstream consumers
-    for rel_path in include_files:
-        SceneDescription._merge_include(
-            scene_description,
-            SceneDescription._load_include_file(ctx.output_dir / rel_path),
-        )
+    scene_description = scene_description.resolve_includes(ctx.output_dir)
 
     # Store in assets
     ctx.assets.config_file = scene_description_file
