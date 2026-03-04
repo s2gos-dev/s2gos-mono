@@ -107,3 +107,41 @@ class SceneResourceContext:
                 center_lat=self.center_lat, center_lon=self.center_lon
             )
         return self._coord_system
+
+    @property
+    def target_aoi_polygon(self):
+        """Lazy AOI polygon for the target area."""
+        if self._target_aoi_polygon is None:
+            self._target_aoi_polygon = self.coordinate_system.create_scene_polygon(
+                self.aoi_size_km
+            )
+            corners = list(self._target_aoi_polygon.exterior.coords[:-1])
+            logging.info("AOI corners (lon, lat):")
+            for i, (lon, lat) in enumerate(corners):
+                logging.info("  Corner %d: (%.6f, %.6f)", i + 1, lat, lon)
+            logging.info(
+                "AOI polygon: %.1fkm × %.1fkm at (%.6f, %.6f)",
+                self.aoi_size_km,
+                self.aoi_size_km,
+                self.center_lat,
+                self.center_lon,
+            )
+        return self._target_aoi_polygon
+
+    @property
+    def buffer_aoi_polygon(self):
+        """Lazy AOI polygon for the buffer area, or None if unconfigured."""
+        if self._buffer_aoi_polygon is None and self.config.buffer is not None:
+            self._buffer_aoi_polygon = self.coordinate_system.create_scene_polygon(
+                self.config.buffer.size_km
+            )
+        return self._buffer_aoi_polygon
+
+    @property
+    def background_aoi_polygon(self):
+        """Lazy AOI polygon for the background area, or None if unconfigured."""
+        if self._background_aoi_polygon is None and self.config.background is not None:
+            self._background_aoi_polygon = self.coordinate_system.create_scene_polygon(
+                self.config.background.size_km
+            )
+        return self._background_aoi_polygon

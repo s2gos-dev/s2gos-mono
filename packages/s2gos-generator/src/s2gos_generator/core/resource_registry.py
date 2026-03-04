@@ -75,9 +75,13 @@ class ResourceRegistry:
 
     def _categorize_resource(self, resource_id: str) -> str:
         """Categorize a resource by its ID."""
-        if resource_id in {"aoi", "scene_description"} or resource_id.startswith(
-            "target_"
-        ):
+        if resource_id in {
+            "scene_description",
+            "target_dem",
+            "target_landcover",
+            "target_mesh",
+            "target_texture",
+        }:
             return "core"
         elif resource_id.startswith("buffer_"):
             return "buffer"

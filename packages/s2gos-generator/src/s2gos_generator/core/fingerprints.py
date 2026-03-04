@@ -30,30 +30,11 @@ class ResourceFingerprints:
         return method(config)
 
     @staticmethod
-    def _aoi(config) -> dict:
-        return config.location.model_dump()
-
-    @staticmethod
-    def _buffer_aoi(config) -> dict:
-        return {
-            "center_lat": config.location.center_lat,
-            "center_lon": config.location.center_lon,
-            "buffer_size_km": config.buffer.size_km if config.buffer else None,
-        }
-
-    @staticmethod
-    def _background_aoi(config) -> dict:
-        return {
-            "center_lat": config.location.center_lat,
-            "center_lon": config.location.center_lon,
-            "background_size_km": config.background.size_km
-            if config.background
-            else None,
-        }
-
-    @staticmethod
     def _target_dem(config) -> dict:
         return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "aoi_size_km": config.location.aoi_size_km,
             "target_resolution_m": config.target_resolution_m,
             "dem": config.data_sources.dem.model_dump(),
             "dem_fillna_value": config.processing.dem_fillna_value,
@@ -63,6 +44,9 @@ class ResourceFingerprints:
     @staticmethod
     def _buffer_dem(config) -> dict:
         return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "buffer_size_km": config.buffer.size_km if config.buffer else None,
             "buffer_resolution_m": config.buffer.resolution_m
             if config.buffer
             else None,
@@ -74,6 +58,9 @@ class ResourceFingerprints:
     @staticmethod
     def _target_landcover(config) -> dict:
         return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "aoi_size_km": config.location.aoi_size_km,
             "target_resolution_m": config.target_resolution_m,
             "landcover": config.data_sources.landcover.model_dump(),
         }
@@ -81,6 +68,9 @@ class ResourceFingerprints:
     @staticmethod
     def _buffer_landcover(config) -> dict:
         return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "buffer_size_km": config.buffer.size_km if config.buffer else None,
             "buffer_resolution_m": config.buffer.resolution_m
             if config.buffer
             else None,
@@ -90,6 +80,11 @@ class ResourceFingerprints:
     @staticmethod
     def _background_landcover(config) -> dict:
         return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "background_size_km": (
+                config.background.size_km if config.background else None
+            ),
             "background_resolution_m": (
                 config.background.resolution_m if config.background else None
             ),
@@ -167,6 +162,13 @@ class ResourceFingerprints:
     @staticmethod
     def _hamster_data(config) -> dict:
         return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "aoi_size_km": config.location.aoi_size_km,
+            "buffer_size_km": config.buffer.size_km if config.buffer else None,
+            "background_size_km": (
+                config.background.size_km if config.background else None
+            ),
             "hamster": config.hamster.model_dump() if config.hamster else None,
             "target_resolution_m": config.target_resolution_m,
             "buffer_resolution_m": config.buffer.resolution_m

@@ -40,7 +40,7 @@ def process_target_landcover(ctx: SceneResourceContext) -> Optional[Path]:
         Path to the generated landcover zarr file
     """
 
-    aoi_polygon = ctx._target_aoi_polygon
+    aoi_polygon = ctx.target_aoi_polygon
     if aoi_polygon is None:
         raise ValueError("Target AOI polygon not found in context")
 
@@ -65,7 +65,7 @@ def process_buffer_landcover(ctx: SceneResourceContext) -> Optional[Path]:
         Path to the generated buffer landcover zarr file, or None if buffer disabled
     """
 
-    buffer_aoi_polygon = ctx._buffer_aoi_polygon
+    buffer_aoi_polygon = ctx.buffer_aoi_polygon
     if buffer_aoi_polygon is None:
         logging.warning("Buffer AOI polygon not found in context")
         return None
@@ -96,7 +96,7 @@ def process_background_landcover(ctx: SceneResourceContext) -> Optional[Path]:
         Path to the generated background landcover zarr file, or None if background disabled
     """
 
-    background_aoi_polygon = ctx._background_aoi_polygon
+    background_aoi_polygon = ctx.background_aoi_polygon
     if background_aoi_polygon is None:
         logging.warning("Background AOI polygon not found in context")
         return None

@@ -42,7 +42,7 @@ def process_target_dem(ctx: SceneResourceContext) -> Optional[Path]:
         Path to the generated DEM zarr file
     """
 
-    aoi_polygon = ctx._target_aoi_polygon
+    aoi_polygon = ctx.target_aoi_polygon
     if aoi_polygon is None:
         raise ValueError("Target AOI polygon not found in context")
 
@@ -65,7 +65,7 @@ def process_buffer_dem(ctx: SceneResourceContext) -> Optional[Path]:
         Path to the generated buffer DEM zarr file, or None if buffer disabled
     """
 
-    buffer_aoi_polygon = ctx._buffer_aoi_polygon
+    buffer_aoi_polygon = ctx.buffer_aoi_polygon
     if buffer_aoi_polygon is None:
         logging.warning("Buffer AOI polygon not found in context")
         return None

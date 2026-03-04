@@ -254,9 +254,7 @@ class CachedDAGExecutor(DAGExecutor):
       output files still exist on disk.
     """
 
-    ALWAYS_EXECUTE = frozenset(
-        {"aoi", "buffer_aoi", "background_aoi", "vegetation_exclusion_zones"}
-    )
+    ALWAYS_EXECUTE = frozenset({"vegetation_exclusion_zones"})
     NEVER_CACHE = frozenset({"scene_description"})
 
     def execute(  # type: ignore[override]

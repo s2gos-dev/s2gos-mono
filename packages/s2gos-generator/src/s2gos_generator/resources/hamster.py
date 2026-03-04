@@ -82,7 +82,7 @@ def process_hamster_data(ctx: SceneResourceContext) -> Optional[Path]:
 
         result_paths = {}
 
-        if ctx._target_aoi_polygon is not None:
+        if ctx.target_aoi_polygon is not None:
             path = _crop_and_save_area(
                 albedo_data,
                 "target",
@@ -94,7 +94,7 @@ def process_hamster_data(ctx: SceneResourceContext) -> Optional[Path]:
             if path:
                 result_paths["target"] = path
 
-        if ctx.has_buffer and ctx._buffer_aoi_polygon is not None:
+        if ctx.buffer_aoi_polygon is not None:
             path = _crop_and_save_area(
                 albedo_data,
                 "buffer",
@@ -106,7 +106,7 @@ def process_hamster_data(ctx: SceneResourceContext) -> Optional[Path]:
             if path:
                 result_paths["buffer"] = path
 
-        if ctx.has_background and ctx._background_aoi_polygon is not None:
+        if ctx.background_aoi_polygon is not None:
             path = _crop_and_save_area(
                 albedo_data,
                 "background",
