@@ -314,8 +314,7 @@ def pnp_gui_generation(
 # ============================================================================
 
 
-@registry.process(
-    id="pnp_gui/simulation", title="Simulation Demo")
+@registry.process(id="pnp_gui/simulation", title="Simulation Demo")
 def pnp_gui_simulation(
     scene_name: Annotated[
         str,

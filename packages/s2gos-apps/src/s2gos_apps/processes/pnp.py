@@ -89,9 +89,7 @@ def generation_configs(
             20: [  # Shrubland
                 VegetationSpecies(
                     name="shrubs",
-                    asset_xml_paths=[
-                        "tls_tree_336_prospect.xml"
-                    ],
+                    asset_xml_paths=["tls_tree_336_prospect.xml"],
                     density_per_hectare=40.0,
                     scale_min=0.4,
                     scale_max=0.8,

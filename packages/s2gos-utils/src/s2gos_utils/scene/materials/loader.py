@@ -165,7 +165,14 @@ class MaterialConfigLoader:
         self._config_cache = None
 
 
-_default_loader = MaterialConfigLoader()
+_default_loader: Optional[MaterialConfigLoader] = None
+
+
+def _get_default_loader() -> MaterialConfigLoader:
+    global _default_loader
+    if _default_loader is None:
+        _default_loader = MaterialConfigLoader()
+    return _default_loader
 
 
 def load_materials(config_path: Optional[UPath] = None) -> Dict[str, Material]:
@@ -178,7 +185,7 @@ def load_materials(config_path: Optional[UPath] = None) -> Dict[str, Material]:
         Dictionary mapping material names to Material instances
     """
     if config_path is None:
-        return _default_loader.load_materials()
+        return _get_default_loader().load_materials()
     else:
         loader = MaterialConfigLoader(config_path)
         return loader.load_materials()
@@ -194,7 +201,7 @@ def get_landcover_mapping(config_path: Optional[UPath] = None) -> Dict[str, str]
         Dictionary mapping landcover class names to material IDs
     """
     if config_path is None:
-        return _default_loader.get_landcover_mapping()
+        return _get_default_loader().get_landcover_mapping()
     else:
         loader = MaterialConfigLoader(config_path)
         return loader.get_landcover_mapping()

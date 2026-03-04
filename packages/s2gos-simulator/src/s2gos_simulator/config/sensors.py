@@ -676,7 +676,9 @@ def create_hypstar_sensor(
 
     kwargs.setdefault(
         "post_processing",
-        PostProcessingOptions(apply_circular_mask=True, spatial_averaging=True, generate_rgb_image=True),
+        PostProcessingOptions(
+            apply_circular_mask=True, spatial_averaging=True, generate_rgb_image=True
+        ),
     )
 
     return GroundSensor(

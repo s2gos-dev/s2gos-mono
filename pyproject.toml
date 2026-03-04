@@ -73,8 +73,10 @@ griffe-pydantic = "*"
 
 # ── feature: dev-tools ────────────────────────────────────────
 [tool.pixi.feature.dev-tools.dependencies]
-ruff    = "*"
-ipython = "*"
+ruff       = "*"
+pre-commit = "*"
+ipython    = "*"
+ipykernel  = "*"
 
 [tool.pixi.feature.dev-tools.pypi-dependencies]
 memray   = "*"
@@ -93,8 +95,9 @@ lab           = "jupyter lab"
 eradiate-init = "eradiate data install core gecko"
 
 [tool.pixi.feature.dev-tools.tasks]
-lint       = "ruff check ."
-format     = "ruff format ."
+lint              = "ruff check ."
+format            = "ruff format ."
+pre-commit-install = "pre-commit install"
 
 [tool.pixi.feature.test.tasks]
 test       = "pytest"

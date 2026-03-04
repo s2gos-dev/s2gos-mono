@@ -136,9 +136,11 @@ _RESOURCE_CACHE_SPECS: Dict[str, ResourceCacheSpec] = {
 }
 
 
-def _validate_vegetation_files(ctx: SceneResourceContext) -> bool:
+def _validate_vegetation_files(
+    output_dir: UPath, asset_paths: Dict[str, UPath]
+) -> bool:
     """Check that every .npy referenced in vegetation_objects.yml exists."""
-    veg_file = ctx.assets.vegetation_objects_file
+    veg_file = asset_paths.get("vegetation_objects_file")
     if veg_file is None or not veg_file.exists():
         return False
     try:
@@ -149,7 +151,7 @@ def _validate_vegetation_files(ctx: SceneResourceContext) -> bool:
         for obj in data.get("objects", []):
             if obj.get("type") == "vegetation_collection":
                 data_file = obj.get("data_file")
-                if data_file and not (ctx.output_dir / data_file).exists():
+                if data_file and not (output_dir / data_file).exists():
                     logging.info(
                         "Cache miss: target_vegetation (secondary file missing: %s)",
                         data_file,
@@ -161,9 +163,11 @@ def _validate_vegetation_files(ctx: SceneResourceContext) -> bool:
     return True
 
 
-def _validate_user_asset_files(ctx: SceneResourceContext) -> bool:
+def _validate_user_asset_files(
+    output_dir: UPath, asset_paths: Dict[str, UPath]
+) -> bool:
     """Check that every .ply mesh referenced in user_assets.yml exists."""
-    assets_file = ctx.assets.user_assets_file
+    assets_file = asset_paths.get("user_assets_file")
     if assets_file is None or not assets_file.exists():
         return False
     try:
@@ -173,7 +177,7 @@ def _validate_user_asset_files(ctx: SceneResourceContext) -> bool:
             data = yaml.safe_load(f)
         for obj in data.get("objects", []):
             mesh = obj.get("mesh")
-            if mesh and not (ctx.output_dir / mesh).exists():
+            if mesh and not (output_dir / mesh).exists():
                 logging.info(
                     "Cache miss: user_assets (secondary file missing: %s)", mesh
                 )
@@ -348,9 +352,11 @@ class CachedDAGExecutor(DAGExecutor):
         # Deep validation: check secondary files (e.g. .npy, .ply)
         validator = _DEEP_VALIDATORS.get(resource_id)
         if validator is not None:
-            for field, rel_path in entry.get("asset_fields", {}).items():
-                setattr(context.assets, field, context.output_dir / rel_path)
-            if not validator(context):
+            asset_paths = {
+                field: context.output_dir / rel_path
+                for field, rel_path in entry.get("asset_fields", {}).items()
+            }
+            if not validator(context.output_dir, asset_paths):
                 return False
 
         return True

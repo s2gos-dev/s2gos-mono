@@ -11,9 +11,15 @@ from s2gos_apps.registry import registry
 @registry.process(id="gobabeb-generation-config", title="Gobabeb Generation Config")
 def generation_configs(
     scene_name: Annotated[str, Field(default="gobabeb", description="Scene id name.")],
-    target_lat: Annotated[float, Field(default=-23.6015417, description="Target's center latitude.")],
-    target_lon: Annotated[float, Field(default=15.1258696, description="Target's center longitude.")],
-    target_size: Annotated[float, Field(default=10, description="Target's size in [km].")],
+    target_lat: Annotated[
+        float, Field(default=-23.6015417, description="Target's center latitude.")
+    ],
+    target_lon: Annotated[
+        float, Field(default=15.1258696, description="Target's center longitude.")
+    ],
+    target_size: Annotated[
+        float, Field(default=10, description="Target's size in [km].")
+    ],
     config_output_dir: Annotated[
         PathRef | None,
         Field(..., description="Generation configuration output directory."),
@@ -36,8 +42,12 @@ def generation_configs(
     )
 
     # Enforce PathRef type
-    config_output_dir = PathRef(config_output_dir) if config_output_dir is not None else None
-    scene_output_dir = PathRef(scene_output_dir) if scene_output_dir is not None else None
+    config_output_dir = (
+        PathRef(config_output_dir) if config_output_dir is not None else None
+    )
+    scene_output_dir = (
+        PathRef(scene_output_dir) if scene_output_dir is not None else None
+    )
 
     print("\n")
     print("=" * 60)
@@ -162,11 +172,18 @@ def generation_configs(
 @registry.process(id="gobabeb-simulation-config", title="Gobabeb Simulation Config")
 def simulation_configs(
     scene_name: Annotated[str, Field(default="gobabeb", description="Scene id name.")],
-    target_lat: Annotated[float, Field(default=-23.6015417, description="Target's center latitude.")],
-    target_lon: Annotated[float, Field(default=15.1258696, description="Target's center longitude.")],
-    target_size: Annotated[float, Field(default=10, description="Target's size in [km].")],
+    target_lat: Annotated[
+        float, Field(default=-23.6015417, description="Target's center latitude.")
+    ],
+    target_lon: Annotated[
+        float, Field(default=15.1258696, description="Target's center longitude.")
+    ],
+    target_size: Annotated[
+        float, Field(default=10, description="Target's size in [km].")
+    ],
     gmt_hour: Annotated[
-        float, Field(default=9, description="Hour of observation at target in GMT time.")
+        float,
+        Field(default=9, description="Hour of observation at target in GMT time."),
     ],
     spp: Annotated[int, Field(..., description="Number of Monte Carlo samples.")] = 8,
     config_output_dir: Annotated[
@@ -176,7 +193,9 @@ def simulation_configs(
 ) -> PathRef | None:
     from s2gos_apps.sim_util import simulation_config
 
-    config_output_dir = PathRef(config_output_dir).upath if config_output_dir is not None else None
+    config_output_dir = (
+        PathRef(config_output_dir).upath if config_output_dir is not None else None
+    )
 
     config_path = simulation_config(
         scene_name,

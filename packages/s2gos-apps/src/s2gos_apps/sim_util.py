@@ -48,7 +48,9 @@ def simulation_config(
     """Expand core parameters to a full simulation config."""
     # Step 3: Configure simulation with enhanced sensors
 
-    config_output_dir = UPath(config_output_dir) if config_output_dir is not None else None
+    config_output_dir = (
+        UPath(config_output_dir) if config_output_dir is not None else None
+    )
 
     print("\n")
     print("=" * 60)

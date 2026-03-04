@@ -43,9 +43,13 @@ def generation_from_config(config: SceneGenConfig):
 
         print("Scene generated successfully!")
         print(f" Location: {config.location.center_lat}, {config.location.center_lon}")
-        print(f" Target: {config.location.aoi_size_km}km² at {config.target_resolution_m}m")
+        print(
+            f" Target: {config.location.aoi_size_km}km² at {config.target_resolution_m}m"
+        )
         if config.buffer is not None:
-            print(f"  Buffer: {config.buffer.size_km}km at {config.buffer.resolution_m}m")
+            print(
+                f"  Buffer: {config.buffer.size_km}km at {config.buffer.resolution_m}m"
+            )
         if config.background is not None:
             print(
                 f"  Background: {config.background.size_km}km at {config.background.resolution_m}m"

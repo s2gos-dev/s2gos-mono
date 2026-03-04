@@ -15,11 +15,17 @@ from .upscaling import upscaling
 
 __all__ = [
     "registry",
-    "generation", "simulation",
-    "frascati_generation", "frascati_simulation",
-    "gobabeb_generation", "gobabeb_simulation",
-    "kairouan_generation", "kairouan_simulation",
-    "pisa_generation", "pisa_simulation",
-    "pnp_generation", "pnp_simulation",
+    "generation",
+    "simulation",
+    "frascati_generation",
+    "frascati_simulation",
+    "gobabeb_generation",
+    "gobabeb_simulation",
+    "kairouan_generation",
+    "kairouan_simulation",
+    "pisa_generation",
+    "pisa_simulation",
+    "pnp_generation",
+    "pnp_simulation",
     "upscaling",
 ]

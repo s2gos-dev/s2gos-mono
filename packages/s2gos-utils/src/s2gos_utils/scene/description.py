@@ -161,7 +161,7 @@ class SceneDescription:
             schema_version=data.get("schema_version", get_version()),
             materials=materials,
             atmosphere=data.get("atmosphere"),
-            target=target,
+            target=data.get("target"),
             buffer=data.get("buffer"),
             background=data.get("background"),
             objects=data.get("objects", []),

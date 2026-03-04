@@ -1,11 +1,3 @@
-from .setting import load_config, settings
-
-# Start by loading the config. Currently required so that other imports work.
-# This is code smell.. MaterialConfigLoader is also initialized globally.
-# Might need to consider better syster management or proper lazy loading.
-load_config()
-
-
 from .io.paths import (
     PathRef,
     exists,
@@ -25,6 +17,7 @@ from .scene.materials import (
     get_landcover_mapping,
     load_materials,
 )
+from .setting import load_config, settings
 from .typing import PathLike
 from .versioning import (
     check_version_compatibility,
@@ -35,8 +28,12 @@ from .versioning import (
     version_stamp,
 )
 
+load_config()
+
 __all__ = [
-    "PathRefSceneDescription",
+    "PathRef",
+    "SceneDescription",
+    "settings",
     "Material",
     "MaterialConfigLoader",
     "load_materials",
