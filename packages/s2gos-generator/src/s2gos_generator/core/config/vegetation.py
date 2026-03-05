@@ -288,6 +288,11 @@ class VegetationPlacementConfig(BaseModel):
         },
         description="Default spillover compatibility map. Maps landcover class to probability 0.0-1.0. Can be overridden per species.",
     )
+    random_seed: Optional[int] = Field(
+        None,
+        ge=0,
+        description="Random seed for reproducible scene generation. If None, uses system entropy.",
+    )
 
     model_config = {
         "validate_assignment": True,

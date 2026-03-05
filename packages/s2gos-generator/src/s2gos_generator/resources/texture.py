@@ -14,7 +14,7 @@ from ..assets.terrain_material import TerrainMaterialGenerator
 from ..core.context import SceneResourceContext
 
 
-def _get_or_create_region_material_indices(ctx: SceneResourceContext) -> dict:
+def _compute_region_material_indices(ctx: SceneResourceContext) -> dict:
     """Get region material indices, loading from sidecar or creating fresh."""
     # Try to load from existing sidecar (written by target_texture)
     if (
@@ -79,7 +79,7 @@ def _apply_region_materials_to_texture(
         else texture_array.copy()
     )
 
-    region_material_indices = _get_or_create_region_material_indices(ctx)
+    region_material_indices = _compute_region_material_indices(ctx)
 
     modified = False
     for region_config in applicable_regions:
@@ -201,9 +201,7 @@ def generate_target_texture(ctx: SceneResourceContext) -> Optional[Path]:
         ctx.assets.preview_texture_file = preview_texture_path
 
     region_indices = (
-        _get_or_create_region_material_indices(ctx)
-        if ctx.config.material_regions
-        else None
+        _compute_region_material_indices(ctx) if ctx.config.material_regions else None
     )
     if region_indices:
         sidecar_path = ctx.data_dir / "region_material_indices.yml"

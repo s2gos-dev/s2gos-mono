@@ -171,7 +171,6 @@ class ResourceFingerprints:
                 if config.vegetation_placement
                 else None
             ),
-            "random_seed": config.random_seed,
         }
 
     @staticmethod

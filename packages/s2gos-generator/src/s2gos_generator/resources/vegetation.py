@@ -91,6 +91,13 @@ def process_target_vegetation(
         DataNotFoundError: If required landcover or DEM data is missing
     """
     vegetation_config = ctx.config.vegetation_placement
+    if ctx.config.vegetation_placement.random_seed:
+        random.seed(ctx.config.vegetation_placement.random_seed)
+        np.random.seed(ctx.config.vegetation_placement.random_seed)
+        logging.info(
+            f"Random seed set to {config.random_seed} for reproducible generation"
+        )
+
     if vegetation_config is None or not vegetation_config.enabled:
         logging.info("Vegetation disabled - skipping vegetation placement")
         return None

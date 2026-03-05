@@ -9,42 +9,43 @@ Workflow:
 
 import shutil
 import traceback
-from pathlib import Path
 from datetime import datetime, timezone
-from upath import UPath
+from pathlib import Path
+
 import xarray as xr
+from s2gos_generator import create_scene_config
+from s2gos_generator.core import SceneGenerationPipeline
+from s2gos_generator.core.config import (
+    AbsorptionDatabase,
+    BackgroundConfig,
+    BufferConfig,
+    ExponentialDistribution,
+    MaterialRegion,
+    MolecularAtmosphereConfig,
+    ParticleLayerConfig,
+    ThermophysicalConfig,
+    XmlSceneConfig,
+)
+from s2gos_generator.core.region_geometry import RectangleGeometry
+from s2gos_simulator.backends.eradiate.backend import (
+    ERADIATE_AVAILABLE,
+    EradiateBackend,
+)
+from s2gos_simulator.config import (
+    AngularFromOriginViewing,
+    DirectionalIllumination,
+    HCRFConfig,
+    HemisphericalMeasurementLocation,
+    IrradianceConfig,
+    SimulationConfig,
+    SpectralResponse,
+    create_hypstar_sensor,
+)
 
 # S2GOS / Eradiate Imports
 from s2gos_utils.io.paths import to_upath
 from s2gos_utils.io.resolver import resolver
-from s2gos_generator import create_scene_config
-from s2gos_generator.core import SceneGenerationPipeline
-from s2gos_generator.core.config import (
-    MolecularAtmosphereConfig,
-    ThermophysicalConfig,
-    AbsorptionDatabase,
-    ParticleLayerConfig,
-    ExponentialDistribution,
-    MaterialRegion,
-    XmlSceneConfig,
-    BufferConfig,
-    BackgroundConfig,
-)
-from s2gos_generator.core.region_geometry import RectangleGeometry
-from s2gos_simulator.config import (
-    SimulationConfig,
-    DirectionalIllumination,
-    IrradianceConfig,
-    HCRFConfig,
-    HemisphericalMeasurementLocation,
-    SpectralResponse,
-    AngularFromOriginViewing,
-    create_hypstar_sensor,
-)
-from s2gos_simulator.backends.eradiate.backend import (
-    EradiateBackend,
-    ERADIATE_AVAILABLE,
-)
+from upath import UPath
 
 # ==============================================================================
 # 1. USER CONFIGURATION
@@ -52,9 +53,9 @@ from s2gos_simulator.backends.eradiate.backend import (
 
 # Input / Output Paths (resolved via s2gos_settings.toml -> ./hypstar_data/)
 HYPSTAR_L2A_PATH = "/home/gonzalezm/s2gos/s2gos/experimenting/gobabeb_hypernets/HYPERNETS_L_GHNA_L2A_REF_20220517T0743_20230424T0625_v1.0.nc"
-OUTPUT_DIR   = Path("./hypstar_simulation_output")
-SIM_DIR      = OUTPUT_DIR / "simulations"
-SCENE_NAME   = "hypstar_gobabeb"
+OUTPUT_DIR = Path("./hypstar_simulation_output")
+SIM_DIR = OUTPUT_DIR / "simulations"
+SCENE_NAME = "hypstar_gobabeb"
 
 # Data Dependencies
 PATHS = {

@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
-import random
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
-import numpy as np
 import yaml
 from upath import UPath
 
@@ -250,7 +248,12 @@ class CachedDAGExecutor(DAGExecutor):
         context: SceneResourceContext,
         use_cache: bool = True,
     ) -> Dict[str, Any]:
-        """Execute the DAG with optional caching."""
+        """Execute the DAG with optional caching.
+
+        Note: Cache validity is based on hashing the configuration object, not
+        the contents of external files referenced in the config. In-place replacement
+        of referenced files will not be detected as a cache miss.
+        """
         manifest_helper = CacheManifest(context.output_dir)
         manifest = manifest_helper.load() if use_cache else {}
         effective_hashes = compute_all_hashes(context.config, self.registry)
@@ -280,8 +283,6 @@ class CachedDAGExecutor(DAGExecutor):
                 )
 
             else:
-                if resource_id == "target_vegetation":
-                    self._reseed_rng(context)
                 logging.info("Executing: %s", resource_id)
                 assets_snapshot = dict(context.assets.to_dict())
                 try:
@@ -350,15 +351,3 @@ class CachedDAGExecutor(DAGExecutor):
             "asset_fields": asset_fields,
             "completed_at": datetime.now(timezone.utc).isoformat(),
         }
-
-    @staticmethod
-    def _reseed_rng(context: SceneResourceContext) -> None:
-        """Re-seed global RNGs with a vegetation-specific deterministic seed."""
-        seed = context.config.random_seed
-        if seed is not None:
-            veg_seed = hash((seed, "target_vegetation")) % (2**32)
-            random.seed(veg_seed)
-            np.random.seed(veg_seed)
-            logging.info(
-                "Re-seeded RNG for deterministic vegetation (seed=%d)", veg_seed
-            )
