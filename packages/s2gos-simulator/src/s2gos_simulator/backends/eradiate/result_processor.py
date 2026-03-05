@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict
 
 import xarray as xr
-from s2gos_utils.io.paths import mkdir
+from s2gos_utils.io.paths import mkdir, to_upath
 from upath import UPath
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ class ResultProcessor:
             True if save succeeded, False otherwise
         """
         try:
-            output_dir = UPath(output_dir)
+            output_dir = to_upath(output_dir)
             mkdir(output_dir)
             sensor_output = (
                 output_dir / f"{self.simulation_config.name}_{sensor_id}.zarr"

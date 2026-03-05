@@ -8,8 +8,8 @@ import logging
 from typing import Dict, List, Optional
 
 import xarray as xr
+from s2gos_utils.io.paths import PathRef, open_dataset
 from s2gos_utils.scene import SceneDescription
-from upath import UPath
 
 from .atmosphere_builder import AtmosphereBuilder
 from .constants import VALID_ERADIATE_MODES
@@ -213,8 +213,8 @@ class EradiateBackend(SimulationBackend):
     def run_simulation(
         self,
         scene_description: SceneDescription,
-        scene_dir: UPath,
-        output_dir: Optional[UPath] = None,
+        scene_dir: PathRef,
+        output_dir: Optional[PathRef] = None,
         **kwargs,
     ) -> xr.Dataset:
         """Run Eradiate simulation from scene description.
@@ -239,7 +239,7 @@ class EradiateBackend(SimulationBackend):
         if output_dir is None:
             output_dir = scene_dir / "eradiate_renders"
 
-        output_dir = UPath(output_dir)
+        output_dir = PathRef(output_dir)
         from s2gos_utils.io.paths import mkdir
 
         mkdir(output_dir)
@@ -328,8 +328,8 @@ class EradiateBackend(SimulationBackend):
     def _run_standard_simulation(
         self,
         scene_description: SceneDescription,
-        scene_dir: UPath,
-        output_dir: UPath,
+        scene_dir: PathRef,
+        output_dir: PathRef,
         include_irradiance_measures: bool = True,
         sensor_ids: Optional[set] = None,
         **kwargs,
@@ -402,8 +402,8 @@ class EradiateBackend(SimulationBackend):
     def _run_combined_workflow(
         self,
         scene_description: SceneDescription,
-        scene_dir: UPath,
-        output_dir: UPath,
+        scene_dir: PathRef,
+        output_dir: PathRef,
         irradiance_processor: IrradianceProcessor,
         hdrf_processor: HDRFProcessor,
         sensor_ids: Optional[set] = None,
@@ -471,8 +471,8 @@ class EradiateBackend(SimulationBackend):
     def _run_brf_workflow(
         self,
         scene_description: SceneDescription,
-        scene_dir: UPath,
-        output_dir: UPath,
+        scene_dir: PathRef,
+        output_dir: PathRef,
         brf_proc: BRFProcessor,
         **kwargs,
     ) -> dict:
@@ -558,7 +558,7 @@ class EradiateBackend(SimulationBackend):
     def create_experiment(
         self,
         scene_description: SceneDescription,
-        scene_dir: UPath,
+        scene_dir: PathRef,
         include_irradiance_measures: bool = True,
         atmosphere: Optional[str] = "auto",
         sensor_ids: Optional[set] = None,
@@ -731,7 +731,7 @@ class EradiateBackend(SimulationBackend):
     def _expand_pixel_measurement_configs(
         self,
         scene_description: Optional[SceneDescription] = None,
-        scene_dir: Optional[UPath] = None,
+        scene_dir: Optional[PathRef] = None,
     ) -> None:
         """Expand PixelHDRFConfig and PixelBRFConfig into individual measurements.
 
@@ -1028,7 +1028,7 @@ class EradiateBackend(SimulationBackend):
         return material_ids
 
     def _get_hamster_data_for_scene(
-        self, scene_description: SceneDescription, scene_dir: UPath
+        self, scene_description: SceneDescription, scene_dir: PathRef
     ) -> Optional[dict]:
         """Load HAMSTER albedo data from zarr files.
 
@@ -1063,7 +1063,6 @@ class EradiateBackend(SimulationBackend):
             hamster_data = {}
             base_path = scene_dir
 
-            import xarray as xr
             from s2gos_utils.io.paths import exists
 
             for area, relative_path in hamster_data_files.items():
@@ -1075,7 +1074,7 @@ class EradiateBackend(SimulationBackend):
                     continue
 
                 try:
-                    dataset = xr.open_zarr(file_path)
+                    dataset = open_dataset(file_path)
                     data_vars = list(dataset.data_vars.keys())
                     if not data_vars:
                         logging.warning(

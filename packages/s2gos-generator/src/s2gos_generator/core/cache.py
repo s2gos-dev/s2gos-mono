@@ -4,9 +4,9 @@ import json
 import logging
 import random
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import yaml
@@ -97,43 +97,14 @@ class CacheManifest:
 @dataclass
 class ResourceCacheSpec:
     asset_fields: List[str]
-    result_field: Optional[str]
+    result_field: Optional[str] = None
+    validator: Optional[Callable[[UPath, Dict[str, UPath]], bool]] = field(
+        default=None, repr=False
+    )
 
-
-_RESOURCE_CACHE_SPECS: Dict[str, ResourceCacheSpec] = {
-    "target_dem": ResourceCacheSpec(["dem_file"], "dem_file"),
-    "buffer_dem": ResourceCacheSpec(["buffer_dem_file"], "buffer_dem_file"),
-    "target_landcover": ResourceCacheSpec(["landcover_file"], "landcover_file"),
-    "buffer_landcover": ResourceCacheSpec(
-        ["buffer_landcover_file"], "buffer_landcover_file"
-    ),
-    "background_landcover": ResourceCacheSpec(
-        ["background_landcover_file"], "background_landcover_file"
-    ),
-    "target_mesh": ResourceCacheSpec(["mesh_file"], "mesh_file"),
-    "buffer_mesh": ResourceCacheSpec(["buffer_mesh_file"], "buffer_mesh_file"),
-    "target_texture": ResourceCacheSpec(
-        [
-            "selection_texture_file",
-            "preview_texture_file",
-            "region_indices_file",
-        ],
-        "selection_texture_file",
-    ),
-    "buffer_texture": ResourceCacheSpec(
-        ["buffer_selection_texture_file", "buffer_preview_texture_file"],
-        "buffer_selection_texture_file",
-    ),
-    "background_texture": ResourceCacheSpec(
-        ["background_selection_texture_file", "background_preview_texture_file"],
-        "background_selection_texture_file",
-    ),
-    "user_assets": ResourceCacheSpec(["user_assets_file"], "user_assets_file"),
-    "target_vegetation": ResourceCacheSpec(
-        ["vegetation_objects_file"], "vegetation_objects_file"
-    ),
-    "hamster_data": ResourceCacheSpec(["hamster_paths_file"], "hamster_paths_file"),
-}
+    def __post_init__(self) -> None:
+        if self.result_field is None and self.asset_fields:
+            self.result_field = self.asset_fields[0]
 
 
 def _validate_vegetation_files(
@@ -188,58 +159,78 @@ def _validate_user_asset_files(
     return True
 
 
-_DEEP_VALIDATORS = {
-    "target_vegetation": _validate_vegetation_files,
-    "user_assets": _validate_user_asset_files,
+_RESOURCE_CACHE_SPECS: Dict[str, ResourceCacheSpec] = {
+    "target_dem": ResourceCacheSpec(["dem_file"]),
+    "buffer_dem": ResourceCacheSpec(["buffer_dem_file"]),
+    "target_landcover": ResourceCacheSpec(["landcover_file"]),
+    "buffer_landcover": ResourceCacheSpec(["buffer_landcover_file"]),
+    "background_landcover": ResourceCacheSpec(["background_landcover_file"]),
+    "target_mesh": ResourceCacheSpec(["mesh_file"]),
+    "buffer_mesh": ResourceCacheSpec(["buffer_mesh_file"]),
+    "target_texture": ResourceCacheSpec(
+        [
+            "selection_texture_file",
+            "preview_texture_file",
+            "region_indices_file",
+        ],
+    ),
+    "buffer_texture": ResourceCacheSpec(
+        ["buffer_selection_texture_file", "buffer_preview_texture_file"],
+    ),
+    "background_texture": ResourceCacheSpec(
+        ["background_selection_texture_file", "background_preview_texture_file"],
+    ),
+    "user_assets": ResourceCacheSpec(
+        ["user_assets_file"], validator=_validate_user_asset_files
+    ),
+    "target_vegetation": ResourceCacheSpec(
+        ["vegetation_objects_file"], validator=_validate_vegetation_files
+    ),
+    "hamster_data": ResourceCacheSpec(["hamster_paths_file"]),
 }
 
 
-class ContextRestorer:
-    """Saves and restores per-resource asset paths to/from disk."""
+def capture_asset_paths(
+    resource_id: str,
+    ctx: SceneResourceContext,
+    assets_before: Dict[str, Any],
+) -> Dict[str, str]:
+    """Return a ``{field: rel_path}`` dict for newly-set asset files."""
+    asset_fields = _RESOURCE_CACHE_SPECS.get(
+        resource_id, ResourceCacheSpec([])
+    ).asset_fields
 
-    def capture_asset_paths(
-        self,
-        resource_id: str,
-        ctx: SceneResourceContext,
-        assets_before: Dict[str, Any],
-    ) -> Dict[str, str]:
-        """Return a ``{field: rel_path}`` dict for newly-set asset files."""
-        fields = _RESOURCE_CACHE_SPECS.get(
-            resource_id, ResourceCacheSpec([], None)
-        ).asset_fields
+    asset_paths: Dict[str, str] = {}
+    for asset_field in asset_fields:
+        value = getattr(ctx.assets, asset_field, None)
+        if value is not None and assets_before.get(asset_field) is None:
+            try:
+                rel = str(UPath(value).relative_to(ctx.output_dir))
+                asset_paths[asset_field] = rel
+            except (ValueError, TypeError):
+                asset_paths[asset_field] = str(value)
+    return asset_paths
 
-        asset_paths: Dict[str, str] = {}
-        for field in fields:
-            value = getattr(ctx.assets, field, None)
-            if value is not None and assets_before.get(field) is None:
-                try:
-                    rel = str(UPath(value).relative_to(ctx.output_dir))
-                    asset_paths[field] = rel
-                except (ValueError, TypeError):
-                    asset_paths[field] = str(value)
-        return asset_paths
 
-    def restore(
-        self,
-        resource_id: str,
-        entry: dict,
-        ctx: SceneResourceContext,
-    ) -> Any:
-        """Restore asset paths from *entry* and return the cached result."""
-        for field, rel_path in entry.get("asset_fields", {}).items():
-            setattr(ctx.assets, field, ctx.output_dir / rel_path)
-        return self._get_result(resource_id, entry, ctx)
+def restore_context(
+    resource_id: str,
+    entry: dict,
+    ctx: SceneResourceContext,
+) -> Any:
+    """Restore asset paths from *entry* and return the cached result."""
+    for asset_field, rel_path in entry.get("asset_fields", {}).items():
+        setattr(ctx.assets, asset_field, ctx.output_dir / rel_path)
+    return _get_cached_result(resource_id, ctx)
 
-    def _get_result(
-        self, resource_id: str, entry: dict, ctx: SceneResourceContext
-    ) -> Any:
-        """Return the value to store in ``results[resource_id]``."""
-        result_field = _RESOURCE_CACHE_SPECS.get(
-            resource_id, ResourceCacheSpec([], None)
-        ).result_field
-        if result_field is not None:
-            return getattr(ctx.assets, result_field, None)
-        return None
+
+def _get_cached_result(resource_id: str, ctx: SceneResourceContext) -> Any:
+    """Return the value to store in ``results[resource_id]``."""
+    result_field = _RESOURCE_CACHE_SPECS.get(
+        resource_id, ResourceCacheSpec([])
+    ).result_field
+    if result_field is not None:
+        return getattr(ctx.assets, result_field, None)
+    return None
 
 
 class CachedDAGExecutor(DAGExecutor):
@@ -263,7 +254,6 @@ class CachedDAGExecutor(DAGExecutor):
         manifest_helper = CacheManifest(context.output_dir)
         manifest = manifest_helper.load() if use_cache else {}
         effective_hashes = compute_all_hashes(context.config, self.registry)
-        restorer = ContextRestorer()
         resources_entry: dict = manifest.setdefault("resources", {})
         results: Dict[str, Any] = {}
 
@@ -285,7 +275,7 @@ class CachedDAGExecutor(DAGExecutor):
                 resource_id, effective_hashes, manifest, context
             ):
                 logging.info("Cache hit: %s (skipping)", resource_id)
-                results[resource_id] = restorer.restore(
+                results[resource_id] = restore_context(
                     resource_id, resources_entry[resource_id], context
                 )
 
@@ -306,7 +296,6 @@ class CachedDAGExecutor(DAGExecutor):
                     effective_hashes,
                     context,
                     assets_snapshot,
-                    restorer,
                     resources_entry,
                 )
 
@@ -336,13 +325,13 @@ class CachedDAGExecutor(DAGExecutor):
                 return False
 
         # Deep validation: check secondary files (e.g. .npy, .ply)
-        validator = _DEEP_VALIDATORS.get(resource_id)
-        if validator is not None:
+        spec = _RESOURCE_CACHE_SPECS.get(resource_id)
+        if spec is not None and spec.validator is not None:
             asset_paths = {
                 field: context.output_dir / rel_path
                 for field, rel_path in entry.get("asset_fields", {}).items()
             }
-            if not validator(context.output_dir, asset_paths):
+            if not spec.validator(context.output_dir, asset_paths):
                 return False
 
         return True
@@ -353,12 +342,9 @@ class CachedDAGExecutor(DAGExecutor):
         hashes: Dict[str, str],
         context: SceneResourceContext,
         assets_snapshot: Dict[str, Any],
-        restorer: ContextRestorer,
         resources_entry: dict,
     ) -> None:
-        asset_fields = restorer.capture_asset_paths(
-            resource_id, context, assets_snapshot
-        )
+        asset_fields = capture_asset_paths(resource_id, context, assets_snapshot)
         resources_entry[resource_id] = {
             "effective_hash": hashes.get(resource_id, ""),
             "asset_fields": asset_fields,
