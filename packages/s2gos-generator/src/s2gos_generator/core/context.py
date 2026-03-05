@@ -64,6 +64,7 @@ class SceneResourceContext:
         self._background_aoi_polygon: Optional[object] = None
 
         self._coord_system: Optional[object] = None
+        self._exclusion_zone_geometries: Optional[list] = None
 
         # Seed random generators for reproducibility
         if config.random_seed is not None:
@@ -145,3 +146,87 @@ class SceneResourceContext:
                 self.config.background.size_km
             )
         return self._background_aoi_polygon
+
+    @property
+    def exclusion_zone_geometries(self) -> list:
+        """Exclusion zone geometries in scene coordinates, derived from config."""
+        if self._exclusion_zone_geometries is None:
+            self._exclusion_zone_geometries = _build_exclusion_zone_geometries(
+                self.config,
+                self.coordinate_system,
+            )
+        return self._exclusion_zone_geometries
+
+
+def _build_exclusion_zone_geometries(config, coordinate_system) -> list:
+    """Convert exclusion zone config objects to scene-coordinate Shapely geometries."""
+    from shapely.geometry import Point, Polygon, box
+
+    from .config import BoxGeometry, CircleGeometry, PolygonGeometry
+
+    def _to_scene(coord, coord_type):
+        if coord_type == "geographic":
+            lon, lat = coord
+            return coordinate_system.latlon_to_scene(lat, lon)
+        return tuple(coord)
+
+    def _make_zone_geometry(x, y, zone_spec):
+        if isinstance(zone_spec, (int, float)):
+            return Point(x, y).buffer(zone_spec)
+        else:
+            width, height = zone_spec
+            hw, hh = width / 2, height / 2
+            return box(x - hw, y - hh, x + hw, y + hh)
+
+    result = []
+
+    # Config-level vegetation exclusion zones
+    for zone in config.vegetation_exclusion_zones:
+        try:
+            g = zone.geometry
+            if isinstance(g, CircleGeometry):
+                x, y = _to_scene(g.center, g.coord_type)
+                geometry = Point(x, y).buffer(g.radius)
+            elif isinstance(g, BoxGeometry):
+                x, y = _to_scene(g.center, g.coord_type)
+                hw, hh = g.width / 2, g.height / 2
+                geometry = box(x - hw, y - hh, x + hw, y + hh)
+            elif isinstance(g, PolygonGeometry):
+                if g.coord_type == "geographic":
+                    coords = [
+                        coordinate_system.latlon_to_scene(lat, lon)
+                        for lon, lat in g.coordinates
+                    ]
+                else:
+                    coords = list(g.coordinates)
+                geometry = Polygon(coords)
+            else:
+                logging.warning("Unknown geometry type for zone '%s'", zone.zone_id)
+                continue
+            result.append({"source": f"zone_{zone.zone_id}", "geometry": geometry})
+            logging.info("Processed exclusion zone '%s'", zone.zone_id)
+        except Exception as e:
+            logging.warning(
+                "Failed to process exclusion zone '%s': %s", zone.zone_id, e
+            )
+
+    # Per-asset exclusion zones
+    for asset in config.user_assets:
+        if asset.exclusion_zone is None:
+            continue
+        x, y = _to_scene(asset.coordinate, asset.coord_type)
+        geometry = _make_zone_geometry(x, y, asset.exclusion_zone)
+        result.append({"source": f"asset_{asset.object_id}", "geometry": geometry})
+        logging.info("Processed asset exclusion zone for '%s'", asset.object_id)
+
+    # Per-XML-scene exclusion zones
+    for xml_scene in config.xml_scenes:
+        if xml_scene.exclusion_zone is None:
+            continue
+        x, y = _to_scene(xml_scene.base_coordinate, xml_scene.coord_type)
+        geometry = _make_zone_geometry(x, y, xml_scene.exclusion_zone)
+        source = xml_scene.object_id_prefix or xml_scene.xml_path.upath.stem
+        result.append({"source": f"xml_scene_{source}", "geometry": geometry})
+        logging.info("Processed XML scene exclusion zone for '%s'", source)
+
+    return result

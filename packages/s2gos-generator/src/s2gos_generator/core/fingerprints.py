@@ -141,16 +141,31 @@ class ResourceFingerprints:
         }
 
     @staticmethod
-    def _vegetation_exclusion_zones(config) -> dict:
+    def _target_vegetation(config) -> dict:
         return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
             "vegetation_exclusion_zones": [
                 z.model_dump() for z in config.vegetation_exclusion_zones
             ],
-        }
-
-    @staticmethod
-    def _target_vegetation(config) -> dict:
-        return {
+            "asset_exclusion_zones": [
+                {
+                    "coordinate": a.coordinate,
+                    "coord_type": a.coord_type,
+                    "exclusion_zone": a.exclusion_zone,
+                }
+                for a in config.user_assets
+                if a.exclusion_zone is not None
+            ],
+            "xml_scene_exclusion_zones": [
+                {
+                    "base_coordinate": list(x.base_coordinate),
+                    "coord_type": x.coord_type,
+                    "exclusion_zone": x.exclusion_zone,
+                }
+                for x in config.xml_scenes
+                if x.exclusion_zone is not None
+            ],
             "vegetation_placement": (
                 config.vegetation_placement.model_dump()
                 if config.vegetation_placement

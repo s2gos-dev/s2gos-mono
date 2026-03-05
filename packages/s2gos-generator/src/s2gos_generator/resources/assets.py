@@ -75,7 +75,6 @@ def process_user_assets(ctx: SceneResourceContext) -> Optional[Path]:
 
     processed_objects = []
     inline_materials = {}
-    exclusion_zones = []
 
     objects_dir = ctx.output_dir / "objects"
     mkdir(objects_dir)
@@ -99,27 +98,6 @@ def process_user_assets(ctx: SceneResourceContext) -> Optional[Path]:
                 elevation = coords.query_height_from_dem(lat, lon, target_dem_path)
 
             final_z = elevation + asset.elevation_offset
-
-            if asset.exclusion_zone is not None:
-                geometry = _create_asset_exclusion_zone(
-                    scene_x, scene_y, asset.exclusion_zone
-                )
-                exclusion_zones.append(
-                    {
-                        "source": f"asset_{asset.object_id}",
-                        "geometry": geometry,
-                    }
-                )
-
-                if isinstance(asset.exclusion_zone, (int, float)):
-                    logging.info(
-                        f"Added {asset.exclusion_zone}m circular exclusion zone for '{asset.object_id}'"
-                    )
-                else:
-                    w, h = asset.exclusion_zone
-                    logging.info(
-                        f"Added {w}x{h}m box exclusion zone for '{asset.object_id}'"
-                    )
 
             ply_filename = f"{asset.object_id}.ply"
             output_ply_path = objects_dir / ply_filename
@@ -158,25 +136,13 @@ def process_user_assets(ctx: SceneResourceContext) -> Optional[Path]:
     logging.info(f"Processed {len(processed_objects)} user assets")
     if inline_materials:
         logging.info(f"Extracted {len(inline_materials)} inline material definitions")
-    if exclusion_zones:
-        logging.info(
-            f"Extracted {len(exclusion_zones)} vegetation exclusion zones from assets"
-        )
 
-    if processed_objects or inline_materials or exclusion_zones:
+    if processed_objects or inline_materials:
         sidecar_data = {}
         if processed_objects:
             sidecar_data["objects"] = processed_objects
         if inline_materials:
             sidecar_data["materials"] = inline_materials
-        if exclusion_zones:
-            sidecar_data["exclusion_zones"] = [
-                {
-                    "source": z["source"],
-                    "geometry_wkt": z["geometry"].wkt,
-                }
-                for z in exclusion_zones
-            ]
 
         sidecar_path = ctx.data_dir / "user_assets.yml"
         ctx.data_dir.mkdir(parents=True, exist_ok=True)
@@ -187,99 +153,3 @@ def process_user_assets(ctx: SceneResourceContext) -> Optional[Path]:
         logging.info(f"Saved user assets sidecar: {sidecar_path}")
 
     return ctx.assets.user_assets_file
-
-
-def process_vegetation_exclusion_zones(ctx: SceneResourceContext) -> None:
-    """Process standalone vegetation exclusion zones.
-
-    Saves exclusion zones to a sidecar YAML file.
-
-    Args:
-        ctx: Scene resource context
-
-    Returns:
-        None
-    """
-    from shapely.geometry import Point, Polygon, box
-
-    from ..core.config import BoxGeometry, CircleGeometry, PolygonGeometry
-
-    if not ctx.config.vegetation_exclusion_zones:
-        logging.info("No standalone vegetation exclusion zones configured")
-        return None
-
-    coords = ctx.coordinate_system
-    exclusion_zones = []
-
-    for zone_config in ctx.config.vegetation_exclusion_zones:
-        try:
-            geom = zone_config.geometry
-            if isinstance(geom, CircleGeometry):
-                scene_x, scene_y = _convert_to_scene_coords(
-                    geom.center, geom.coord_type, coords
-                )
-                geometry = Point(scene_x, scene_y).buffer(geom.radius)
-
-            elif isinstance(geom, BoxGeometry):
-                scene_x, scene_y = _convert_to_scene_coords(
-                    geom.center, geom.coord_type, coords
-                )
-                half_w, half_h = geom.width / 2, geom.height / 2
-                geometry = box(
-                    scene_x - half_w,
-                    scene_y - half_h,
-                    scene_x + half_w,
-                    scene_y + half_h,
-                )
-
-            elif isinstance(geom, PolygonGeometry):
-                if geom.coord_type == "geographic":
-                    scene_coords = [
-                        coords.latlon_to_scene(lat, lon)
-                        for lon, lat in geom.coordinates
-                    ]
-                else:
-                    scene_coords = list(geom.coordinates)
-                geometry = Polygon(scene_coords)
-
-            else:
-                logging.warning(
-                    f"Unknown geometry type for zone '{zone_config.zone_id}'"
-                )
-                continue
-
-            exclusion_zones.append(
-                {
-                    "source": f"zone_{zone_config.zone_id}",
-                    "geometry": geometry,
-                }
-            )
-            logging.info(f"Processed exclusion zone '{zone_config.zone_id}'")
-
-        except Exception as e:
-            logging.warning(
-                f"Failed to process exclusion zone '{zone_config.zone_id}': {e}"
-            )
-
-    logging.info(
-        f"Processed {len(exclusion_zones)} standalone vegetation exclusion zones"
-    )
-
-    if exclusion_zones:
-        sidecar_data = {
-            "exclusion_zones": [
-                {
-                    "source": z["source"],
-                    "geometry_wkt": z["geometry"].wkt,
-                }
-                for z in exclusion_zones
-            ]
-        }
-        sidecar_path = ctx.data_dir / "exclusion_zones.yml"
-        ctx.data_dir.mkdir(parents=True, exist_ok=True)
-        with open_file(sidecar_path, "w") as f:
-            yaml.dump(sidecar_data, f, default_flow_style=False, indent=2)
-        ctx.assets.exclusion_zones_file = sidecar_path
-        logging.info(f"Saved exclusion zones sidecar: {sidecar_path}")
-
-    return None

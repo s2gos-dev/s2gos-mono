@@ -16,31 +16,8 @@ from ..core.exceptions import DataNotFoundError
 
 
 def _load_exclusion_zones(ctx: SceneResourceContext) -> List[Dict[str, Any]]:
-    """Load all exclusion zones from sidecar files.
-
-    Reads exclusion zones from both the config-derived sidecar
-    (exclusion_zones.yml) and user-asset-derived sidecar (user_assets.yml).
-
-    Returns:
-        List of exclusion zone dicts with 'geometry' (shapely) and 'source' keys.
-    """
-    from shapely import wkt as shapely_wkt
-
-    zones: List[Dict[str, Any]] = []
-
-    for path in [ctx.assets.exclusion_zones_file, ctx.assets.user_assets_file]:
-        if path is None or not path.exists():
-            continue
-        with open_file(path, "r") as f:
-            data = yaml.safe_load(f) or {}
-        for zone in data.get("exclusion_zones", []):
-            entry = dict(zone)
-            wkt_str = entry.pop("geometry_wkt", None)
-            if wkt_str:
-                entry["geometry"] = shapely_wkt.loads(wkt_str)
-                zones.append(entry)
-
-    return zones
+    """Load all exclusion zones from context."""
+    return list(ctx.exclusion_zone_geometries)
 
 
 def _filter_by_exclusion_zones(

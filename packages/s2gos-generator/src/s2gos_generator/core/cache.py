@@ -245,16 +245,13 @@ class ContextRestorer:
 class CachedDAGExecutor(DAGExecutor):
     """DAGExecutor that skips up-to-date resources using hashing.
 
-    Resources are grouped into three categories:
+    Resources are grouped into two categories:
 
-    * **ALWAYS_EXECUTE** — cheap in-memory resources; always run but their
-      hashes still feed downstream checks.
     * **NEVER_CACHE** — always regenerate (e.g. ``scene_description``).
     * **CACHEABLE** — all other resources; skipped when hash matches and all
       output files still exist on disk.
     """
 
-    ALWAYS_EXECUTE = frozenset({"vegetation_exclusion_zones"})
     NEVER_CACHE = frozenset({"scene_description"})
 
     def execute(  # type: ignore[override]
@@ -274,16 +271,7 @@ class CachedDAGExecutor(DAGExecutor):
             resource = self.registry.get_resource(resource_id)
             context.dependency_outputs = results
 
-            if resource_id in self.ALWAYS_EXECUTE:
-                try:
-                    result = resource(context)
-                except Exception as exc:
-                    raise RuntimeError(
-                        f"Resource '{resource_id}' failed: {exc}"
-                    ) from exc
-                results[resource_id] = result
-
-            elif resource_id in self.NEVER_CACHE:
+            if resource_id in self.NEVER_CACHE:
                 logging.info("Cache skip: %s (always regenerate)", resource_id)
                 try:
                     result = resource(context)

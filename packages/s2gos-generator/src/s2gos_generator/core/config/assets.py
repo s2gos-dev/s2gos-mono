@@ -63,7 +63,7 @@ class UserAssets(BaseModel):
     rotation_y: float = Field(0.0, description="Rotation around Y-axis in degrees")
     rotation_z: float = Field(0.0, description="Rotation around Z-axis in degrees")
     blender_fix: bool = Field(
-        ...,
+        False,
         description="Informs as to whether a 90 degree around x was added to adjust from blender, useful to know what the actual rotation intended was",
     )
     face_normals: Optional[bool] = Field(
@@ -330,6 +330,14 @@ class XmlSceneConfig(BaseModel):
     )
     validate_materials: bool = Field(
         True, description="Validate that all materials are properly defined"
+    )
+    exclusion_zone: Optional[Union[float, Tuple[float, float]]] = Field(
+        None,
+        description=(
+            "Vegetation exclusion zone centered on base_coordinate for this XML scene. Can be:\n"
+            "- float: Circular radius in meters\n"
+            "- (width, height): Rectangular box in meters"
+        ),
     )
 
     @field_validator("xml_path", mode="before")
