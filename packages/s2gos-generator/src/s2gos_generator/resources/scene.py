@@ -12,11 +12,6 @@ from ..core.context import SceneResourceContext
 from ..scene import create_s2gos_scene
 
 
-def _relative_to(path, base) -> str:
-    """Return a relative path string from *path* to *base*."""
-    return str(path.relative_to(base))
-
-
 def _read_sidecar_yaml(path: Optional[UPath]) -> dict:
     """Read a YAML sidecar file, returning {} if path is None or missing."""
     if path is None or not path.exists():
@@ -91,7 +86,9 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
     else:
         logging.info("Scene description: No HAMSTER data paths found in context")
 
-    additional_material_libraries = ctx.additional_material_libraries
+    additional_material_libraries = list(ctx.additional_material_libraries)
+    if ctx.config.region_material_defs:
+        additional_material_libraries.append(ctx.config.region_material_defs)
 
     region_material_indices = _read_sidecar_yaml(ctx.assets.region_indices_file) or None
 
@@ -105,10 +102,6 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         include_files.append(
             str(ctx.assets.vegetation_objects_file.relative_to(ctx.output_dir))
         )
-
-    # Inline materials from user assets (not in sidecar — they're in user_assets.yml
-    # which gets merged via include_files)
-    inline_materials = getattr(ctx, "inline_materials", {})
 
     scene_description = create_s2gos_scene(
         scene_name=ctx.scene_name,
@@ -134,7 +127,6 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         landcover_mapping_overrides={},
         atmosphere_config=ctx.config.atmosphere,
         hamster_data_paths=hamster_data_paths,
-        inline_materials=inline_materials,
         additional_material_libraries=additional_material_libraries,
         region_material_indices=region_material_indices,
         random_seed=ctx.config.random_seed,
@@ -171,10 +163,6 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
 
     if background_selection_texture:
         logging.info(f"  Background texture: {background_texture_file}")
-
-    processed_objects = getattr(ctx, "processed_objects", None)
-    if processed_objects:
-        logging.info(f"  User assets: {len(processed_objects)} objects")
 
     if hamster_data_paths:
         logging.info(f"  HAMSTER data: {len(hamster_data_paths)} surface areas")

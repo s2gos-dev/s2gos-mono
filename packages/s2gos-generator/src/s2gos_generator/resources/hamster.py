@@ -9,7 +9,6 @@ import xarray as xr
 import yaml
 from s2gos_utils.io.paths import mkdir, open_file
 from upath import UPath
-from xarray_regrid import Regridder
 
 from ..core.context import SceneResourceContext
 
@@ -151,42 +150,10 @@ def process_hamster_data(ctx: SceneResourceContext) -> Optional[Path]:
             raise RuntimeError(f"Failed to load HAMSTER data: {e}") from e
 
 
-def _save_hamster_dataset(
-    dataset: xr.Dataset, output_path: UPath, upscale_factor: int = 1
-) -> None:
-    """Save HAMSTER dataset to zarr format, with optional upscaling."""
-
+def _save_hamster_dataset(dataset: xr.Dataset, output_path: UPath) -> None:
+    """Save HAMSTER dataset to zarr format."""
     mkdir(output_path.parent)
-
-    if upscale_factor > 1:
-        if "x" in dataset.dims and "y" in dataset.dims:
-            new_x_size = len(dataset.x) * upscale_factor
-            new_y_size = len(dataset.y) * upscale_factor
-
-            x_coords = dataset.x.values
-            y_coords = dataset.y.values
-
-            new_x = np.linspace(x_coords.min(), x_coords.max(), new_x_size)
-            new_y = np.linspace(y_coords.min(), y_coords.max(), new_y_size)
-
-            target_grid = xr.Dataset(
-                {
-                    "x": new_x,
-                    "y": new_y,
-                }
-            )
-        else:
-            dataset_to_save = dataset
-
-        if "target_grid" in locals():
-            regridder = Regridder(dataset)
-            dataset_to_save = regridder.cubic(target_grid)
-        else:
-            dataset_to_save = dataset
-    else:
-        dataset_to_save = dataset
-
-    dataset_to_save.to_zarr(output_path, mode="w")
+    dataset.to_zarr(output_path, mode="w")
 
 
 def _crop_and_save_area(
@@ -224,41 +191,3 @@ def _crop_and_save_area(
     except Exception as e:
         logging.error(f"Error processing {area_name} HAMSTER data: {e}")
         return None
-
-
-# def _create_hamster_preview(albedo_data_original: xr.DataArray,
-#                            albedo_data_projected: xr.DataArray,
-#                            output_dir: UPath,
-#                            scene_name: str) -> None:
-#     """Create before/after plots showing original vs projected HAMSTER data."""
-
-#     try:
-#         rgb_bands = [640, 550, 470]
-#         fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-
-#         albedo_data_original.sel(wavelength=rgb_bands, method="nearest").plot.imshow(
-#             ax=axes[0], rgb="wavelength", robust=True
-#         )
-#         axes[0].set_title("Original Data (Geographic Coords)")
-#         axes[0].set_xlabel("Longitude")
-#         axes[0].set_ylabel("Latitude")
-
-#         albedo_data_projected.sel(wavelength=rgb_bands, method="nearest").plot.imshow(
-#             ax=axes[1], rgb="wavelength", robust=True
-#         )
-#         axes[1].set_title("Projected Data (Oblique Mercator)")
-#         axes[1].set_xlabel("X Coordinate (meters)")
-#         axes[1].set_ylabel("Y Coordinate (meters)")
-#         axes[1].set_aspect('equal', adjustable='box')
-
-#         plt.tight_layout()
-
-#         output_path = output_dir / f"hamster_{scene_name}_projection_preview.png"
-#         mkdir(output_path.parent)
-#         plt.savefig(output_path, dpi=150, bbox_inches='tight')
-#         plt.close()
-
-#         logging.info(f"HAMSTER projection preview saved: {output_path}")
-
-#     except Exception as e:
-#         logging.warning(f"Could not create HAMSTER projection preview: {e}")

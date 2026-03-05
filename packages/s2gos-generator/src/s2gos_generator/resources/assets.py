@@ -2,62 +2,12 @@
 
 import logging
 from pathlib import Path
-from typing import List, Literal, Optional, Tuple, Union
+from typing import Optional
 
 import yaml
 from s2gos_utils.io.paths import open_file
 
 from ..core.context import SceneResourceContext
-
-
-def _convert_to_scene_coords(
-    coordinate: Union[Tuple[float, float], List[float]],
-    coord_type: Literal["geographic", "scene"],
-    coords,
-) -> Tuple[float, float]:
-    """Convert coordinates to scene coordinate system.
-
-    Args:
-        coordinate: Either (lon, lat) or (x, y) depending on coord_type
-        coord_type: "geographic" or "scene"
-        coords: CoordinateSystem instance for conversion
-
-    Returns:
-        (scene_x, scene_y) in scene coordinates
-    """
-    if coord_type == "geographic":
-        lon, lat = coordinate
-        return coords.latlon_to_scene(lat, lon)
-    return tuple(coordinate)
-
-
-def _create_asset_exclusion_zone(
-    scene_x: float,
-    scene_y: float,
-    exclusion_zone: Union[float, Tuple[float, float]],
-):
-    """Create exclusion zone geometry around asset position.
-
-    Args:
-        scene_x, scene_y: Object position in scene coordinates
-        exclusion_zone: Either a radius (float) or box dimensions (width, height)
-
-    Returns:
-        Shapely Polygon
-    """
-    from shapely.geometry import Point, box
-
-    if isinstance(exclusion_zone, (int, float)):
-        return Point(scene_x, scene_y).buffer(exclusion_zone)
-    else:
-        width, height = exclusion_zone
-        half_w, half_h = width / 2, height / 2
-        return box(
-            scene_x - half_w,
-            scene_y - half_h,
-            scene_x + half_w,
-            scene_y + half_h,
-        )
 
 
 def process_user_assets(ctx: SceneResourceContext) -> Optional[Path]:
@@ -70,7 +20,6 @@ def process_user_assets(ctx: SceneResourceContext) -> Optional[Path]:
         Path to the objects directory containing processed assets
     """
 
-    from s2gos_utils.coordinates import CoordinateSystem
     from s2gos_utils.io.paths import copy, mkdir
 
     processed_objects = []
@@ -83,8 +32,7 @@ def process_user_assets(ctx: SceneResourceContext) -> Optional[Path]:
     if target_dem_path is None:
         raise RuntimeError("Target DEM data not available for elevation querying")
 
-    coords = CoordinateSystem(ctx.center_lat, ctx.center_lon)
-    logging.info("Using cached CoordinateSystem for asset placement")
+    coords = ctx.coordinate_system
 
     for i, asset in enumerate(ctx.user_assets):
         try:

@@ -341,9 +341,6 @@ def create_s2gos_scene(
         "materials_config_path": str(material_config_path),
     }
 
-    processed_objects = kwargs.get("processed_objects", [])
-    objects = processed_objects if processed_objects else []
-
     scene_description = SceneDescription(
         name=scene_name,
         location={
@@ -357,7 +354,7 @@ def create_s2gos_scene(
         target=target,
         buffer=buffer,
         background=background,
-        objects=objects,
+        objects=[],
         material_indices=material_indices,
         metadata=metadata,
     )

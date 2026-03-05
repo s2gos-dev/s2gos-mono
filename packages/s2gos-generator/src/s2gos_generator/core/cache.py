@@ -197,7 +197,7 @@ _DEEP_VALIDATORS = {
 class ContextRestorer:
     """Saves and restores per-resource asset paths to/from disk."""
 
-    def save_assets(
+    def capture_asset_paths(
         self,
         resource_id: str,
         ctx: SceneResourceContext,
@@ -356,7 +356,9 @@ class CachedDAGExecutor(DAGExecutor):
         restorer: ContextRestorer,
         resources_entry: dict,
     ) -> None:
-        asset_fields = restorer.save_assets(resource_id, context, assets_snapshot)
+        asset_fields = restorer.capture_asset_paths(
+            resource_id, context, assets_snapshot
+        )
         resources_entry[resource_id] = {
             "effective_hash": hashes.get(resource_id, ""),
             "asset_fields": asset_fields,
