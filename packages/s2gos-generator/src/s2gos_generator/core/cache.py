@@ -169,7 +169,6 @@ _RESOURCE_CACHE_SPECS: Dict[str, ResourceCacheSpec] = {
         [
             "selection_texture_file",
             "preview_texture_file",
-            "region_indices_file",
         ],
     ),
     "buffer_texture": ResourceCacheSpec(
@@ -250,9 +249,9 @@ class CachedDAGExecutor(DAGExecutor):
     ) -> Dict[str, Any]:
         """Execute the DAG with optional caching.
 
-        Note: Cache validity is based on hashing the configuration object, not
-        the contents of external files referenced in the config. In-place replacement
-        of referenced files will not be detected as a cache miss.
+        Note: Cache validity is based on hashing configuration fields (paths,
+        parameters), not the contents of external files at those paths. In-place
+        replacement of referenced files will not be detected as a cache miss.
         """
         manifest_helper = CacheManifest(context.output_dir)
         manifest = manifest_helper.load() if use_cache else {}

@@ -30,7 +30,6 @@ class SceneAssets:
 
     vegetation_objects_file: Optional[UPath] = None
     user_assets_file: Optional[UPath] = None
-    region_indices_file: Optional[UPath] = None
     hamster_paths_file: Optional[UPath] = None
 
     def to_dict(self) -> Dict:

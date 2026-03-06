@@ -95,7 +95,7 @@ def process_target_vegetation(
         random.seed(ctx.config.vegetation_placement.random_seed)
         np.random.seed(ctx.config.vegetation_placement.random_seed)
         logging.info(
-            f"Random seed set to {config.random_seed} for reproducible generation"
+            f"Random seed set to {ctx.config.vegetation_placement.random_seed} for reproducible generation"
         )
 
     if vegetation_config is None or not vegetation_config.enabled:

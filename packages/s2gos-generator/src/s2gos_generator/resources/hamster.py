@@ -123,6 +123,7 @@ def process_hamster_data(ctx: SceneResourceContext) -> Optional[Path]:
                 logging.info(f"  {area}: {path}")
 
             sidecar_path = ctx.data_dir / "hamster_paths.yml"
+            ctx.data_dir.mkdir(parents=True, exist_ok=True)
             with open_file(sidecar_path, "w") as f:
                 yaml.dump(
                     {k: str(v) for k, v in result_paths.items()},

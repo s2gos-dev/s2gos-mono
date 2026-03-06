@@ -90,7 +90,12 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
     if ctx.config.region_material_defs:
         additional_material_libraries.append(ctx.config.region_material_defs)
 
-    region_material_indices = _read_sidecar_yaml(ctx.assets.region_indices_file) or None
+    region_material_indices = None
+    if ctx.config.material_regions:
+        names = sorted(set(r.material_name for r in ctx.config.material_regions))
+        region_material_indices = {
+            name: idx for idx, name in enumerate(names, start=11)
+        }
 
     # Build include_files from available sidecars
     include_files = []
@@ -129,7 +134,6 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         hamster_data_paths=hamster_data_paths,
         additional_material_libraries=additional_material_libraries,
         region_material_indices=region_material_indices,
-        random_seed=ctx.config.random_seed,
     )
 
     # Set include_files on the scene description
