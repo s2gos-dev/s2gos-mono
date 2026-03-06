@@ -20,8 +20,12 @@ By the end you will have a `gobabeb.yml` scene description file ready to use for
 
 ## Step 1 — Create a scene configuration
 
-Use `create_scene_config()` to define the area of interest around the Gobabeb
-site. Then attach a buffer zone, a background zone, and a molecular atmosphere.
+Use [`create_scene_config()`](../api/scene_config.md) to define the area of interest around the Gobabeb
+site. Then attach a buffer zone ([`BufferConfig`][s2gos_generator.core.config.scene.BufferConfig]),
+a background zone ([`BackgroundConfig`][s2gos_generator.core.config.scene.BackgroundConfig]),
+and a molecular atmosphere ([`MolecularAtmosphereConfig`][s2gos_generator.core.config.atmosphere.MolecularAtmosphereConfig],
+[`ThermophysicalConfig`][s2gos_generator.core.config.atmosphere.ThermophysicalConfig],
+[`AbsorptionDatabase`][s2gos_generator.core.config.atmosphere.AbsorptionDatabase]).
 
 ```python
 from s2gos_generator import create_scene_config
@@ -89,7 +93,7 @@ config.to_json(config_dir / "gobabeb_gen_config.json")
 
 ## Step 3 — Run the generation pipeline
 
-Create a `SceneGenerationPipeline` from the configuration and execute it.
+Create a [`SceneGenerationPipeline`][s2gos_generator.core.pipeline.SceneGenerationPipeline] from the configuration and execute it.
 The pipeline fetches DEM and landcover data, builds terrain meshes and textures,
 and writes the final scene description.
 

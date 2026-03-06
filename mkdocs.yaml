@@ -23,8 +23,14 @@ theme:
     - search.highlight
     - search.suggest
     - content.code.copy
+  logo: img/logo.png
+
+extra_css:
+  - stylesheets/extra.css
 
 markdown_extensions:
+  - admonition
+  - pymdownx.details
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.superfences

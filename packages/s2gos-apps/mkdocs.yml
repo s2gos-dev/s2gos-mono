@@ -46,6 +46,7 @@ plugins:
 
 nav:
   - Introduction: index.md
+  - Setup: setup.md
   - Examples:
     - Gobabeb GUI Walkthrough: examples/gobabeb_gui.md
-  - About: about.md
+

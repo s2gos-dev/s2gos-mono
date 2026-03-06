@@ -160,10 +160,19 @@ class ProcessingOptions(BaseModel):
 
 
 class SceneGenConfig(BaseModel):
-    """
-    Comprehensive scene configuration using Pydantic.
+    """Comprehensive scene generation configuration.
 
-    Provides a modern, validated, and flexible configuration system for scene generation.
+    Provides a validated configuration system for all scene generation parameters.
+    Pass an instance to
+    [SceneGenerationPipeline][s2gos_generator.core.pipeline.SceneGenerationPipeline]
+    and call ``run()`` to produce a
+    [SceneDescription][s2gos_utils.scene.description.SceneDescription].
+
+    Optional spatial zones are controlled by
+    [BufferConfig][s2gos_generator.core.config.scene.BufferConfig] and
+    [BackgroundConfig][s2gos_generator.core.config.scene.BackgroundConfig].
+    Vegetation placement is configured via
+    [VegetationPlacementConfig][s2gos_generator.core.config.vegetation.VegetationPlacementConfig].
     """
 
     config_version: str = Field(
@@ -185,7 +194,8 @@ class SceneGenConfig(BaseModel):
     )
 
     snow: Optional[SnowConfig] = Field(
-        None, description="Seasonal snow configuration (None disables snow)"
+        None,
+        description="Seasonal snow configuration (None disables snow). See [SnowConfig][s2gos_generator.core.config.scene.SnowConfig].",
     )
 
     processing: ProcessingOptions = Field(
@@ -196,29 +206,35 @@ class SceneGenConfig(BaseModel):
         description="Atmosphere configuration",
     )
     buffer: Optional[BufferConfig] = Field(
-        None, description="Buffer area configuration (None disables buffer)"
+        None,
+        description="Buffer area configuration (None disables buffer). See [BufferConfig][s2gos_generator.core.config.scene.BufferConfig].",
     )
     background: Optional[BackgroundConfig] = Field(
-        None, description="Background area configuration (None disables background)"
+        None,
+        description="Background area configuration (None disables background). See [BackgroundConfig][s2gos_generator.core.config.scene.BackgroundConfig].",
     )
     hamster: Optional[HamsterConfig] = Field(
-        None, description="HAMSTER albedo data configuration for baresoil"
+        None,
+        description="HAMSTER albedo data configuration for baresoil. See [HamsterConfig][s2gos_generator.core.config.assets.HamsterConfig].",
     )
     user_assets: list[UserAssets] = Field(
-        [], description="User assets to be placed in generated scene"
+        [],
+        description="User assets to be placed in generated scene. See [UserAssets][s2gos_generator.core.config.assets.UserAssets].",
     )
     xml_scenes: list[XmlSceneConfig] = Field(
-        [], description="XML scene files to import for additional assets and materials"
+        [],
+        description="XML scene files to import for additional assets and materials. See [XmlSceneConfig][s2gos_generator.core.config.assets.XmlSceneConfig].",
     )
     material_regions: list[MaterialRegion] = Field(
-        [], description="Material regions for spatially-selective material overrides"
+        [],
+        description="Material regions for spatially-selective material overrides. See [MaterialRegion][s2gos_generator.core.config.assets.MaterialRegion].",
     )
     region_material_defs: Dict[str, Dict[str, Any]] = Field(
         default_factory=dict, description="Material definitions for region materials"
     )
     vegetation_placement: Optional[VegetationPlacementConfig] = Field(
         None,
-        description="Vegetation placement configuration (None disables vegetation)",
+        description="Vegetation placement configuration (None disables vegetation). See [VegetationPlacementConfig][s2gos_generator.core.config.vegetation.VegetationPlacementConfig].",
     )
     vegetation_exclusion_zones: List[VegetationExclusionZone] = Field(
         default_factory=list,

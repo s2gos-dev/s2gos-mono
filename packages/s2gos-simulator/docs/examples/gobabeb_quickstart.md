@@ -11,7 +11,7 @@ synthetic RGB image.
 ## Prerequisites
 
 - **Eradiate** installed and its spectral data downloaded
-  (`pixi run apps-init`). See the [Setup](../setup.md) page for details.
+  (`pixi run eradiate-init`). See the [Setup](../setup.md) page for details.
 - A **generated scene YAML** from the generator quickstart. If you have not
   generated one yet, follow
   [Quickstart: Generate a Gobabeb Scene](../../s2gos-generator/examples/gobabeb_quickstart.md)
@@ -21,9 +21,10 @@ synthetic RGB image.
 
 ## Step 1 — Define the sensor
 
-Create a `UAVSensor` with a perspective camera looking straight down from 20 km.
-The spectral response uses three delta wavelengths at 440 nm (blue), 550 nm
-(green), and 660 nm (red) to produce a synthetic RGB image.
+Create a [`UAVSensor`][s2gos_simulator.config.sensors.UAVSensor] with a perspective camera ([`UAVInstrumentType`][s2gos_simulator.config.sensors.UAVInstrumentType]) looking straight down from 20 km.
+The spectral response ([`SpectralResponse`][s2gos_simulator.config.spectral.SpectralResponse]) uses three delta wavelengths at 440 nm (blue), 550 nm
+(green), and 660 nm (red) to produce a synthetic RGB image. [`PostProcessingOptions`][s2gos_simulator.config.sensors.PostProcessingOptions] controls post-simulation compositing.
+The sensor viewing geometry is specified via [`LookAtViewing`][s2gos_simulator.config.viewing.LookAtViewing].
 
 ```python
 import numpy as np
@@ -71,7 +72,7 @@ sensor = UAVSensor(
 
 ## Step 2 — Set the illumination
 
-Use `DirectionalIllumination.from_date_and_location()` to compute the solar
+Use [`DirectionalIllumination`][s2gos_simulator.config.illumination.DirectionalIllumination]`.from_date_and_location()` to compute the solar
 zenith and azimuth angles from a specific date/time and the Gobabeb coordinates.
 The method uses Skyfield orbital mechanics under the hood.
 
@@ -87,14 +88,13 @@ illumination = DirectionalIllumination.from_date_and_location(
 ```
 
 !!! note
-    The time is in UTC. Make sure the sun is above the horizon at the chosen
-    time — the method raises a `ValueError` otherwise.
+    The time is in UTC. Make sure the sun is above the horizon at the chosen time — the method raises a `ValueError` otherwise.
 
 ---
 
 ## Step 3 — Build the simulation configuration
 
-Assemble sensor, illumination, and backend hints into a `SimulationConfig`.
+Assemble sensor, illumination, and backend hints into a [`SimulationConfig`][s2gos_simulator.config.simulation.SimulationConfig].
 The `backend_hints` select Eradiate's monochromatic mode (`mono`), which
 evaluates the radiative transfer independently at each of the three wavelengths.
 
@@ -129,8 +129,8 @@ config.to_json(config_dir / "gobabeb_sim_config.json")
 
 ## Step 5 — Run the simulation
 
-Load the scene description produced by the generator and pass it to the
-`EradiateBackend` together with the simulation configuration.
+Load the [`SceneDescription`][s2gos_utils.scene.description.SceneDescription] produced by the generator and pass it to the
+[`EradiateBackend`](../api/backend.md) together with the simulation configuration.
 
 ```python
 from s2gos_simulator import EradiateBackend

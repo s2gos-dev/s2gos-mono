@@ -49,7 +49,6 @@ nav:
   - Concepts: concepts.md
   - Setup: setup.md
   - Configuration: configuration.md
-  - About: about.md
   - Examples:
     - Gobabeb Quickstart: examples/gobabeb_quickstart.md
   - API:
@@ -59,3 +58,4 @@ nav:
     - Measurements: api/measurements.md
     - Viewing: api/viewing.md
     - Spectral: api/spectral.md
+    - Backend: api/backend.md

@@ -89,7 +89,7 @@ The form shows the following fields (with defaults pre-filled):
 
 Click **Execute** to submit.
 
-**What happens under the hood:** the process creates a `SceneGenConfig` object
+**What happens under the hood:** the process creates a [`SceneGenConfig`](../../s2gos-generator/api/scene_config.md) object
 with Gobabeb-specific settings — a 10 km target area, a 60 km buffer zone at
 60 m resolution, a 150 km background at 200 m resolution, and a US Standard
 molecular atmosphere (AFGL 1986, GECKO absorption database).  The config is
@@ -117,7 +117,7 @@ Select **`common-generation`** from the drop-down.
 
 Click **Execute**.
 
-This process loads the config JSON, builds a `SceneGenerationPipeline` DAG, and
+This process loads the config JSON, builds a [`SceneGenerationPipeline`](../../s2gos-generator/api/pipeline.md) DAG, and
 executes it.  The pipeline:
 
 1. defines the area of interest from the target coordinates,
@@ -150,7 +150,7 @@ Select **`gobabeb-simulation-config`** from the drop-down.
 
 Click **Execute**.
 
-The process builds a `SimulationConfig` with a top-down perspective camera
+The process builds a [`SimulationConfig`](../../s2gos-simulator/api/simulation.md) with a top-down perspective camera
 (512 x 512 px, 50° FOV) capturing three wavelengths (440, 550, 660 nm for a
 synthetic RGB), directional illumination derived from the solar position at the
 given hour, and mono-mode Eradiate backend hints. The config is saved as JSON.

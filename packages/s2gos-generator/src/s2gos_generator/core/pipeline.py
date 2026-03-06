@@ -216,13 +216,19 @@ class SceneGenerationPipeline:
     def run(self, use_cache: bool = True) -> SceneDescription:
         """Execute the complete scene generation pipeline.
 
+        Runs all resources registered from the
+        [SceneGenConfig][s2gos_generator.core.config.scene.SceneGenConfig]
+        and returns the resulting
+        [SceneDescription][s2gos_utils.scene.description.SceneDescription].
+
         Args:
             use_cache: When ``True`` (default), skip resources whose config
                 hash and output files match the stored manifest.  Set to
                 ``False`` to force a full rebuild.
 
         Returns:
-            SceneDescription instance with complete scene configuration
+            [SceneDescription][s2gos_utils.scene.description.SceneDescription]
+            instance with complete scene configuration.
         """
         self.initialize()
 
@@ -317,7 +323,6 @@ class SceneGenerationPipeline:
             dot.attr("edge", fontname="Arial", fontsize="10")
 
             resource_colors = {
-                "aoi": "#90EE90",
                 "buffer_aoi": "#98FB98",
                 "background_aoi": "#F0FFF0",
                 "target_dem": "#87CEEB",
@@ -338,9 +343,7 @@ class SceneGenerationPipeline:
             for resource in resources:
                 color = resource_colors.get(resource.id, "#D3D3D3")
 
-                if "aoi" in resource.id:
-                    dot.node(resource.id, resource.id, fillcolor=color, shape="ellipse")
-                elif resource.id == "scene_description":
+                if resource.id == "scene_description":
                     dot.node(
                         resource.id, resource.id, fillcolor=color, shape="doubleoctagon"
                     )
@@ -357,7 +360,7 @@ class SceneGenerationPipeline:
             legend_text = (
                 f"Scene Generation Pipeline: {self.scene_name}\\n"
                 f"Generated: {self.config.created_at.strftime('%Y-%m-%d %H:%M')}\\n"
-                f"Shapes: ○ AOI, ◊ Mesh, □ Array, ⬢ Final"
+                f"Shapes: ◊ Mesh, □ Array, ⬢ Final"
             )
             dot.attr(label=legend_text)
             dot.attr(labelloc="t")

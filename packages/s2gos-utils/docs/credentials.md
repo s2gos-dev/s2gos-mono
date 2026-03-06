@@ -8,7 +8,7 @@
 
 * Identifier used to look up credentials at runtime.
 * Use descriptive names indicating purpose or data source.
-* Examples: `earthdatahub`, `s3ovh`, `my_institution`, `landsat_archive`.
+* Examples: `earthdatahub`, `s3ovh`, `my_institution`.
 
 ## Supported Authentication Types
 

@@ -25,7 +25,10 @@ theme:
 
 nav:
   - Introduction: index.md
+  - Setup: setup.md
   - Configuration: configuration.md
   - Data Access Layer: data_access_layer.md
   - Credentials: credentials.md
-  - About: about.md
+  - API Reference:
+    - Scene Description: api/scene_description.md
+    - Paths: api/paths.md

@@ -1,5 +1,5 @@
 
-**Script:** [`examples/run_hypstar_simulations.py`](../../../../examples/run_hypstar_simulations.py)
+**Script:** [`examples/run_hypstar_simulations.py`](https://github.com/s2gos-dev/s2gos-mono/blob/main/examples/run_hypstar_simulations.py)
 
 This example runs a series of HYPSTAR ground sensor simulations over the Gobabeb validation
 site, driven by a real HYPERNETS L2A NetCDF dataset. Each series in the dataset corresponds
@@ -10,22 +10,24 @@ direct comparison against real measurements.
 ## What it demonstrates
 
 - **Material regions** — a 1.5 km × 1.5 km centre patch of the target area is overridden
-  with a spectrally-rich RPV BRDF fit from field measurements, while the surrounding surface
+  with an RPV BRDF fit from field measurements, while the surrounding surface
   retains the default landcover-based materials.
 - **HAMSTER albedo map** — measured bare-soil albedo from the HAMSTER network replaces the
   default material for bare-soil pixels across the full target domain.
 - **User assets** — two XML scene objects (a mast structure and a fence) are imported and
   positioned at their real-world coordinates within the scene.
-- **Heterogeneous atmosphere** — a molecular layer (with MYCENA absorption database) is
+- **Heterogeneous atmosphere** — a molecular layer (with [MYCENA](https://eradiate.readthedocs.io/en/stable/data/absorption_databases.html#mycena-ckd) absorption database) is
   combined with a single aerosol particle layer whose optical depth and height are derived
   from CAMS climatology.
 - **Geometry-driven loop** — viewing and solar angles are read directly from the HYPERNETS
   L2A file for each acquisition, converted to the Eradiate convention, and used to configure
-  a fresh `SimulationConfig` per series.
+  a fresh [`SimulationConfig`][s2gos_simulator.config.simulation.SimulationConfig] per series.
 
 ## Key configuration points
 
 ### Material region (RPV patch)
+
+A [`MaterialRegion`][s2gos_generator.core.config.assets.MaterialRegion] overrides the default material for a spatial sub-region of the scene.
 
 ```python
 config.region_material_defs["gobabeb_measured_rpv"] = {
@@ -47,6 +49,8 @@ config.material_regions.append(
 
 ### HYPSTAR sensor (via factory)
 
+[`create_hypstar_sensor`][s2gos_simulator.config.sensors.create_hypstar_sensor] accepts an [`AngularFromOriginViewing`][s2gos_simulator.config.viewing.AngularFromOriginViewing] geometry and returns a fully configured ground sensor.
+
 ```python
 create_hypstar_sensor(
     viewing=AngularFromOriginViewing(...),
@@ -58,7 +62,7 @@ create_hypstar_sensor(
 )
 ```
 
-`create_hypstar_sensor` pre-configures the Gaussian SRF (VNIR 3 nm / SWIR 10 nm FWHM),
+[`create_hypstar_sensor`][s2gos_simulator.config.sensors.create_hypstar_sensor] pre-configures the Gaussian SRF (VNIR 3 nm / SWIR 10 nm FWHM),
 circular-mask post-processing, and spatial averaging. Passing `reference_file` aligns the
 output wavelength grid to that of the real L2A dataset for direct comparison.
 

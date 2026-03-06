@@ -48,7 +48,7 @@ nav:
   - Introduction: index.md
   - Concepts: concepts.md
   - Configuration: configuration.md
-  - About: about.md
+  - Setup: setup.md
   - Examples:
     - Gobabeb Quickstart: examples/gobabeb_quickstart.md
   - API Reference:

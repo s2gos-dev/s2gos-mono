@@ -12,8 +12,8 @@ Each process is a Python function decorated with `@registry.process()`. This sin
 | `service.py` | `LocalService` — wraps the registry as a FastAPI / OGC API server |
 | `cli.py` | Generates a CLI (`s2gos_apps`) from the registry using `procodile` |
 | `processes/` | Process definitions grouped by site (Gobabeb, Frascati, …) and common operations |
-| `gen_util.py` | Shared generation logic — runs the `SceneGenerationPipeline` DAG |
-| `sim_util.py` | Shared simulation logic — builds `SimulationConfig`, runs `EradiateBackend` |
+| `gen_util.py` | Shared generation logic — runs the [`SceneGenerationPipeline`](../s2gos-generator/api/pipeline.md) DAG |
+| `sim_util.py` | Shared simulation logic — builds [`SimulationConfig`](../s2gos-simulator/api/simulation.md), runs [`EradiateBackend`](../s2gos-simulator/api/backend.md) |
 
 ## Available processes
 
@@ -65,7 +65,7 @@ pixi install -e dev
 You can then install the data needed by Eradiate by running.
 
 ```bash
-pixi run apps-init
+pixi run eradiate-init
 ```
 
 See the [Eradiate documentation](https://eradiate.readthedocs.io/en/stable/user_guide/config.html) on a guide on how to Configure the data install location.

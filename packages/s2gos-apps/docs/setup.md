@@ -2,7 +2,7 @@
 
 ## Installation
 
-The simulator uses [pixi](https://pixi.sh) for environment management.
+S2GOS Apps uses [pixi](https://pixi.sh) for environment management.
 
 ```bash
 # Install the default environment
@@ -12,7 +12,9 @@ pixi install
 pixi install -e dev
 ```
 
-The main runtime dependency is [Eradiate](https://eradiate.eu), which provides the underlying radiative transfer engine. Eradiate requires spectral and atmospheric datasets to be downloaded once before use:
+## Eradiate Data
+
+The simulation workflows depend on [Eradiate](https://eradiate.eu) for radiative transfer. Eradiate requires spectral and atmospheric datasets to be downloaded once before use:
 
 ```bash
 pixi run eradiate-init

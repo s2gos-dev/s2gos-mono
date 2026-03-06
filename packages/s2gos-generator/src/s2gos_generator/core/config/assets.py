@@ -159,15 +159,19 @@ class MaterialRegion(BaseModel):
     """Material region for spatially-selective material overrides.
 
     Defines a spatial region where the terrain material will be overridden with a
-    specified material. Supports multiple geometry types and coordinate systems.
+    specified material. Supports rectangle and polygon geometry types in both
+    geographic (WGS84) and scene coordinate systems.
+
+    Used in [SceneGenConfig][s2gos_generator.core.config.scene.SceneGenConfig]
+    via the ``material_regions`` field. The ``material_name`` must reference a
+    [Material][s2gos_utils.scene.materials.definitions.Material] known to the scene.
     """
 
     region_id: str = Field(..., description="Unique identifier for this region")
 
     geometry: Dict[str, Any] = Field(
         ...,
-        description="Region geometry specification (rectangle or polygon). "
-        "See region_geometry module for details.",
+        description="Region geometry specification. Supported types: ``rectangle`` and ``polygon``.",
     )
 
     material_name: str = Field(

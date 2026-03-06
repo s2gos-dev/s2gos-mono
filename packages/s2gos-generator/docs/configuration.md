@@ -2,7 +2,7 @@
 
 The S2GOS generator reads its settings from `s2gos_settings.yaml`, which is located by
 walking up the directory tree from your script. Shared settings (`common:` section) are
-documented in the [s2gos-utils Configuration](../../s2gos-utils/configuration.md) page.
+documented in the [s2gos-utils Configuration](../s2gos-utils/configuration.md) page.
 
 ## Configuration Example
 
@@ -47,9 +47,9 @@ Land cover classification dataset. Tested with ESA WorldCover 2021.
 
 ### Dataset Types
 
-Datasets are specified as subobjects with a `type` field. Paths use **PathRef** format:
+Datasets are specified as subobjects with a `type` field. Paths use **[PathRef](../s2gos-utils/api/paths.md)** format:
 - `value`: URI string (local or remote)
-- `cid`: Credential ID (optional) - see s2gos-utils credentials documentation
+- `cid`: Credential ID (optional) - see [s2gos-utils credentials documentation](../s2gos-utils/credentials.md)
 
 #### Common Parameters
 
@@ -59,24 +59,24 @@ Datasets are specified as subobjects with a `type` field. Paths use **PathRef** 
 | `crs` | string | No | CRS (default: `EPSG:4326`) |
 | `type` | string | Yes | Dataset type |
 
-#### Indexed GeoTiff (`type: indexed-geotiff`)
+#### [IndexedGeoTiff](api/datasets.md) (`type: indexed-geotiff`)
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `root_directory` | PathRef | Yes | Directory containing GeoTIFF tiles |
-| `index_path` | PathRef | Yes | Feather index file with tile paths |
+| `root_directory` | [PathRef](../s2gos-utils/api/paths.md) | Yes | Directory containing GeoTIFF tiles |
+| `index_path` | [PathRef](../s2gos-utils/api/paths.md) | Yes | Feather index file with tile paths |
 | `variable_name` | string | No | Data variable name |
 | `path_column` | string | No | Column with file paths (auto-detected) |
 
-#### Zarr (`type: zarr`)
+#### [Zarr](api/datasets.md) (`type: zarr`)
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `path` | PathRef | Yes | Path to Zarr archive |
+| `path` | [PathRef](../s2gos-utils/api/paths.md) | Yes | Path to Zarr archive |
 | `variable_name` | string | No | Data variable name |
 
 ### `generator.files` - Additional Files
 
-#### `material_config`, **PathRef**, *optional*
+#### `material_config`, **[PathRef](../s2gos-utils/api/paths.md)**, *optional*
 
 Path to materials JSON defining optical properties for land cover classes. Default: `materials.json` (resolved via `search_paths`).
