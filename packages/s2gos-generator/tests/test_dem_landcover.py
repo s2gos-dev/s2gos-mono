@@ -14,7 +14,7 @@ def mock_ctx(tmp_path):
     ctx.center_lat = 45.0
     ctx.center_lon = 15.0
 
-    ctx._target_aoi_polygon = object()
+    ctx.target_aoi_polygon = object()
     ctx.dependency_outputs = {"target_dem": tmp_path / "dem.zarr"}
 
     # Mock the assets container so we can check side effects
@@ -26,7 +26,7 @@ class TestProcessTargetDem:
     def test_validation_error(self, mock_ctx):
         from s2gos_generator.resources.dem import process_target_dem
 
-        mock_ctx._target_aoi_polygon = None
+        mock_ctx.target_aoi_polygon = None
         with pytest.raises(ValueError):
             process_target_dem(mock_ctx)
 
@@ -51,7 +51,7 @@ class TestProcessTargetLandcover:
     def test_validation_error(self, mock_ctx):
         from s2gos_generator.resources.landcover import process_target_landcover
 
-        mock_ctx._target_aoi_polygon = None
+        mock_ctx.target_aoi_polygon = None
         with pytest.raises(ValueError):
             process_target_landcover(mock_ctx)
 

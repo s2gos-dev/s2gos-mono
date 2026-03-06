@@ -71,9 +71,7 @@ def sample_homogeneous_atmosphere():
 
 @pytest.fixture
 def sample_heterogeneous_atmosphere():
-    return HeterogeneousAtmosphereConfig(
-        molecular=MolecularAtmosphereConfig()
-    )
+    return HeterogeneousAtmosphereConfig(molecular=MolecularAtmosphereConfig())
 
 
 @pytest.fixture

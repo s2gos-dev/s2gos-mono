@@ -1,93 +1,94 @@
+"""Tests for lazy AOI polygon properties on SceneResourceContext."""
+
 from unittest.mock import MagicMock
 
-from s2gos_generator.resources.aoi import (
-    generate_aoi,
-    generate_background_aoi,
-    generate_buffer_aoi,
-)
 
-
-def _make_ctx(
-    center_lat: float = 0.0,
-    center_lon: float = 0.0,
+def _make_context(
+    center_lat: float = 45.0,
+    center_lon: float = 15.0,
     aoi_size_km: float = 10.0,
-    buffer_size_km: float = 20.0,
-    background_size_km: float = 50.0,
+    buffer_size_km: float = None,
+    background_size_km: float = None,
 ):
-    """Build a minimal mock context for AOI resource tests."""
-    ctx = MagicMock()
+    """Build a SceneResourceContext with lazy AOI properties, bypassing the full constructor."""
+    from s2gos_generator.core.context import SceneResourceContext
+
+    ctx = object.__new__(SceneResourceContext)
     ctx.center_lat = center_lat
     ctx.center_lon = center_lon
     ctx.aoi_size_km = aoi_size_km
-    # buffer and background sizes live under ctx.config sub-models
-    ctx.config.buffer.size_km = buffer_size_km
-    ctx.config.background.size_km = background_size_km
     ctx._target_aoi_polygon = None
     ctx._buffer_aoi_polygon = None
     ctx._background_aoi_polygon = None
+    ctx._coord_system = None
+
+    config = MagicMock()
+    if buffer_size_km is not None:
+        config.buffer.size_km = buffer_size_km
+    else:
+        config.buffer = None
+    if background_size_km is not None:
+        config.background.size_km = background_size_km
+    else:
+        config.background = None
+    ctx.config = config
+
     return ctx
 
 
-class TestGenerateAOI:
-    def test_generate_aoi_sets_polygon(self):
-        ctx = _make_ctx()
-        generate_aoi(ctx)
-        assert ctx._target_aoi_polygon is not None
-
-    def test_aoi_polygon_is_valid(self):
-        ctx = _make_ctx()
-        generate_aoi(ctx)
-        polygon = ctx._target_aoi_polygon
+class TestTargetAOIPolygon:
+    def test_returns_valid_polygon(self):
+        ctx = _make_context()
+        polygon = ctx.target_aoi_polygon
+        assert polygon is not None
         assert polygon.is_valid
 
-    def test_generate_aoi_returns_none(self):
-        ctx = _make_ctx()
-        result = generate_aoi(ctx)
-        assert result is None
+    def test_returns_same_object_on_second_access(self):
+        ctx = _make_context()
+        p1 = ctx.target_aoi_polygon
+        p2 = ctx.target_aoi_polygon
+        assert p1 is p2
 
 
-class TestGenerateBufferAOI:
-    def test_buffer_aoi_sets_context(self):
-        ctx = _make_ctx()
-        generate_aoi(ctx)
-        generate_buffer_aoi(ctx)
-        assert ctx._buffer_aoi_polygon is not None
+class TestBufferAOIPolygon:
+    def test_returns_none_when_no_buffer_configured(self):
+        ctx = _make_context(buffer_size_km=None)
+        assert ctx.buffer_aoi_polygon is None
 
-    def test_buffer_aoi_is_valid(self):
-        ctx = _make_ctx()
-        generate_buffer_aoi(ctx)
-        assert ctx._buffer_aoi_polygon.is_valid
+    def test_returns_polygon_when_buffer_configured(self):
+        ctx = _make_context(buffer_size_km=20.0)
+        polygon = ctx.buffer_aoi_polygon
+        assert polygon is not None
+        assert polygon.is_valid
 
-    def test_buffer_aoi_larger_than_target(self):
-        ctx = _make_ctx(aoi_size_km=10.0, buffer_size_km=20.0)
-        generate_aoi(ctx)
-        generate_buffer_aoi(ctx)
-        assert ctx._buffer_aoi_polygon.area > ctx._target_aoi_polygon.area
+    def test_buffer_larger_than_target(self):
+        ctx = _make_context(aoi_size_km=10.0, buffer_size_km=20.0)
+        assert ctx.buffer_aoi_polygon.area > ctx.target_aoi_polygon.area
 
-    def test_buffer_aoi_returns_none(self):
-        ctx = _make_ctx()
-        result = generate_buffer_aoi(ctx)
-        assert result is None
+    def test_returns_same_object_on_second_access(self):
+        ctx = _make_context(buffer_size_km=20.0)
+        p1 = ctx.buffer_aoi_polygon
+        p2 = ctx.buffer_aoi_polygon
+        assert p1 is p2
 
 
-class TestGenerateBackgroundAOI:
-    def test_background_aoi_larger_than_buffer(self):
-        ctx = _make_ctx(aoi_size_km=10.0, buffer_size_km=20.0, background_size_km=50.0)
-        generate_buffer_aoi(ctx)
-        generate_background_aoi(ctx)
-        assert ctx._background_aoi_polygon.area > ctx._buffer_aoi_polygon.area
+class TestBackgroundAOIPolygon:
+    def test_returns_none_when_no_background_configured(self):
+        ctx = _make_context(background_size_km=None)
+        assert ctx.background_aoi_polygon is None
 
-    def test_background_aoi_sets_context(self):
-        ctx = _make_ctx()
-        generate_background_aoi(ctx)
-        assert ctx._background_aoi_polygon is not None
+    def test_returns_polygon_when_background_configured(self):
+        ctx = _make_context(background_size_km=50.0)
+        polygon = ctx.background_aoi_polygon
+        assert polygon is not None
+        assert polygon.is_valid
 
-    def test_background_aoi_is_valid(self):
-        ctx = _make_ctx()
-        generate_background_aoi(ctx)
-        assert ctx._background_aoi_polygon.is_valid
+    def test_background_larger_than_buffer(self):
+        ctx = _make_context(buffer_size_km=20.0, background_size_km=50.0)
+        assert ctx.background_aoi_polygon.area > ctx.buffer_aoi_polygon.area
 
-    def test_background_aoi_returns_none(self):
-        ctx = _make_ctx()
-        result = generate_background_aoi(ctx)
-        assert result is None
+    def test_returns_same_object_on_second_access(self):
+        ctx = _make_context(background_size_km=50.0)
+        p1 = ctx.background_aoi_polygon
+        p2 = ctx.background_aoi_polygon
+        assert p1 is p2
