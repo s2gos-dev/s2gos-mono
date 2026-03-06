@@ -242,7 +242,7 @@ class CachedDAGExecutor(DAGExecutor):
 
     NEVER_CACHE = frozenset({"scene_description"})
 
-    def execute(  # type: ignore[override]
+    def execute(
         self,
         context: SceneResourceContext,
         use_cache: bool = True,
