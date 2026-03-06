@@ -143,53 +143,49 @@ class TestGeneratePixelVegetationPositions:
 
 
 class TestFilterByExclusionZones:
-    def _make_ctx(self, zones):
-        return types.SimpleNamespace(vegetation_exclusion_zones=zones)
-
     def test_empty_instances_returns_empty(self):
         from shapely.geometry import Point
 
-        ctx = self._make_ctx([{"geometry": Point(0, 0).buffer(10)}])
-        result = _filter_by_exclusion_zones([], ctx)
+        zones = [{"geometry": Point(0, 0).buffer(10)}]
+        result = _filter_by_exclusion_zones([], zones)
         assert result == []
 
     def test_no_zones_returns_all(self):
         instances = [_instance(10.0, 10.0), _instance(20.0, 20.0)]
-        ctx = self._make_ctx([])
-        result = _filter_by_exclusion_zones(instances, ctx)
+        result = _filter_by_exclusion_zones(instances, [])
         assert result is instances
 
     def test_all_interior_points_excluded(self):
         from shapely.geometry import Point
 
         big_circle = Point(0, 0).buffer(1000)
-        ctx = self._make_ctx([{"geometry": big_circle}])
+        zones = [{"geometry": big_circle}]
         instances = [
             _instance(float(x), float(y)) for x in range(-5, 6) for y in range(-5, 6)
         ]
-        result = _filter_by_exclusion_zones(instances, ctx)
+        result = _filter_by_exclusion_zones(instances, zones)
         assert result == []
 
     def test_all_exterior_points_kept(self):
         from shapely.geometry import Point
 
         tiny_circle = Point(0, 0).buffer(1)
-        ctx = self._make_ctx([{"geometry": tiny_circle}])
+        zones = [{"geometry": tiny_circle}]
         instances = [
             _instance(float(x), float(y))
             for x in range(100, 110)
             for y in range(100, 110)
         ]
-        result = _filter_by_exclusion_zones(instances, ctx)
+        result = _filter_by_exclusion_zones(instances, zones)
         assert len(result) == len(instances)
 
     def test_mixed_inside_outside(self):
         from shapely.geometry import Point
 
         circle = Point(0, 0).buffer(5)
-        ctx = self._make_ctx([{"geometry": circle}])
+        zones = [{"geometry": circle}]
         inside = _instance(0.0, 0.0)
         outside = _instance(100.0, 100.0)
-        result = _filter_by_exclusion_zones([inside, outside], ctx)
+        result = _filter_by_exclusion_zones([inside, outside], zones)
         assert len(result) == 1
         assert result[0] is outside
