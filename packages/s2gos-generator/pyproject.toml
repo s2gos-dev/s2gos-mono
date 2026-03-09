@@ -10,7 +10,7 @@ authors = [
 description = "Synthetic scene generator for the ESA DTE-S2GOS service."
 name = "s2gos-generator"
 requires-python = ">=3.10,<3.12"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
     "s2gos-utils",
     "geopandas",

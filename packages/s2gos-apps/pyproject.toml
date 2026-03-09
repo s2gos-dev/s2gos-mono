@@ -4,7 +4,7 @@ requires = ["hatchling"]
 
 [project]
 name = "s2gos-apps"
-version = "0.0.1"
+version = "0.1.0"
 description = "S2GOS application processes and multi-temporal radiometric demonstration workflows."
 authors = [
     { name = "Misael Gonzalez (Rayference)" },

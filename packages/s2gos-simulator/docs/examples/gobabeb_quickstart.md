@@ -21,7 +21,7 @@ synthetic RGB image.
 
 ## Step 1 — Define the sensor
 
-Create a [`UAVSensor`][s2gos_simulator.config.sensors.UAVSensor] with a perspective camera ([`UAVInstrumentType`][s2gos_simulator.config.sensors.UAVInstrumentType]) looking straight down from 20 km.
+Create a [`GroundSensor`][s2gos_simulator.config.sensors.GroundSensor] with a perspective camera ([`GroundInstrumentType`][s2gos_simulator.config.sensors.GroundInstrumentType]) looking straight down from 20 km.
 The spectral response ([`SpectralResponse`][s2gos_simulator.config.spectral.SpectralResponse]) uses three delta wavelengths at 440 nm (blue), 550 nm
 (green), and 660 nm (red) to produce a synthetic RGB image. [`PostProcessingOptions`][s2gos_simulator.config.sensors.PostProcessingOptions] controls post-simulation compositing.
 The sensor viewing geometry is specified via [`LookAtViewing`][s2gos_simulator.config.viewing.LookAtViewing].
@@ -29,8 +29,8 @@ The sensor viewing geometry is specified via [`LookAtViewing`][s2gos_simulator.c
 ```python
 import numpy as np
 from s2gos_simulator import (
-    UAVSensor,
-    UAVInstrumentType,
+    GroundSensor,
+    GroundInstrumentType,
     LookAtViewing,
     SpectralResponse,
 )
@@ -41,9 +41,9 @@ altitude_m = 20_000        # 20 km
 fov_deg = 50               # 50° field of view
 target_size_km = 10         # Must match the generator target area
 
-sensor = UAVSensor(
+sensor = GroundSensor(
     id="rgb_camera",
-    instrument=UAVInstrumentType.PERSPECTIVE_CAMERA,
+    instrument=GroundInstrumentType.PERSPECTIVE_CAMERA,
     viewing=LookAtViewing(
         origin=[0.0, 0.0, altitude_m],
         target=[0.0, 0.0, 0.0],
