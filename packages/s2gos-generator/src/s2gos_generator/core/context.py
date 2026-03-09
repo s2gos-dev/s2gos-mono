@@ -63,6 +63,7 @@ class SceneResourceContext:
 
         self._coord_system: Optional[object] = None
         self._exclusion_zone_geometries: Optional[list] = None
+        self._road_geometries: Optional[list] = None
 
     @property
     def user_assets(self):
@@ -138,6 +139,38 @@ class SceneResourceContext:
         return self._background_aoi_polygon
 
     @property
+    def road_exclusion_geometries(self) -> list:
+        """Road-based exclusion zone geometries in scene coordinates."""
+        roads_cfg = self.config.roads
+        if roads_cfg is None or not roads_cfg.exclude_vegetation:
+            return []
+
+        # Load road geometries from sidecar file if not already set
+        polygons = self._road_geometries
+        if polygons is None and self.assets.roads_file is not None:
+            try:
+                import json
+
+                from shapely.geometry import shape
+
+                with open(str(self.assets.roads_file), "r") as f:
+                    data = json.load(f)
+                polygons = [shape(p) for p in data.get("polygons", [])]
+            except Exception as exc:
+                logging.warning("Failed to load road geometries from sidecar: %s", exc)
+                return []
+
+        if not polygons:
+            return []
+
+        buffer_m = roads_cfg.vegetation_buffer_m
+        result = []
+        for i, poly in enumerate(polygons):
+            buffered = poly.buffer(buffer_m) if buffer_m > 0 else poly
+            result.append({"source": f"road_{i}", "geometry": buffered})
+        return result
+
+    @property
     def exclusion_zone_geometries(self) -> list:
         """Exclusion zone geometries in scene coordinates, derived from config."""
         if self._exclusion_zone_geometries is None:
@@ -145,6 +178,7 @@ class SceneResourceContext:
                 self.config,
                 self.coordinate_system,
             )
+            self._exclusion_zone_geometries.extend(self.road_exclusion_geometries)
         return self._exclusion_zone_geometries
 
 

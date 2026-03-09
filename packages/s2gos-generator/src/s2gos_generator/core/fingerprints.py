@@ -100,6 +100,15 @@ class ResourceFingerprints:
         return {"handle_dem_nans": config.processing.handle_dem_nans}
 
     @staticmethod
+    def _target_roads(config) -> dict:
+        return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "aoi_size_km": config.location.aoi_size_km,
+            "roads": config.roads.model_dump() if config.roads else None,
+        }
+
+    @staticmethod
     def _target_texture(config) -> dict:
         target_regions = [
             r.model_dump() for r in config.material_regions if "target" in r.applies_to
@@ -107,6 +116,7 @@ class ResourceFingerprints:
         return {
             "snow": config.snow.model_dump() if config.snow else None,
             "material_regions": target_regions,
+            "roads": getattr(config, "roads", None) and config.roads.model_dump(),
             "generate_texture_preview": config.processing.generate_texture_preview,
         }
 

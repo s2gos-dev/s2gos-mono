@@ -31,6 +31,7 @@ class SceneAssets:
     vegetation_objects_file: Optional[UPath] = None
     user_assets_file: Optional[UPath] = None
     hamster_paths_file: Optional[UPath] = None
+    roads_file: Optional[UPath] = None
 
     def to_dict(self) -> Dict:
         """Convert assets to dictionary."""

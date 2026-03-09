@@ -59,6 +59,7 @@ class SceneGenerationPipeline:
             process_target_landcover,
         )
         from ..resources.mesh import generate_buffer_mesh, generate_target_mesh
+        from ..resources.roads import process_target_roads
         from ..resources.scene import create_scene_description
         from ..resources.texture import (
             generate_background_texture,
@@ -73,9 +74,16 @@ class SceneGenerationPipeline:
         self.registry.register("target_dem", [], process_target_dem)
         self.registry.register("target_landcover", [], process_target_landcover)
         self.registry.register("target_mesh", ["target_dem"], generate_target_mesh)
+
+        # Roads resource (no upstream deps — uses config for AOI bbox)
+        if self.config.roads is not None and self.config.roads.enabled:
+            self.registry.register("target_roads", [], process_target_roads)
+
         target_texture_deps = ["target_landcover"]
         if self.config.snow is not None:
             target_texture_deps.append("target_dem")
+        if self.config.roads is not None and self.config.roads.enabled:
+            target_texture_deps.append("target_roads")
         self.registry.register(
             "target_texture", target_texture_deps, generate_target_texture
         )
@@ -113,6 +121,9 @@ class SceneGenerationPipeline:
 
             if "user_assets" in self.registry.resources:
                 veg_deps.append("user_assets")
+
+            if "target_roads" in self.registry.resources:
+                veg_deps.append("target_roads")
 
             self.registry.register(
                 "target_vegetation",
@@ -337,6 +348,7 @@ class SceneGenerationPipeline:
                 "background_texture": "#FFFFF0",
                 "user_assets": "#FFA07A",
                 "hamster_data": "#20B2AA",
+                "target_roads": "#A9A9A9",
                 "scene_description": "#FF6347",
             }
 

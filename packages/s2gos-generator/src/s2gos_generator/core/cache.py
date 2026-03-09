@@ -184,6 +184,7 @@ _RESOURCE_CACHE_SPECS: Dict[str, ResourceCacheSpec] = {
         ["vegetation_objects_file"], validator=_validate_vegetation_files
     ),
     "hamster_data": ResourceCacheSpec(["hamster_paths_file"]),
+    "target_roads": ResourceCacheSpec(["roads_file"]),
 }
 
 

@@ -90,11 +90,15 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
     if ctx.config.region_material_defs:
         additional_material_libraries.append(ctx.config.region_material_defs)
 
-    region_material_indices = None
+    overlay_names = set()
     if ctx.config.material_regions:
-        names = sorted(set(r.material_name for r in ctx.config.material_regions))
+        overlay_names.update(r.material_name for r in ctx.config.material_regions)
+    if ctx.config.roads is not None and ctx.config.roads.enabled:
+        overlay_names.add(ctx.config.roads.material_name)
+    region_material_indices = None
+    if overlay_names:
         region_material_indices = {
-            name: idx for idx, name in enumerate(names, start=11)
+            name: idx for idx, name in enumerate(sorted(overlay_names), start=11)
         }
 
     # Build include_files from available sidecars

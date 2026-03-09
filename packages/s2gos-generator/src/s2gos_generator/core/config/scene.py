@@ -24,6 +24,7 @@ from .atmosphere import (
     ThermophysicalConfig,
     _default_atmosphere_config,
 )
+from .roads import RoadsConfig
 from .vegetation import VegetationExclusionZone, VegetationPlacementConfig
 from ..._version import get_version
 from ...dataset import IndexedGeoTiff, Zarr, dataset_factory
@@ -216,6 +217,10 @@ class SceneGenConfig(BaseModel):
     hamster: Optional[HamsterConfig] = Field(
         None,
         description="HAMSTER albedo data configuration for baresoil. See [HamsterConfig][s2gos_generator.core.config.assets.HamsterConfig].",
+    )
+    roads: Optional[RoadsConfig] = Field(
+        None,
+        description="Road infrastructure configuration (None disables roads). See [RoadsConfig][s2gos_generator.core.config.roads.RoadsConfig].",
     )
     user_assets: list[UserAssets] = Field(
         [],

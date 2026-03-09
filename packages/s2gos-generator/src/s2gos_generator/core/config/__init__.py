@@ -26,6 +26,7 @@ from .atmosphere import (
     create_heterogeneous_atmosphere_config,
     create_molecular_atmosphere_config,
 )
+from .roads import RoadsConfig
 from .scene import (
     BackgroundConfig,
     BufferConfig,
@@ -83,6 +84,8 @@ __all__ = [
     "XmlSceneConfig",
     "MaterialRegion",
     "load_assets_from_xml",
+    # roads
+    "RoadsConfig",
     # scene
     "Month",
     "SceneLocation",
