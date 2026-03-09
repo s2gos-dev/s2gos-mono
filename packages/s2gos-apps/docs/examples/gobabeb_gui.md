@@ -25,7 +25,13 @@ wiring needed.
 
 ## Step 1: Start the local server
 
-Open a terminal and run:
+Open a terminal and activate pixi shell:
+
+```bash
+pixi shell
+```
+
+then:
 
 ```bash
 s2gos-server run -- s2gos_apps.service:service
@@ -47,7 +53,7 @@ Leave this terminal open while you work in the notebook.
 In a second terminal, start Jupyter Lab:
 
 ```bash
-pixi run lab
+pixi run -e dev lab
 ```
 
 Navigate to or create a new notebook for this walkthrough.
@@ -59,7 +65,7 @@ Navigate to or create a new notebook for this walkthrough.
 ```python
 from s2gos_client.gui import Client
 
-client = Client(api_url="http://127.0.0.1:8008")
+client = Client(server_url="http://127.0.0.1:8008")
 client.show()
 ```
 
@@ -95,14 +101,26 @@ with Gobabeb-specific settings — a 10 km target area, a 60 km buffer zone at
 molecular atmosphere (AFGL 1986, GECKO absorption database).  The config is
 saved as a JSON file.
 
-Once the job completes, the GUI stores the result in the notebook variable
-`_results`:
+At any point you can monitor all submitted jobs:
+
+```python
+client.show_jobs()
+```
+
+This renders a panel listing every job with its current status (`accepted`,
+`running`, `successful`, `failed`). The panel auto-refreshes.
+
+To inspect a specific job programmatically:
+
+```python
+client.get_job("job_0")
+```
+
+Once the job completes you can click in the GUI of the cell above "Get result" and run:
 
 ```python
 _results
-# {'return_value': './gen_config/gobabeb_gen_config.json'}
-
-gen_config_path = _results["return_value"]
+print(_results["return_value"]['value'])
 ```
 
 ---
@@ -125,12 +143,8 @@ executes it.  The pipeline:
 3. generates terrain meshes (PLY) and landcover textures (PNG),
 4. assembles everything into a **scene description** YAML file.
 
-The output is the path to the scene YAML, e.g.
+The output is the path to the scene YAML, inspect same way as before, e.g.
 `./gen_output/gobabeb/gobabeb.yml`.
-
-```python
-scene_yaml_path = _results["return_value"]
-```
 
 ---
 
@@ -155,10 +169,6 @@ The process builds a [`SimulationConfig`](../../s2gos-simulator/api/simulation.m
 synthetic RGB), directional illumination derived from the solar position at the
 given hour, and mono-mode Eradiate backend hints. The config is saved as JSON.
 
-```python
-sim_config_path = _results["return_value"]
-```
-
 ---
 
 ## Step 7: Run the simulation
@@ -176,7 +186,7 @@ Click **Execute**.
 Eradiate loads the 3D scene description and runs Monte Carlo radiative transfer
 for each wavelength. This is the most compute-intensive step. When finished the
 process writes raw result datasets (Zarr) and a composited RGB image to the
-output directory.
+output directory. Use previous result as config path.
 
 ```python
 sim_output_dir = _results["return_value"]
@@ -184,41 +194,27 @@ sim_output_dir = _results["return_value"]
 
 ---
 
-## Step 8: Monitor jobs and display results
-
-At any point you can monitor all submitted jobs:
-
-```python
-client.show_jobs()
-```
-
-This renders a panel listing every job with its current status (`accepted`,
-`running`, `successful`, `failed`). The panel auto-refreshes.
-
-To inspect a specific job programmatically:
-
-```python
-client.get_job("job_0")
-```
+## Step 8: Display results
 
 Once the simulation job is successful, display the rendered image:
 
 ```python
 from IPython.display import Image, display
 
-display(Image(filename="./sim_output/gobabeb/rgb_camera_rgb.png"))
+display(Image(filename="./sim_output/gobabeb/camera_rgb.png"))
 ```
 
 ---
 
-## Alternative: Python API
+## Alternative Python script
 
 The same workflow can be run without the GUI by calling the process functions
 directly. This is useful for scripting, batch runs, or CI pipelines.
 
+
 ```python
-from s2gos_apps.processes.gobabeb import generation_configs, simulation_configs
 from s2gos_apps.processes.common import generation, simulation
+from s2gos_apps.processes.gobabeb import generation_configs, simulation_configs
 
 scene_name = "gobabeb"
 target_lat = -23.6015417
@@ -233,14 +229,14 @@ gen_config_path = generation_configs(
     target_lat=target_lat,
     target_lon=target_lon,
     target_size=target_size,
-    config_output_dir="./use_cases/gen_config",
-    scene_output_dir="./use_cases/gen_output",
-)["return_value"]
+    config_output_dir="./gen_config",
+    scene_output_dir="./gen_output",
+)
 
 # Step 2: Run generation pipeline
 scene_yaml_path = generation.generation(
     config_path=gen_config_path,
-)["return_value"]
+)
 
 # Step 3: Create simulation config
 sim_config_path = simulation_configs(
@@ -249,17 +245,15 @@ sim_config_path = simulation_configs(
     target_lon=target_lon,
     target_size=target_size,
     gmt_hour=gmt_hour,
-    config_output_dir="./use_cases/sim_config",
-)["return_value"]
+    config_output_dir="./sim_config",
+)
 
 # Step 4: Run simulation
 sim_output_dir = simulation.simulation(
     scene_description_path=scene_yaml_path,
     config_path=sim_config_path,
-    simulation_output_dir=f"./use_cases/sim_output/{scene_name}",
-)["return_value"]
+    simulation_output_dir=f"./sim_output/{scene_name}",
+)
 
-# Display result
-from IPython.display import Image, display
-display(Image(filename=f"{sim_output_dir}/rgb_camera_rgb.png"))
+print(f"See results under {sim_output_dir}")
 ```
