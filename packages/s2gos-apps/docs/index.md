@@ -81,8 +81,8 @@ See the [Eradiate documentation](https://eradiate.readthedocs.io/en/stable/user_
 # s2gos_settings.yaml
 common:
     search_paths:
-        - "./resources/data"
-        - "./data"
+        - "./packages/s2gos-generator/resources/data"   # This is a real path you should include, specifies basic materials
+        - "./EXAMPLE_EXTRA_DATA_PATH"
 
 generator:
     dataset:

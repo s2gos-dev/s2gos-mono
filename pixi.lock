@@ -255,7 +255,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/11/b6/f8c7e1f5f716e16070cf35f90c24f95f397376bb810e65000b6bc55950cc/param-2.3.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b1/29/c028a0731e202035f0e2e0bfbf1a3e46ad6c628cbb17f6f1cc9eea5d9ff1/pathlib_abc-0.5.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ab/88/550d41e81e6d43335603a960cd9c75c1d88f9cf01bc9d4ee8e86290aba7d/pint-0.25.2-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/c7/7a/118535678c3d459d7628a2ea7515ae8321e5a9bff5dd75b2454a33cd1e47/pinttrs-26.1.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/4a/0e/d2aed001febeb1b4ed01f18ff22f70ae38b499bfec116312f084bc28f551/pinttrs-25.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/3b/28/0f5d053506ec7db22729125b18286c0633ab8b006b83b0f3b746f9ba0526/procodile-0.0.8-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/5a/87/b70ad306ebb6f9b585f114d0ac2137d792b48be34d732d60e597c2f8465a/pydantic-2.12.5-py3-none-any.whl
@@ -650,7 +650,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/11/b6/f8c7e1f5f716e16070cf35f90c24f95f397376bb810e65000b6bc55950cc/param-2.3.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b1/29/c028a0731e202035f0e2e0bfbf1a3e46ad6c628cbb17f6f1cc9eea5d9ff1/pathlib_abc-0.5.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ab/88/550d41e81e6d43335603a960cd9c75c1d88f9cf01bc9d4ee8e86290aba7d/pint-0.25.2-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/c7/7a/118535678c3d459d7628a2ea7515ae8321e5a9bff5dd75b2454a33cd1e47/pinttrs-26.1.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/4a/0e/d2aed001febeb1b4ed01f18ff22f70ae38b499bfec116312f084bc28f551/pinttrs-25.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/3b/28/0f5d053506ec7db22729125b18286c0633ab8b006b83b0f3b746f9ba0526/procodile-0.0.8-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/5a/87/b70ad306ebb6f9b585f114d0ac2137d792b48be34d732d60e597c2f8465a/pydantic-2.12.5-py3-none-any.whl
@@ -954,7 +954,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/11/b6/f8c7e1f5f716e16070cf35f90c24f95f397376bb810e65000b6bc55950cc/param-2.3.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b1/29/c028a0731e202035f0e2e0bfbf1a3e46ad6c628cbb17f6f1cc9eea5d9ff1/pathlib_abc-0.5.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ab/88/550d41e81e6d43335603a960cd9c75c1d88f9cf01bc9d4ee8e86290aba7d/pint-0.25.2-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/c7/7a/118535678c3d459d7628a2ea7515ae8321e5a9bff5dd75b2454a33cd1e47/pinttrs-26.1.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/4a/0e/d2aed001febeb1b4ed01f18ff22f70ae38b499bfec116312f084bc28f551/pinttrs-25.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/3b/28/0f5d053506ec7db22729125b18286c0633ab8b006b83b0f3b746f9ba0526/procodile-0.0.8-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/5a/87/b70ad306ebb6f9b585f114d0ac2137d792b48be34d732d60e597c2f8465a/pydantic-2.12.5-py3-none-any.whl
@@ -4906,10 +4906,10 @@ packages:
   - uncertainties>=3.1.6 ; extra == 'uncertainties'
   - xarray ; extra == 'xarray'
   requires_python: '>=3.11'
-- pypi: https://files.pythonhosted.org/packages/c7/7a/118535678c3d459d7628a2ea7515ae8321e5a9bff5dd75b2454a33cd1e47/pinttrs-26.1.0-py3-none-any.whl
+- pypi: https://files.pythonhosted.org/packages/4a/0e/d2aed001febeb1b4ed01f18ff22f70ae38b499bfec116312f084bc28f551/pinttrs-25.1.0-py3-none-any.whl
   name: pinttrs
-  version: 26.1.0
-  sha256: 7e0179c5643b49bc11d3433203c364216ad21a328051021052a8a6a20dd1f44a
+  version: 25.1.0
+  sha256: ef2a59edec41a681a00fc78bc0eb055f8f1ccebcbbf7711ea7ae4cc1cc07aa89
   requires_dist:
   - attrs>=21.3
   - pint>=0.16
