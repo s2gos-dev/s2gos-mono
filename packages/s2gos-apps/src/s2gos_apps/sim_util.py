@@ -8,12 +8,12 @@ from s2gos_simulator.backends.eradiate.backend import (
 )
 from s2gos_simulator.config import (
     DirectionalIllumination,
+    GroundInstrumentType,
+    GroundSensor,
     LookAtViewing,
     PostProcessingOptions,
     SimulationConfig,
     SpectralResponse,
-    UAVInstrumentType,
-    UAVSensor,
 )
 from s2gos_utils import SceneDescription
 from upath import UPath
@@ -22,9 +22,9 @@ from upath import UPath
 def top_down_perspective_sensor(target_size, fov, spp):
     distance = (target_size / 2.0) / np.tan(np.deg2rad(fov / 2))
 
-    return UAVSensor(
-        id="rgb_camera",
-        instrument=UAVInstrumentType.PERSPECTIVE_CAMERA,
+    return GroundSensor(
+        id="camera",
+        instrument=GroundInstrumentType.PERSPECTIVE_CAMERA,
         viewing=LookAtViewing(
             origin=[0.0, 0.0, distance * 1000], target=[0.0, 0.0, 0.0], up=[0, 1, 0]
         ),
@@ -32,7 +32,7 @@ def top_down_perspective_sensor(target_size, fov, spp):
         fov=fov,
         resolution=[512, 512],
         samples_per_pixel=spp,
-        post_processing=PostProcessingOptions(generate_rgb_image=True),
+        post_processing=PostProcessingOptions(apply_srf=False, generate_rgb_image=True),
     )
 
 
@@ -162,7 +162,6 @@ def simulation_from_config(
                 scene_dir=scene_description_path.parent,
                 output_dir=simulation_output_dir,
                 plot_image=True,
-                id_to_plot="uav_rgb_camera",
             )
             print("Simulation completed successfully!")
         else:

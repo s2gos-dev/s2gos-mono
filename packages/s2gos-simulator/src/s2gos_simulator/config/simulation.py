@@ -25,7 +25,7 @@ from .measurements import (
     PixelBRFConfig,
     PixelHDRFConfig,
 )
-from .sensors import GroundSensor, SatelliteSensor, UAVSensor
+from .sensors import GroundSensor, SatelliteSensor
 from .spectral import SpectralResponse
 from .._version import get_version
 
@@ -69,7 +69,7 @@ class SimulationConfig(BaseModel):
     illumination: Union[DirectionalIllumination, ConstantIllumination] = Field(
         default_factory=None, description="Illumination configuration"
     )
-    sensors: List[Union[SatelliteSensor, UAVSensor, GroundSensor]] = Field(
+    sensors: List[Union[SatelliteSensor, GroundSensor]] = Field(
         default_factory=list, description="List of sensors to simulate"
     )
     measurements: List[MeasurementConfig] = Field(
@@ -350,9 +350,7 @@ class SimulationConfig(BaseModel):
 
         return cls(**validated_data)
 
-    def add_sensor(
-        self, sensor: Union[SatelliteSensor, UAVSensor, GroundSensor]
-    ) -> None:
+    def add_sensor(self, sensor: Union[SatelliteSensor, GroundSensor]) -> None:
         """Add a sensor to the configuration."""
         if sensor.id in [s.id for s in self.sensors]:
             raise ValueError(f"Sensor ID '{sensor.id}' already exists")
@@ -364,7 +362,7 @@ class SimulationConfig(BaseModel):
 
     def get_sensor(
         self, sensor_id: str
-    ) -> Optional[Union[SatelliteSensor, UAVSensor, GroundSensor]]:
+    ) -> Optional[Union[SatelliteSensor, GroundSensor]]:
         """Get a sensor by ID."""
         for sensor in self.sensors:
             if sensor.id == sensor_id:

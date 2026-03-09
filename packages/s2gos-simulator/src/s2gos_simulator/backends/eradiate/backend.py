@@ -228,7 +228,7 @@ class EradiateBackend(SimulationBackend):
             scene_description: Scene description from s2gos_generator
             scene_dir: Directory containing scene assets
             output_dir: Output directory (defaults to scene_dir/eradiate_renders)
-            **kwargs: Additional options (plot_image, id_to_plot, etc.)
+            **kwargs: Additional options (plot_image, etc.)
 
         Returns:
             xarray Dataset containing all simulation results

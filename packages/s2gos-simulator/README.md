@@ -1,12 +1,12 @@
 # S2GOS Observation Simulator
 
-Earth observation simulation engine for the DTE-S2GOS service. This package simulates realistic satellite, UAV, and ground-based observations using physically-based radiative transfer modeling.
+Earth observation simulation engine for the DTE-S2GOS service. This package simulates realistic satellite and ground-based observations using physically-based radiative transfer modeling.
 
 ## Overview
 
 The S2GOS Observation Simulator provides:
 
-- **Multi-platform simulation**: Satellite, UAV, and ground-based sensor configurations
+- **Multi-platform simulation**: Satellite and ground-based sensor configurations
 - **Physics-based modeling**: Accurate radiative transfer simulation via Eradiate
 - **Flexible sensor models**: Support for major Earth observation platforms and custom instruments
 - **Comprehensive measurements**: Radiance, reflectance, and specialized radiative quantities

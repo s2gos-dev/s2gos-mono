@@ -30,8 +30,6 @@ from .sensors import (
     SatelliteSensor,
     SentinelMSIBand,
     SentinelOLCIBand,
-    UAVInstrumentType,
-    UAVSensor,
     create_chime_sensor,
     create_hypstar_sensor,
 )
@@ -83,8 +81,6 @@ __all__ = [
     "SatelliteSensor",
     "SentinelMSIBand",
     "SentinelOLCIBand",
-    "UAVInstrumentType",
-    "UAVSensor",
     "create_chime_sensor",
     "create_hypstar_sensor",
     # simulation

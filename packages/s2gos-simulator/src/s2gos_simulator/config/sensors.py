@@ -20,7 +20,6 @@ class PlatformType(str, Enum):
     """Observation platform types."""
 
     SATELLITE = "satellite"
-    UAV = "uav"
     GROUND = "ground"
 
 
@@ -135,13 +134,6 @@ INSTRUMENT_BANDS = {
     SatelliteInstrument.HSI: None,
     SatelliteInstrument.CUSTOM: None,  # Accept any string for custom
 }
-
-
-class UAVInstrumentType(str, Enum):
-    """Enum for UAV-mounted instrument types."""
-
-    PERSPECTIVE_CAMERA = "perspective_camera"
-    RADIANCEMETER = "radiancemeter"
 
 
 class GroundInstrumentType(str, Enum):
@@ -361,64 +353,6 @@ class SatelliteSensor(BaseSensor):
         pixel_size_y = (height_km * 1000) / self.film_resolution[1]
 
         return pixel_size_x, pixel_size_y
-
-
-class UAVSensor(BaseSensor):
-    """UAV sensor configuration."""
-
-    platform_type: Literal[PlatformType.UAV] = Field(
-        PlatformType.UAV, description="Platform type (always 'uav')"
-    )
-    instrument: UAVInstrumentType = Field(..., description="UAV instrument type")
-    viewing: Union[LookAtViewing, AngularFromOriginViewing] = Field(
-        ..., description="Viewing geometry"
-    )
-    fov: Optional[float] = Field(
-        None, description="Field of view in degrees (required for perspective_camera)"
-    )
-    resolution: Optional[List[int]] = Field(
-        None,
-        description="Film resolution [width, height] (required for perspective_camera)",
-    )
-    post_processing: Optional[PostProcessingOptions] = Field(
-        None,
-        description="Post-processing pipeline options (spatial averaging, SRF, circular mask, etc.)",
-    )
-
-    @model_validator(mode="after")
-    def validate_instrument_config(self):
-        import logging
-
-        logger = logging.getLogger(__name__)
-
-        """Ensures fields match the instrument type."""
-        if self.instrument == UAVInstrumentType.PERSPECTIVE_CAMERA:
-            if self.fov is None or self.resolution is None:
-                logger.warning(
-                    f"Warning: UAV Sensor ({self.instrument.value}) is missing "
-                )
-
-        elif self.instrument == UAVInstrumentType.RADIANCEMETER:
-            if self.fov is not None or self.resolution is not None:
-                logger.warning(
-                    f"Warning: 'fov' and 'resolution' are ignored for '{self.instrument.value}'. "
-                    "Setting them to None."
-                )
-                self.fov = None
-                self.resolution = None
-
-        return self
-
-    @model_validator(mode="after")
-    def generate_default_id(self):
-        """Auto-generates an ID based on instrument and altitude if missing."""
-        if self.id is None:
-            origin = getattr(self.viewing, "origin", [0, 0, 0])
-            z_height = int(origin[2])
-
-            self.id = f"uav_{self.instrument.value}_{z_height}m"
-
-        return self
 
 
 class GroundSensor(BaseSensor):

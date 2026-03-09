@@ -30,8 +30,6 @@ from ...config import (
     LookAtViewing,
     RectangleTarget,
     SatelliteSensor,
-    UAVInstrumentType,
-    UAVSensor,
 )
 from ...config.sensors import PostProcessingOptions
 
@@ -261,12 +259,6 @@ class EradiateTranslator:
                 measures.append(
                     self.translate_satellite_sensor(sensor, scene_description)
                 )
-            elif isinstance(sensor, UAVSensor):
-                measures.append(
-                    self.translate_uav_sensor(
-                        sensor, scene_description, scene_dir, asset_transforms
-                    )
-                )
             elif isinstance(sensor, GroundSensor):
                 measures.append(
                     self.translate_ground_sensor(
@@ -353,82 +345,6 @@ class EradiateTranslator:
         }
 
         return measure_config
-
-    def translate_uav_sensor(
-        self,
-        sensor: UAVSensor,
-        scene_description: SceneDescription,
-        scene_dir: UPath,
-        asset_transforms: Dict[str, _AssetTransform],
-    ) -> Dict[str, Any]:
-        """Translate UAV sensor to Eradiate measure.
-
-        Args:
-            sensor: UAV sensor configuration
-            scene_description: Scene description
-            scene_dir: Scene directory path
-            asset_transforms: Asset transforms for relative positioning (backend-internal)
-
-        Returns:
-            Eradiate measure dictionary
-        """
-        view = sensor.viewing
-
-        # Handle asset-relative positioning
-        if hasattr(view, "relative_to_asset") and view.relative_to_asset is not None:
-            asset_name = self._resolve_asset_reference(
-                view.relative_to_asset, asset_transforms
-            )
-            asset_transform = asset_transforms[asset_name]
-
-            view.origin = apply_asset_relative_transform(view.origin, asset_transform)
-
-            if isinstance(view, LookAtViewing):
-                view.target = apply_asset_relative_transform(
-                    view.target, asset_transform
-                )
-
-            # Avoid double application of terrain adjustment
-            if view.terrain_relative_height:
-                view.terrain_relative_height = False
-
-        origin, target = self.geometry_utils.adjust_origin_target_for_terrain(
-            view, scene_description, scene_dir
-        )
-
-        base_config = {
-            "id": sanitize_sensor_id(sensor.id),
-            "spp": sensor.samples_per_pixel,
-            "srf": self.translate_srf(sensor.srf),
-            "origin": origin,
-        }
-
-        if sensor.instrument == UAVInstrumentType.PERSPECTIVE_CAMERA:
-            base_config["type"] = "perspective"
-            base_config["fov"] = sensor.fov or 70.0
-            base_config["film_resolution"] = sensor.resolution or [1024, 1024]
-
-            if isinstance(view, LookAtViewing):
-                base_config["target"] = target if target is not None else view.target
-                base_config["up"] = view.up or [0, 0, 1]
-            elif isinstance(view, AngularFromOriginViewing):
-                target, _ = self.geometry_utils.calculate_target_from_angles(view)
-                base_config["target"] = target
-                base_config["up"] = view.up or [0, 0, 1]
-
-        elif sensor.instrument == UAVInstrumentType.RADIANCEMETER:
-            base_config["type"] = "radiancemeter"
-
-            if isinstance(view, LookAtViewing):
-                base_config["target"] = target if target is not None else view.target
-            elif isinstance(view, AngularFromOriginViewing):
-                target, _ = self.geometry_utils.calculate_target_from_angles(view)
-                base_config["target"] = target
-
-        else:
-            raise ValueError(f"Unsupported UAV instrument type: {sensor.instrument}")
-
-        return base_config
 
     def translate_ground_sensor(
         self,

@@ -404,8 +404,6 @@ def pnp_gui_simulation(
         SatelliteSensor,
         SimulationConfig,
         SpectralResponse,
-        UAVInstrumentType,
-        UAVSensor,
         create_chime_sensor,
     )
     from upath import UPath
@@ -558,9 +556,9 @@ def pnp_gui_simulation(
         )
 
         sensors.append(
-            UAVSensor(
+            GroundSensor(
                 id="nice_rgb_camera",
-                instrument=UAVInstrumentType.PERSPECTIVE_CAMERA,
+                instrument=GroundInstrumentType.PERSPECTIVE_CAMERA,
                 viewing=LookAtViewing(
                     origin=[0, 0, 39000.0],
                     target=[0, 0, 15],
