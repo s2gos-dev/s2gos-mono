@@ -23,6 +23,7 @@ _id_to_class = {
 
 def dataset_factory(settings: dict | DynaBox, name=None) -> Dataset:
     try:
-        return _id_to_class[settings["type"]].from_settings(settings, name)
-    except ValueError:
-        raise ValueError(f"This dataset settings type does not exist: {settings.type}")
+        dataset_class = _id_to_class[settings["type"]]
+    except KeyError:
+        raise ValueError(f"This dataset settings type does not exist: {settings['type']}")
+    return dataset_class.from_settings(settings, name)
