@@ -9,8 +9,8 @@ class CredentialNotFoundError(Exception):
         message = (
             f"Credential '{credential_id}' not found in provider. "
             f"To configure:\n"
-            f"  - Environment: S2GOS_CRED_{credential_id}_TYPE, "
-            f"S2GOS_CRED_{credential_id}_USERNAME, etc.\n"
+            f"  - Environment: S2GOS_CREDENTIALS__{credential_id}__TYPE, "
+            f"S2GOS_CREDENTIALS__{credential_id}__USERNAME, etc.\n"
             f"  - Or add to .secrets.yaml under 'credentials.{credential_id}'"
         )
         super().__init__(message)
