@@ -1,0 +1,11 @@
+.pixi/
+.git/
+docs/
+examples/
+extra_data.tar.gz
+mkdocs.yaml
+LICENSE
+README.md
+**/__pycache__/
+**/*.pyc
+**/*.pyo
