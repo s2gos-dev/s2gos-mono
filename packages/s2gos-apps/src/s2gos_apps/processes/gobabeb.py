@@ -206,4 +206,4 @@ def simulation_configs(
         spp,
         config_output_dir,
     )
-    return config_path
+    return PathRef(str(config_path)) if config_path is not None else None
