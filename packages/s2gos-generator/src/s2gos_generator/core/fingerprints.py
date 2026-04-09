@@ -35,7 +35,7 @@ class ResourceFingerprints:
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "aoi_size_km": config.location.aoi_size_km,
-            "target_resolution_m": config.target_resolution_m,
+            "dem_resolution_m": config.dem_resolution_m,
             "dem": config.data_sources.dem.model_dump(),
             "dem_fillna_value": config.processing.dem_fillna_value,
             "flatten_dem": config.processing.flatten_dem,
@@ -61,7 +61,7 @@ class ResourceFingerprints:
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "aoi_size_km": config.location.aoi_size_km,
-            "target_resolution_m": config.target_resolution_m,
+            "landcover_resolution_m": config.landcover_resolution_m,
             "landcover": config.data_sources.landcover.model_dump(),
         }
 
@@ -117,6 +117,7 @@ class ResourceFingerprints:
             "snow": config.snow.model_dump() if config.snow else None,
             "material_regions": target_regions,
             "roads": getattr(config, "roads", None) and config.roads.model_dump(),
+            "texture_resolution_m": getattr(config, "texture_resolution_m", None),
             "generate_texture_preview": config.processing.generate_texture_preview,
         }
 
@@ -194,7 +195,7 @@ class ResourceFingerprints:
                 config.background.size_km if config.background else None
             ),
             "hamster": config.hamster.model_dump() if config.hamster else None,
-            "target_resolution_m": config.target_resolution_m,
+            "landcover_resolution_m": config.landcover_resolution_m,
             "buffer_resolution_m": config.buffer.resolution_m
             if config.buffer
             else None,

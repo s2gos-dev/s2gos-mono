@@ -86,7 +86,7 @@ def process_hamster_data(ctx: SceneResourceContext) -> Optional[Path]:
                 albedo_data,
                 "target",
                 ctx.aoi_size_km,
-                f"hamster_{ctx.scene_name}_target_{ctx.target_resolution_m}m.zarr",
+                f"hamster_{ctx.scene_name}_target_{ctx.landcover_resolution_m}m.zarr",
                 ctx.data_dir,
                 var_name,
             )

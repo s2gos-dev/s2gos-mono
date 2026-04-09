@@ -8,10 +8,9 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from shapely.geometry import LineString, MultiPolygon, mapping
+from shapely.geometry import LineString, MultiPolygon, box, mapping
 from shapely.ops import unary_union
 
-from ..core.config.roads import DEFAULT_ROAD_WIDTH_FALLBACK, DEFAULT_ROAD_WIDTHS
 from ..core.context import SceneResourceContext
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
@@ -52,36 +51,88 @@ def _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east) -> Optional[di
     return None
 
 
+def _parse_osm_width(width_str: str) -> Optional[float]:
+    """Parse OSM width tag value. Handles '5', '5.5', '5 m', '5.5m' formats."""
+    s = width_str.strip().lower()
+
+    if s.endswith("m"):
+        s = s[:-1].strip()
+
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _get_road_width(tags: dict, hw_type: str, roads_cfg) -> float:
+    """Determine road width checking user overrides, OSM tags, and defaults."""
+
+    # 1. Total width override
+    if hw_type in roads_cfg.total_width_overrides:
+        return roads_cfg.total_width_overrides[hw_type]
+
+    # 2. OSM Tag Explicit Width
+    osm_width_str = tags.get("width")
+    if osm_width_str:
+        osm_width = _parse_osm_width(osm_width_str)
+        if osm_width is not None:
+            return osm_width
+
+    # 3. Calculated Lane-based Width
+    lanes_str = tags.get("lanes")
+    if lanes_str is not None and lanes_str.isdigit():
+        lanes = int(lanes_str)
+    else:
+        fallback_lanes = 1 if tags.get("oneway") == "yes" else 2
+        lanes = roads_cfg.lane_count_mapping.get(hw_type, fallback_lanes)
+
+    lane_width = roads_cfg.lane_width_mapping.get(
+        hw_type, roads_cfg.default_lane_width_m
+    )
+
+    return lanes * lane_width + 2 * roads_cfg.default_shoulder_m
+
+
+def _get_road_material(tags: dict, roads_cfg) -> str:
+    """Determine road material from OSM surface tag, falling back to default."""
+    surface_tag = tags.get("surface")
+    if not surface_tag:
+        return roads_cfg.default_material
+
+    return roads_cfg.surface_material_mapping.get(
+        surface_tag, roads_cfg.default_material
+    )
+
+
 def _parse_roads(
     osm_data: dict,
-    highway_types: Optional[list[str]],
-    width_overrides: dict[str, float],
+    roads_cfg,
     coordinate_system,
-    scene_bounds_polygon,
-) -> list:
-    """Parse OSM elements into buffered road polygons in scene coordinates.
-
-    Returns list of (polygon, highway_type) tuples.
-    """
+    scene_bounds,
+) -> dict[str, list]:
+    """Parse OSM road ways into buffered polygons, grouped by material."""
     elements = osm_data.get("elements", [])
-    road_polygons = []
+    roads_by_material: dict[str, list] = {}
 
     for element in elements:
         if element.get("type") != "way":
             continue
+
         tags = element.get("tags", {})
         hw_type = tags.get("highway")
+
         if hw_type is None:
             continue
-
-        if highway_types is not None and hw_type not in highway_types:
+        if (
+            roads_cfg.highway_types is not None
+            and hw_type not in roads_cfg.highway_types
+        ):
             continue
 
         geometry = element.get("geometry")
         if not geometry or len(geometry) < 2:
             continue
 
-        # Convert lat/lon nodes to scene coordinates
         scene_coords = []
         for node in geometry:
             lat, lon = node.get("lat"), node.get("lon")
@@ -93,49 +144,35 @@ def _parse_roads(
         if len(scene_coords) < 2:
             continue
 
-        line = LineString(scene_coords)
+        width = _get_road_width(tags, hw_type, roads_cfg)
+        road_poly = LineString(scene_coords).buffer(width / 2, cap_style="flat")
 
-        # Determine road width
-        width = width_overrides.get(
-            hw_type, DEFAULT_ROAD_WIDTHS.get(hw_type, DEFAULT_ROAD_WIDTH_FALLBACK)
-        )
-        road_poly = line.buffer(width / 2, cap_style="flat")
-
-        # Clip to scene bounds
-        clipped = road_poly.intersection(scene_bounds_polygon)
+        clipped = road_poly.intersection(scene_bounds)
         if clipped.is_empty:
             continue
 
-        road_polygons.append(clipped)
+        material = _get_road_material(tags, roads_cfg)
 
-    return road_polygons
+        if material not in roads_by_material:
+            roads_by_material[material] = []
+
+        roads_by_material[material].append(clipped)
+
+    return roads_by_material
 
 
-def process_target_roads(ctx: SceneResourceContext) -> Optional[Path]:
-    """Fetch/load road data, convert to polygons, save sidecar JSON.
+def _merge_polygons(polygons: list) -> list:
+    """Merge overlapping polygons into a minimal set."""
+    merged = unary_union(polygons)
+    if isinstance(merged, MultiPolygon):
+        return list(merged.geoms)
+    return [merged]
 
-    Args:
-        ctx: Scene resource context
 
-    Returns:
-        Path to roads sidecar JSON, or None if roads disabled or no data
-    """
-    config = ctx.config
-    roads_cfg = config.roads
-
-    if roads_cfg is None or not roads_cfg.enabled:
-        return None
-
-    logging.info("=== Processing Roads ===")
-
-    # Get AOI bounding box in WGS84
-    aoi_polygon = ctx.target_aoi_polygon  # WGS84 Shapely polygon
-    bounds = (
-        aoi_polygon.bounds
-    )  # (minx, miny, maxx, maxy) = (min_lon, min_lat, max_lon, max_lat)
-    bbox_west, bbox_south, bbox_east, bbox_north = bounds
-
-    # Fetch road data
+def _fetch_osm_data(
+    roads_cfg, bbox_south, bbox_west, bbox_north, bbox_east
+) -> Optional[dict]:
+    """Fetch or load OSM road data based on config source."""
     if roads_cfg.source == "overpass":
         logging.info(
             "Fetching roads from Overpass API: bbox=(%.4f, %.4f, %.4f, %.4f)",
@@ -144,72 +181,84 @@ def process_target_roads(ctx: SceneResourceContext) -> Optional[Path]:
             bbox_north,
             bbox_east,
         )
-        osm_data = _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east)
-    elif roads_cfg.source == "file":
+        return _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east)
+
+    if roads_cfg.source == "file":
         logging.info("Loading roads from file: %s", roads_cfg.file_path)
         try:
             with open(roads_cfg.file_path, "r") as f:
-                osm_data = json.load(f)
+                return json.load(f)
         except Exception as exc:
             logging.warning("Failed to load road data file: %s", exc)
             return None
-    else:
-        logging.warning("Unknown road data source: %s", roads_cfg.source)
+
+    logging.warning("Unknown road data source: %s", roads_cfg.source)
+    return None
+
+
+def process_target_roads(ctx: SceneResourceContext) -> Optional[Path]:
+    """Fetch/load road data, convert to polygons, save sidecar JSON."""
+    config = ctx.config
+    roads_cfg = config.roads
+
+    if roads_cfg is None or not roads_cfg.enabled:
         return None
 
+    logging.info("=== Processing Roads ===")
+
+    bbox_west, bbox_south, bbox_east, bbox_north = ctx.target_aoi_polygon.bounds
+
+    osm_data = _fetch_osm_data(roads_cfg, bbox_south, bbox_west, bbox_north, bbox_east)
     if osm_data is None:
         logging.warning("No road data available — skipping roads")
         return None
 
-    # Build scene-coordinate bounding box for clipping
     half_size_m = (config.location.aoi_size_km * 1000) / 2
-    from shapely.geometry import box
+    scene_bounds = box(-half_size_m, -half_size_m, half_size_m, half_size_m)
 
-    scene_bounds_polygon = box(-half_size_m, -half_size_m, half_size_m, half_size_m)
-
-    # Parse and buffer roads
-    road_polygons = _parse_roads(
+    roads_by_material = _parse_roads(
         osm_data,
-        roads_cfg.highway_types,
-        roads_cfg.width_overrides,
+        roads_cfg,
         ctx.coordinate_system,
-        scene_bounds_polygon,
+        scene_bounds,
     )
 
-    if not road_polygons:
+    if not roads_by_material:
         logging.info("No roads found in AOI — skipping")
         return None
 
-    # Union overlapping road polygons
-    merged = unary_union(road_polygons)
+    merged_by_material = {}
+    for material_name in sorted(roads_by_material):
+        raw = roads_by_material[material_name]
+        merged = _merge_polygons(raw)
+        merged_by_material[material_name] = merged
+        logging.info(
+            "Roads [%s]: %d raw polygons → %d merged",
+            material_name,
+            len(raw),
+            len(merged),
+        )
 
-    # Normalize to list of polygons
-    if isinstance(merged, MultiPolygon):
-        polygon_list = list(merged.geoms)
-    else:
-        polygon_list = [merged]
-
-    logging.info(
-        "Roads: %d individual polygons merged into %d",
-        len(road_polygons),
-        len(polygon_list),
-    )
-
-    # Save sidecar JSON
     sidecar = {
-        "material_name": roads_cfg.material_name,
-        "road_count": len(polygon_list),
-        "polygons": [mapping(p) for p in polygon_list],
+        "road_layers": [
+            {
+                "material_name": name,
+                "polygons": [mapping(p) for p in polys],
+            }
+            for name, polys in sorted(merged_by_material.items())
+        ]
     }
     sidecar_path = ctx.data_dir / "roads.json"
     with open(str(sidecar_path), "w") as f:
         json.dump(sidecar, f)
 
-    # Store on context
     ctx.assets.roads_file = sidecar_path
-    ctx._road_geometries = polygon_list
 
+    total = sum(len(p) for p in merged_by_material.values())
     logging.info(
-        "Roads sidecar saved: %s (%d polygons)", sidecar_path, len(polygon_list)
+        "Roads sidecar saved: %s (%d polygons, %d materials)",
+        sidecar_path,
+        total,
+        len(merged_by_material),
     )
     return sidecar_path

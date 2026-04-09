@@ -190,8 +190,25 @@ class SceneGenConfig(BaseModel):
     data_sources: DataSources = Field(..., description="Data source configuration")
     output_dir: PathRef = Field(..., description="Output directory for generated scene")
 
-    target_resolution_m: float = Field(
-        30.0, gt=0.0, description="Target resolution in meters"
+    dem_resolution_m: float = Field(
+        30.0,
+        gt=0.0,
+        description="DEM resolution in meters (controls terrain mesh detail)",
+    )
+    landcover_resolution_m: float = Field(
+        30.0,
+        gt=0.0,
+        description="Landcover resolution in meters",
+    )
+    texture_resolution_m: Optional[float] = Field(
+        None,
+        gt=0.0,
+        description=(
+            "Texture resolution in meters per pixel. "
+            "When set finer than landcover_resolution_m, roads and landcover are rasterized "
+            "at higher pixel density, reducing road blockiness. "
+            "Defaults to native landcover resolution when None."
+        ),
     )
 
     snow: Optional[SnowConfig] = Field(
@@ -401,7 +418,8 @@ def create_scene_config(
     center_lon: float,
     aoi_size_km: float,
     output_dir: PathRef,
-    target_resolution_m: float = 30.0,
+    dem_resolution_m: float = 30.0,
+    landcover_resolution_m: float = 10.0,
     description: Optional[str] = None,
     data_overrides: Optional[dict] = None,
     atmosphere: Optional[AtmosphereConfig] = None,
@@ -415,7 +433,8 @@ def create_scene_config(
         center_lon: Center longitude in degrees
         aoi_size_km: Area of interest size in kilometers
         output_dir: Output directory for generated scene
-        target_resolution_m: Target resolution in meters (default: 30.0)
+        dem_resolution_m: DEM resolution in meters (default: 30.0)
+        landcover_resolution_m: Landcover resolution in meters (default: 30.0)
         description: Optional scene description
         data_overrides: Optional dict with user data overrides:
             - dem_index: Custom DEM index file
@@ -434,7 +453,8 @@ def create_scene_config(
         ),
         data_sources=data_sources,
         output_dir=output_dir,
-        target_resolution_m=target_resolution_m,
+        dem_resolution_m=dem_resolution_m,
+        landcover_resolution_m=landcover_resolution_m,
         atmosphere=atmosphere or _default_atmosphere_config(),
         **kwargs,
     )

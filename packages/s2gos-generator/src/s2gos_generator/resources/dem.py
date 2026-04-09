@@ -47,7 +47,7 @@ def process_target_dem(ctx: SceneResourceContext) -> Optional[Path]:
         raise ValueError("Target AOI polygon not found in context")
 
     output_path = _process_dem(
-        ctx, aoi_polygon, ctx.target_resolution_m, "dem", ctx.aoi_size_km
+        ctx, aoi_polygon, ctx.dem_resolution_m, "dem", ctx.aoi_size_km
     )
     ctx.assets.dem_file = output_path
 

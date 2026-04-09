@@ -10,21 +10,7 @@ from PIL import Image
 
 from ..assets.terrain_material import TerrainMaterialGenerator
 from ..core.context import SceneResourceContext
-
-
-def _compute_overlay_material_indices(ctx: SceneResourceContext) -> dict:
-    """Compute material indices for all overlay materials (regions + roads)."""
-    overlay_names = set(r.material_name for r in ctx.config.material_regions)
-    if ctx.config.roads is not None and ctx.config.roads.enabled:
-        overlay_names.add(ctx.config.roads.material_name)
-    return {
-        mat_name: idx for idx, mat_name in enumerate(sorted(overlay_names), start=11)
-    }
-
-
-def _compute_region_material_indices(ctx: SceneResourceContext) -> dict:
-    """Compute region material indices from config."""
-    return _compute_overlay_material_indices(ctx)
+from ..core.materials import build_material_index_map
 
 
 def _apply_region_materials_to_texture(
@@ -32,6 +18,7 @@ def _apply_region_materials_to_texture(
     landcover_path: Path,
     applicable_regions: list,
     ctx: SceneResourceContext,
+    material_index_map: dict[str, int],
     area_name: str = "texture",
 ) -> None:
     """Apply material region overlays to texture file.
@@ -76,11 +63,9 @@ def _apply_region_materials_to_texture(
         else texture_array.copy()
     )
 
-    region_material_indices = _compute_region_material_indices(ctx)
-
     modified = False
     for region_config in applicable_regions:
-        material_idx = region_material_indices[region_config.material_name]
+        material_idx = material_index_map[region_config.material_name]
 
         try:
             geometry = geometry_from_dict(region_config.geometry)
@@ -117,7 +102,7 @@ def _apply_roads_to_texture(
     texture_path: Path,
     landcover_path: Path,
     ctx: SceneResourceContext,
-    road_material_idx: int,
+    road_material_indices: dict[str, int],
     area_name: str = "target",
 ) -> None:
     """Rasterize road polygons onto the selection texture.
@@ -126,50 +111,51 @@ def _apply_roads_to_texture(
         texture_path: Path to selection texture PNG (modified in-place)
         landcover_path: Path to landcover zarr (for resolution/bounds)
         ctx: Scene resource context
-        road_material_idx: Material index value to paint for roads
+        road_material_indices: Mapping of material_name to texture index
         area_name: Logging label
     """
-    import json
-
     from rasterio.features import rasterize
     from rasterio.transform import from_bounds
-    from shapely.geometry import shape
 
-    # Load road polygons from context or sidecar
-    polygons = ctx._road_geometries
-    if polygons is None and ctx.assets.roads_file is not None:
-        try:
-            with open(str(ctx.assets.roads_file), "r") as f:
-                data = json.load(f)
-            polygons = [shape(p) for p in data.get("polygons", [])]
-        except Exception as exc:
-            logging.warning("Failed to load road polygons for texture: %s", exc)
-            return
-
-    if not polygons:
+    road_geoms = ctx.road_geometries
+    if not road_geoms:
         return
 
-    # Get scene bounds and resolution from landcover
     with xr.open_zarr(landcover_path) as ds:
         lc_data = ds[list(ds.data_vars)[0]]
-        width_px = len(lc_data.coords["x"].values)
-        height_px = len(lc_data.coords["y"].values)
-        xmin = float(lc_data.coords["x"].min())
-        xmax = float(lc_data.coords["x"].max())
-        ymin = float(lc_data.coords["y"].min())
-        ymax = float(lc_data.coords["y"].max())
+        lc_x = lc_data.coords["x"].values
+        lc_y = lc_data.coords["y"].values
+        native_width_px = len(lc_x)
+        native_height_px = len(lc_y)
+        xmin = float(lc_x.min())
+        xmax = float(lc_x.max())
+        ymin = float(lc_y.min())
+        ymax = float(lc_y.max())
 
-    transform = from_bounds(xmin, ymin, xmax, ymax, width_px, height_px)
-    road_mask = rasterize(
-        [(p, 1) for p in polygons],
-        out_shape=(height_px, width_px),
-        transform=transform,
-        fill=0,
-        dtype=np.uint8,
-        all_touched=True,
+    native_res = (
+        abs(xmax - xmin) / (native_width_px - 1) if native_width_px > 1 else None
     )
-    # Flip to match texture orientation (texture is stored top-down)
-    road_mask = np.flipud(road_mask)
+
+    texture_res = ctx.config.texture_resolution_m
+    if texture_res is not None and native_res is not None and texture_res < native_res:
+        scale = native_res / texture_res
+        target_width = round(native_width_px * scale)
+        target_height = round(native_height_px * scale)
+        raster_res = texture_res
+    else:
+        target_width = native_width_px
+        target_height = native_height_px
+        raster_res = native_res
+
+    half_px = raster_res / 2 if raster_res is not None else 0.0
+    transform = from_bounds(
+        xmin - half_px,
+        ymin - half_px,
+        xmax + half_px,
+        ymax + half_px,
+        target_width,
+        target_height,
+    )
 
     with Image.open(texture_path) as img:
         texture_array = np.array(img)
@@ -180,17 +166,47 @@ def _apply_roads_to_texture(
         else texture_array.copy()
     )
 
-    pixels_modified = np.sum(road_mask > 0)
-    if pixels_modified > 0:
-        texture_2d[road_mask > 0] = road_material_idx
+    if (target_height, target_width) != texture_2d.shape:
+        texture_2d = np.array(
+            Image.fromarray(texture_2d, mode="L").resize(
+                (target_width, target_height), Image.NEAREST
+            )
+        )
+
+    modified = False
+    for material_name, polygons in road_geoms.items():
+        mat_idx = road_material_indices.get(material_name)
+        if mat_idx is None or not polygons:
+            continue
+
+        road_mask = rasterize(
+            [(p, 1) for p in polygons],
+            out_shape=(target_height, target_width),
+            transform=transform,
+            fill=0,
+            dtype=np.uint8,
+            all_touched=True,
+        )
+        road_mask = np.flipud(road_mask)
+
+        pixels_modified = np.sum(road_mask > 0)
+        if pixels_modified > 0:
+            texture_2d[road_mask > 0] = mat_idx
+            modified = True
+            logging.info(
+                "Applied roads [%s] to %s texture: %d pixels → material index %d (%dx%d px @ %.1fm/px)",
+                material_name,
+                area_name,
+                pixels_modified,
+                mat_idx,
+                target_width,
+                target_height,
+                raster_res,
+            )
+
+    if modified:
         img_to_save = Image.fromarray(texture_2d, mode="L")
         img_to_save.save(texture_path)
-        logging.info(
-            "Applied roads to %s texture: %d pixels → material index %d",
-            area_name,
-            pixels_modified,
-            road_material_idx,
-        )
 
 
 def _generate_texture(
@@ -217,6 +233,8 @@ def _generate_texture(
             snow_thermoprops=snow_thermoprops,
         )
     )
+    material_index_map = build_material_index_map(ctx)
+
     if ctx.config.material_regions:
         applicable_regions = [
             r for r in ctx.config.material_regions if area_name in r.applies_to
@@ -227,18 +245,15 @@ def _generate_texture(
                 landcover_path,
                 applicable_regions,
                 ctx,
+                material_index_map,
                 f"{area_name} texture",
             )
 
-    # Paint roads onto texture (only for target area)
     roads_path = ctx.dependency_outputs.get("target_roads")
     if roads_path is not None and area_name == "target":
-        overlay_indices = _compute_overlay_material_indices(ctx)
-        road_idx = overlay_indices.get(ctx.config.roads.material_name)
-        if road_idx is not None:
-            _apply_roads_to_texture(
-                selection_texture_path, landcover_path, ctx, road_idx, area_name
-            )
+        _apply_roads_to_texture(
+            selection_texture_path, landcover_path, ctx, material_index_map, area_name
+        )
 
     return selection_texture_path, preview_texture_path
 
@@ -272,7 +287,7 @@ def generate_target_texture(ctx: SceneResourceContext) -> Optional[Path]:
         if dem_file_path is None:
             logging.warning("Seasonal snow requested but DEM not available")
 
-    resolution_str = f"{ctx.target_resolution_m}m"
+    resolution_str = f"{ctx.landcover_resolution_m}m"
     selection_texture_path, preview_texture_path = _generate_texture(
         ctx,
         landcover_file_path,

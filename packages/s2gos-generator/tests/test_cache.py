@@ -107,7 +107,9 @@ def minimal_config() -> Any:
             handle_dem_nans=True,
             generate_texture_preview=True,
         ),
-        target_resolution_m=30.0,
+        dem_resolution_m=30.0,
+        landcover_resolution_m=30.0,
+        texture_resolution_m=10,
         buffer=None,
         background=None,
         snow=None,
@@ -133,17 +135,22 @@ class TestHashingAndFingerprints:
 
         fp_dem = ResourceFingerprints.get("target_dem", cfg)
         assert all(
-            k in fp_dem
-            for k in ("center_lat", "target_resolution_m", "dem_fillna_value")
+            k in fp_dem for k in ("center_lat", "dem_resolution_m", "dem_fillna_value")
         )
 
-        assert ResourceFingerprints.get("target_texture", cfg).get("snow") is None
+        fp_texture = ResourceFingerprints.get("target_texture", cfg)
+        assert fp_texture.get("snow") is None
+        assert "texture_resolution_m" in fp_texture
         cfg.snow = SimpleNamespace(
             model_dump=lambda: {"season_month": "june", "material_index": 6}
         )
         assert (
             ResourceFingerprints.get("target_texture", cfg)["snow"]["season_month"]
             == "june"
+        )
+        assert (
+            ResourceFingerprints.get("target_texture", cfg)["texture_resolution_m"]
+            is None
         )
         assert "snow" not in ResourceFingerprints.get("background_texture", cfg)
 

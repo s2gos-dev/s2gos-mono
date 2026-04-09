@@ -49,7 +49,8 @@ class SceneResourceContext:
         self.center_lat = config.location.center_lat
         self.center_lon = config.location.center_lon
         self.aoi_size_km = config.location.aoi_size_km
-        self.target_resolution_m = config.target_resolution_m
+        self.dem_resolution_m = config.dem_resolution_m
+        self.landcover_resolution_m = config.landcover_resolution_m
 
         # Scene-specific data
         self.assets = SceneAssets()
@@ -63,7 +64,7 @@ class SceneResourceContext:
 
         self._coord_system: Optional[object] = None
         self._exclusion_zone_geometries: Optional[list] = None
-        self._road_geometries: Optional[list] = None
+        self._road_geometries: Optional[dict] = None
 
     @property
     def user_assets(self):
@@ -139,33 +140,45 @@ class SceneResourceContext:
         return self._background_aoi_polygon
 
     @property
+    def road_geometries(self) -> dict:
+        """Road polygons keyed by material name, lazily loaded from the roads sidecar.
+
+        Returns an empty dict if roads are disabled or sidecar is unavailable.
+        """
+        if self._road_geometries is None and self.assets.roads_file is not None:
+            import json
+
+            from shapely.geometry import shape
+
+            try:
+                with open(str(self.assets.roads_file), "r") as f:
+                    data = json.load(f)
+                geoms: dict = {}
+                for layer in data.get("road_layers", []):
+                    mat = layer["material_name"]
+                    geoms[mat] = [shape(p) for p in layer.get("polygons", [])]
+                self._road_geometries = geoms
+            except Exception as exc:
+                logging.warning("Failed to load road geometries from sidecar: %s", exc)
+                self._road_geometries = {}
+        return self._road_geometries or {}
+
+    @property
     def road_exclusion_geometries(self) -> list:
         """Road-based exclusion zone geometries in scene coordinates."""
         roads_cfg = self.config.roads
         if roads_cfg is None or not roads_cfg.exclude_vegetation:
             return []
 
-        # Load road geometries from sidecar file if not already set
-        polygons = self._road_geometries
-        if polygons is None and self.assets.roads_file is not None:
-            try:
-                import json
-
-                from shapely.geometry import shape
-
-                with open(str(self.assets.roads_file), "r") as f:
-                    data = json.load(f)
-                polygons = [shape(p) for p in data.get("polygons", [])]
-            except Exception as exc:
-                logging.warning("Failed to load road geometries from sidecar: %s", exc)
-                return []
-
-        if not polygons:
+        road_geoms = self.road_geometries
+        if not road_geoms:
             return []
 
         buffer_m = roads_cfg.vegetation_buffer_m
         result = []
-        for i, poly in enumerate(polygons):
+        for i, poly in enumerate(
+            poly for polys in road_geoms.values() for poly in polys
+        ):
             buffered = poly.buffer(buffer_m) if buffer_m > 0 else poly
             result.append({"source": f"road_{i}", "geometry": buffered})
         return result
