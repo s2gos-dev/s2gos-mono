@@ -93,7 +93,11 @@ class ResourceFingerprints:
 
     @staticmethod
     def _target_mesh(config) -> dict:
-        return {"handle_dem_nans": config.processing.handle_dem_nans}
+        fp = {"handle_dem_nans": config.processing.handle_dem_nans}
+        mesh_ref = getattr(config, "mesh_refinement", None)
+        if mesh_ref is not None:
+            fp["mesh_refinement"] = mesh_ref.model_dump()
+        return fp
 
     @staticmethod
     def _buffer_mesh(config) -> dict:
@@ -116,8 +120,8 @@ class ResourceFingerprints:
         return {
             "snow": config.snow.model_dump() if config.snow else None,
             "material_regions": target_regions,
-            "roads": getattr(config, "roads", None) and config.roads.model_dump(),
-            "texture_resolution_m": getattr(config, "texture_resolution_m", None),
+            "roads_enabled": config.roads.enabled if config.roads is not None else None,
+            "texture_resolution_m": config.texture_resolution_m,
             "generate_texture_preview": config.processing.generate_texture_preview,
         }
 
@@ -182,6 +186,8 @@ class ResourceFingerprints:
                 if config.vegetation_placement
                 else None
             ),
+            "texture_resolution_m": config.texture_resolution_m,
+            "landcover_resolution_m": config.landcover_resolution_m,
         }
 
     @staticmethod

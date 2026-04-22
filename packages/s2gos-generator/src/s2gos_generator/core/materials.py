@@ -39,7 +39,8 @@ def build_material_index_map(ctx: SceneResourceContext) -> dict[str, int]:
         overlay_candidates.add(roads_cfg.default_material)
         overlay_candidates.update(roads_cfg.surface_material_mapping.values())
 
-    next_index = max(landcover_map.values()) + 1 if landcover_map else 11
+    assert landcover_map, "landcover_map must not be empty"
+    next_index = max(landcover_map.values()) + 1
     new_materials = sorted(
         name for name in overlay_candidates if name not in landcover_map
     )

@@ -20,7 +20,8 @@ def generation_from_config(config: SceneGenConfig):
         f"  Location: {config.location.center_lat:.4f}°, {config.location.center_lon:.4f}°"
     )
     print(f"  AOI: {config.location.aoi_size_km} km²")
-    print(f"  Resolution: {config.target_resolution_m} m")
+    print(f"  DEM resolution: {config.dem_resolution_m} m")
+    print(f"  Landcover resolution: {config.landcover_resolution_m} m")
 
     print("Generating scene with configuration")
 
@@ -44,7 +45,7 @@ def generation_from_config(config: SceneGenConfig):
         print("Scene generated successfully!")
         print(f" Location: {config.location.center_lat}, {config.location.center_lon}")
         print(
-            f" Target: {config.location.aoi_size_km}km² at {config.target_resolution_m}m"
+            f" Target: {config.location.aoi_size_km}km — DEM {config.dem_resolution_m}m / Landcover {config.landcover_resolution_m}m"
         )
         if config.buffer is not None:
             print(

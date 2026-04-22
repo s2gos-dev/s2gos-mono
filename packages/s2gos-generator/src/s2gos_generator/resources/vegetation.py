@@ -20,20 +20,65 @@ def _load_exclusion_zones(ctx: SceneResourceContext) -> List[Dict[str, Any]]:
     return list(ctx.exclusion_zone_geometries)
 
 
+def _filter_by_road_polygons(
+    instances: List[Dict[str, Any]],
+    ctx: SceneResourceContext,
+) -> List[Dict[str, Any]]:
+    """Exclude vegetation positions that fall within buffered road polygons."""
+    import shapely
+    from shapely.strtree import STRtree
+
+    veg_cfg = ctx.config.vegetation_placement
+    if veg_cfg is None or not veg_cfg.road_exclusion.enabled:
+        return instances
+    if not instances:
+        return instances
+
+    buffer_m = veg_cfg.road_exclusion.buffer_m
+    all_polys = [
+        poly.buffer(buffer_m) if buffer_m > 0 else poly
+        for poly in ctx.road_polygons_by_material.values()
+    ]
+
+    if not all_polys:
+        return instances
+
+    tree = STRtree(all_polys)
+    xy = np.array([[inst["position"][0], inst["position"][1]] for inst in instances])
+    points = shapely.points(xy[:, 0], xy[:, 1])
+    pt_idx, _ = tree.query(points, predicate="intersects")
+    excluded = set(pt_idx.tolist())
+
+    filtered = [inst for i, inst in enumerate(instances) if i not in excluded]
+    excl_count = len(instances) - len(filtered)
+    logging.info(
+        "Road polygon filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
+        len(filtered),
+        excl_count,
+        100.0 * excl_count / len(instances) if instances else 0.0,
+        buffer_m,
+    )
+    return filtered
+
+
 def _filter_by_exclusion_zones(
     vegetation_instances: List[Dict[str, Any]],
     exclusion_zones: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """Filter vegetation instances by exclusion zones.
 
+    Uses Shapely 2.x bulk API: builds all points in one C call, then queries
+    the STRtree for all intersecting (point, zone) pairs in a single call.
+    ``intersects`` is boundary-safe — a point exactly on a road edge is excluded.
+
     Args:
         vegetation_instances: List of vegetation placement dicts
         exclusion_zones: List of exclusion zone dicts with 'geometry' keys
 
     Returns:
-        Filtered list with instances outside exclusion zones
+        Filtered list with instances outside all exclusion zones
     """
-    from shapely.geometry import Point
+    import shapely
     from shapely.strtree import STRtree
 
     if not vegetation_instances:
@@ -44,32 +89,32 @@ def _filter_by_exclusion_zones(
         return vegetation_instances
 
     logging.info(
-        f"Applying {len(exclusion_zones)} exclusion zones to "
-        f"{len(vegetation_instances)} vegetation instances"
+        "Applying %d exclusion zones to %d vegetation instances",
+        len(exclusion_zones),
+        len(vegetation_instances),
     )
 
     geometries = [zone["geometry"] for zone in exclusion_zones]
-    spatial_index = STRtree(geometries)
+    tree = STRtree(geometries)
 
-    filtered_instances = []
-    excluded_count = 0
+    xy = np.array(
+        [[inst["position"][0], inst["position"][1]] for inst in vegetation_instances]
+    )
+    points = shapely.points(xy[:, 0], xy[:, 1])
 
-    for instance in vegetation_instances:
-        pos = instance["position"]
-        point = Point(pos[0], pos[1])
+    pt_idx, _ = tree.query(points, predicate="intersects")
+    excluded = set(pt_idx.tolist())
 
-        possible_matches = spatial_index.query(point)
-        is_excluded = any(geometries[idx].contains(point) for idx in possible_matches)
-
-        if not is_excluded:
-            filtered_instances.append(instance)
-        else:
-            excluded_count += 1
+    filtered_instances = [
+        inst for i, inst in enumerate(vegetation_instances) if i not in excluded
+    ]
+    excluded_count = len(vegetation_instances) - len(filtered_instances)
 
     logging.info(
-        f"Exclusion filtering: kept {len(filtered_instances)}, "
-        f"excluded {excluded_count} "
-        f"({100 * excluded_count / len(vegetation_instances):.1f}%)"
+        "Exclusion filtering: kept %d, excluded %d (%.1f%%)",
+        len(filtered_instances),
+        excluded_count,
+        100 * excluded_count / len(vegetation_instances),
     )
 
     return filtered_instances
@@ -91,16 +136,17 @@ def process_target_vegetation(
         DataNotFoundError: If required landcover or DEM data is missing
     """
     vegetation_config = ctx.config.vegetation_placement
-    if ctx.config.vegetation_placement.random_seed:
-        random.seed(ctx.config.vegetation_placement.random_seed)
-        np.random.seed(ctx.config.vegetation_placement.random_seed)
-        logging.info(
-            f"Random seed set to {ctx.config.vegetation_placement.random_seed} for reproducible generation"
-        )
-
     if vegetation_config is None or not vegetation_config.enabled:
         logging.info("Vegetation disabled - skipping vegetation placement")
         return None
+
+    if vegetation_config.random_seed:
+        random.seed(vegetation_config.random_seed)
+        np.random.seed(vegetation_config.random_seed)
+        logging.info(
+            "Random seed set to %s for reproducible generation",
+            vegetation_config.random_seed,
+        )
 
     landcover_path = ctx.dependency_outputs.get("target_landcover")
     dem_path = ctx.dependency_outputs.get("target_dem")
@@ -129,10 +175,13 @@ def process_target_vegetation(
     )
 
     exclusion_zones = _load_exclusion_zones(ctx)
+
     if exclusion_zones:
         vegetation_instances = _filter_by_exclusion_zones(
             vegetation_instances, exclusion_zones
         )
+
+    vegetation_instances = _filter_by_road_polygons(vegetation_instances, ctx)
 
     if not vegetation_instances:
         return None

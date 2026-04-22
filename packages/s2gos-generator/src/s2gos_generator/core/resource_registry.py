@@ -7,9 +7,16 @@ from .context import SceneResourceContext
 class Resource:
     """Represents a single resource with dependencies."""
 
-    def __init__(self, id: str, dependencies: List[str], func: Callable):
+    def __init__(
+        self,
+        id: str,
+        dependencies: List[str],
+        func: Callable,
+        optional_deps: Optional[List[str]] = None,
+    ):
         self.id = id
-        self.dependencies = dependencies or []
+        self.dependencies = list(dependencies or [])
+        self.optional_deps = list(optional_deps or [])
         self.func = func
 
     def __call__(self, ctx: SceneResourceContext) -> Optional[Path]:
@@ -23,9 +30,24 @@ class ResourceRegistry:
     def __init__(self):
         self.resources: Dict[str, Resource] = {}
 
-    def register(self, id: str, dependencies: List[str], func: Callable):
-        """Register a resource explicitly."""
-        self.resources[id] = Resource(id, dependencies, func)
+    def register(
+        self,
+        id: str,
+        dependencies: List[str],
+        func: Callable,
+        *,
+        optional: Optional[List[str]] = None,
+    ):
+        """Register a resource explicitly.
+
+        Args:
+            id: Unique resource identifier.
+            dependencies: Required dependencies that must run before this resource.
+            func: Resource function to execute.
+            optional: Optional dependencies — added to the required list only if
+                they are already registered when ``update_scene_dependencies`` runs.
+        """
+        self.resources[id] = Resource(id, dependencies, func, optional_deps=optional)
 
     def get_resource(self, id: str) -> Resource:
         """Get a resource by ID."""
@@ -91,7 +113,13 @@ class ResourceRegistry:
             return "optional"
 
     def update_scene_dependencies(self):
-        """Update scene_description dependencies based on currently registered resources."""
+        """Resolve optional deps and update scene_description dependencies."""
+        # Wire optional deps
+        for resource in self.resources.values():
+            for opt in resource.optional_deps:
+                if opt in self.resources and opt not in resource.dependencies:
+                    resource.dependencies.append(opt)
+
         if "scene_description" not in self.resources:
             return
 

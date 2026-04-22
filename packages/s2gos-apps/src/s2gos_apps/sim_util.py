@@ -19,7 +19,7 @@ from s2gos_utils import SceneDescription
 from upath import UPath
 
 
-def top_down_perspective_sensor(target_size, fov, spp):
+def top_down_perspective_sensor(target_size, fov, spp, resolution=[512, 512]):
     distance = (target_size / 2.0) / np.tan(np.deg2rad(fov / 2))
 
     return GroundSensor(
@@ -30,7 +30,7 @@ def top_down_perspective_sensor(target_size, fov, spp):
         ),
         srf=SpectralResponse(type="delta", wavelengths=[440.0, 550.0, 660.0]),
         fov=fov,
-        resolution=[512, 512],
+        resolution=resolution,
         samples_per_pixel=spp,
         post_processing=PostProcessingOptions(apply_srf=False, generate_rgb_image=True),
     )

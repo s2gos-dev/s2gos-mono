@@ -13,27 +13,27 @@ from ..core.context import SceneResourceContext
 from ..core.materials import build_material_index_map
 
 
-def _apply_region_materials_to_texture(
-    texture_path: Path,
+def _apply_region_materials_to_array(
+    texture_2d: np.ndarray,
     landcover_path: Path,
     applicable_regions: list,
     ctx: SceneResourceContext,
     material_index_map: dict[str, int],
     area_name: str = "texture",
-) -> None:
-    """Apply material region overlays to texture file.
-
-    This is a helper function that extracts common logic from generate_target_texture(),
-    generate_buffer_texture(), and generate_background_texture().
+) -> tuple[np.ndarray, bool]:
+    """Apply material region overlays to an in-memory texture array.
 
     Args:
-        texture_path: Path to selection texture PNG file (will be modified in-place)
+        texture_2d: 2-D array
         landcover_path: Path to landcover zarr file
         applicable_regions: List of MaterialRegion configs to apply
         ctx: Scene resource context
+        material_index_map: Mapping of material name to texture index
         area_name: Name for logging (e.g., "target texture", "buffer texture")
+
+    Returns:
+        (texture_2d, modified) where modified is True if any pixels were changed.
     """
-    # Extract all needed data from zarr within context manager to ensure proper cleanup
     with xr.open_zarr(landcover_path) as ds:
         landcover_data = ds[list(ds.data_vars)[0]]
         width_px = len(landcover_data.coords["x"].values)
@@ -45,23 +45,13 @@ def _apply_region_materials_to_texture(
             "ymax": float(landcover_data.coords["y"].max()),
         }
 
-        # Prepare landcover data if needed for filtering
         landcover_2d = None
         if any(r.landcover_filter is not None for r in applicable_regions):
             landcover_2d = np.flipud(landcover_data.values)
 
-    # Dataset now safely closed, continue with region processing
     from ..core.region_geometry import geometry_from_dict
 
-    coord_system = ctx.coordinate_system  # Use cached coordinate system
-
-    with Image.open(texture_path) as img:
-        texture_array = np.array(img)
-    texture_2d = (
-        texture_array[:, :, 0]
-        if len(texture_array.shape) == 3
-        else texture_array.copy()
-    )
+    coord_system = ctx.coordinate_system
 
     modified = False
     for region_config in applicable_regions:
@@ -93,33 +83,37 @@ def _apply_region_materials_to_texture(
             )
 
     if modified:
-        img_to_save = Image.fromarray(texture_2d, mode="L")
-        img_to_save.save(texture_path)
-        logging.info(f"Updated {area_name} with material regions: {texture_path}")
+        logging.info(f"Updated {area_name} with material regions")
+
+    return texture_2d, modified
 
 
-def _apply_roads_to_texture(
-    texture_path: Path,
+def _apply_roads_to_array(
+    texture_2d: np.ndarray,
     landcover_path: Path,
     ctx: SceneResourceContext,
     road_material_indices: dict[str, int],
     area_name: str = "target",
-) -> None:
-    """Rasterize road polygons onto the selection texture.
+) -> tuple[np.ndarray, bool]:
+    """Rasterize road polygons onto an in-memory texture array.
 
     Args:
-        texture_path: Path to selection texture PNG (modified in-place)
+        texture_2d: 2-D uint8 array to modify (may be resized if texture_resolution_m
+            is finer than the landcover resolution)
         landcover_path: Path to landcover zarr (for resolution/bounds)
         ctx: Scene resource context
         road_material_indices: Mapping of material_name to texture index
         area_name: Logging label
+
+    Returns:
+        (texture_2d, modified) — texture_2d may have new dimensions after upsampling.
     """
     from rasterio.features import rasterize
     from rasterio.transform import from_bounds
 
-    road_geoms = ctx.road_geometries
+    road_geoms = ctx.road_polygons_by_material
     if not road_geoms:
-        return
+        return texture_2d, False
 
     with xr.open_zarr(landcover_path) as ds:
         lc_data = ds[list(ds.data_vars)[0]]
@@ -132,9 +126,7 @@ def _apply_roads_to_texture(
         ymin = float(lc_y.min())
         ymax = float(lc_y.max())
 
-    native_res = (
-        abs(xmax - xmin) / (native_width_px - 1) if native_width_px > 1 else None
-    )
+    native_res = abs(xmax - xmin) / (native_width_px - 1)
 
     texture_res = ctx.config.texture_resolution_m
     if texture_res is not None and native_res is not None and texture_res < native_res:
@@ -157,15 +149,6 @@ def _apply_roads_to_texture(
         target_height,
     )
 
-    with Image.open(texture_path) as img:
-        texture_array = np.array(img)
-
-    texture_2d = (
-        texture_array[:, :, 0]
-        if len(texture_array.shape) == 3
-        else texture_array.copy()
-    )
-
     if (target_height, target_width) != texture_2d.shape:
         texture_2d = np.array(
             Image.fromarray(texture_2d, mode="L").resize(
@@ -174,13 +157,13 @@ def _apply_roads_to_texture(
         )
 
     modified = False
-    for material_name, polygons in road_geoms.items():
+    for material_name, merged_poly in road_geoms.items():
         mat_idx = road_material_indices.get(material_name)
-        if mat_idx is None or not polygons:
+        if mat_idx is None:
             continue
 
         road_mask = rasterize(
-            [(p, 1) for p in polygons],
+            [(merged_poly, 1)],
             out_shape=(target_height, target_width),
             transform=transform,
             fill=0,
@@ -204,9 +187,7 @@ def _apply_roads_to_texture(
                 raster_res,
             )
 
-    if modified:
-        img_to_save = Image.fromarray(texture_2d, mode="L")
-        img_to_save.save(texture_path)
+    return texture_2d, modified
 
 
 def _generate_texture(
@@ -235,25 +216,34 @@ def _generate_texture(
     )
     material_index_map = build_material_index_map(ctx)
 
+    with Image.open(selection_texture_path) as img:
+        raw = np.array(img)
+    texture_2d = raw[:, :, 0] if raw.ndim == 3 else raw.copy()
+    dirty = False
+
     if ctx.config.material_regions:
         applicable_regions = [
             r for r in ctx.config.material_regions if area_name in r.applies_to
         ]
         if applicable_regions:
-            _apply_region_materials_to_texture(
-                selection_texture_path,
+            texture_2d, changed = _apply_region_materials_to_array(
+                texture_2d,
                 landcover_path,
                 applicable_regions,
                 ctx,
                 material_index_map,
                 f"{area_name} texture",
             )
+            dirty |= changed
 
-    roads_path = ctx.dependency_outputs.get("target_roads")
-    if roads_path is not None and area_name == "target":
-        _apply_roads_to_texture(
-            selection_texture_path, landcover_path, ctx, material_index_map, area_name
+    if ctx.dependency_outputs.get("target_roads") is not None and area_name == "target":
+        texture_2d, changed = _apply_roads_to_array(
+            texture_2d, landcover_path, ctx, material_index_map, area_name
         )
+        dirty |= changed
+
+    if dirty:
+        Image.fromarray(texture_2d, mode="L").save(selection_texture_path)
 
     return selection_texture_path, preview_texture_path
 

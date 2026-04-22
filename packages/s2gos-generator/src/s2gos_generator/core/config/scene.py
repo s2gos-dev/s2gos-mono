@@ -24,6 +24,7 @@ from .atmosphere import (
     ThermophysicalConfig,
     _default_atmosphere_config,
 )
+from .mesh_refinement import MeshRefinementConfig
 from .roads import RoadsConfig
 from .vegetation import VegetationExclusionZone, VegetationPlacementConfig
 from ..._version import get_version
@@ -239,6 +240,10 @@ class SceneGenConfig(BaseModel):
         None,
         description="Road infrastructure configuration (None disables roads). See [RoadsConfig][s2gos_generator.core.config.roads.RoadsConfig].",
     )
+    mesh_refinement: Optional[MeshRefinementConfig] = Field(
+        None,
+        description="Adaptive mesh refinement configuration (None disables refinement). See [MeshRefinementConfig][s2gos_generator.core.config.mesh_refinement.MeshRefinementConfig].",
+    )
     user_assets: list[UserAssets] = Field(
         [],
         description="User assets to be placed in generated scene. See [UserAssets][s2gos_generator.core.config.assets.UserAssets].",
@@ -293,13 +298,6 @@ class SceneGenConfig(BaseModel):
                 raise ValueError("Buffer size must be larger than AOI size")
 
         return self
-
-    @property
-    def trees_enabled(self) -> bool:
-        """Backward compatibility property for trees_enabled check."""
-        return (
-            self.vegetation_placement is not None and self.vegetation_placement.enabled
-        )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""

@@ -73,19 +73,25 @@ class SceneGenerationPipeline:
         # Core resources - always included
         self.registry.register("target_dem", [], process_target_dem)
         self.registry.register("target_landcover", [], process_target_landcover)
-        self.registry.register("target_mesh", ["target_dem"], generate_target_mesh)
 
-        # Roads resource (no upstream deps — uses config for AOI bbox)
         if self.config.roads is not None and self.config.roads.enabled:
             self.registry.register("target_roads", [], process_target_roads)
+
+        self.registry.register(
+            "target_mesh",
+            ["target_dem"],
+            generate_target_mesh,
+            optional=["target_roads"],
+        )
 
         target_texture_deps = ["target_landcover"]
         if self.config.snow is not None:
             target_texture_deps.append("target_dem")
-        if self.config.roads is not None and self.config.roads.enabled:
-            target_texture_deps.append("target_roads")
         self.registry.register(
-            "target_texture", target_texture_deps, generate_target_texture
+            "target_texture",
+            target_texture_deps,
+            generate_target_texture,
+            optional=["target_roads"],
         )
 
         if self.config.buffer is not None:
@@ -116,19 +122,15 @@ class SceneGenerationPipeline:
         if self.config.hamster and self.config.hamster.enabled:
             self.registry.register("hamster_data", [], process_hamster_data)
 
-        if self.config.trees_enabled:
-            veg_deps = ["target_landcover", "target_dem"]
-
-            if "user_assets" in self.registry.resources:
-                veg_deps.append("user_assets")
-
-            if "target_roads" in self.registry.resources:
-                veg_deps.append("target_roads")
-
+        if (
+            self.config.vegetation_placement is not None
+            and self.config.vegetation_placement.enabled
+        ):
             self.registry.register(
                 "target_vegetation",
-                veg_deps,
+                ["target_landcover", "target_dem"],
                 process_target_vegetation,
+                optional=["user_assets", "target_roads"],
             )
 
         # Scene description (dependencies will be updated by update_scene_dependencies)
@@ -249,6 +251,17 @@ class SceneGenerationPipeline:
                 additional_material_libraries=self.xml_material_libraries,
                 combined_user_assets=self._get_all_assets(),
             )
+
+            poly = ctx.target_aoi_polygon
+            logging.info(
+                "AOI polygon: %.1fkm × %.1fkm at (%.6f, %.6f)",
+                ctx.aoi_size_km,
+                ctx.aoi_size_km,
+                ctx.center_lat,
+                ctx.center_lon,
+            )
+            for i, (lon, lat) in enumerate(poly.exterior.coords[:-1]):
+                logging.debug("  Corner %d: (%.6f, %.6f)", i + 1, lat, lon)
 
             # Execute all resources using DAG executor (with optional caching)
             _ = self.executor.execute(ctx, use_cache=use_cache)

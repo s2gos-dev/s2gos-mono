@@ -4,12 +4,19 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import xarray as xr
+
 from ..assets.mesh import MeshGenerator
+from ..assets.terraforming import TerraformOperation
 from ..core.context import SceneResourceContext
 
 
 def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
     """Generate 3D mesh from target area DEM data.
+
+    Uses adaptive quadtree refinement when ``mesh_refinement`` is enabled and
+    at least one feature contributes terraform operations; falls back to the
+    uniform DEM mesh otherwise.
 
     Args:
         ctx: Scene resource context
@@ -23,19 +30,51 @@ def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
         raise ValueError("Target DEM file not found from dependencies")
 
     mesh_generator = MeshGenerator()
-
     mesh_path = ctx.meshes_dir / f"{ctx.scene_name}_terrain.ply"
 
-    _ = mesh_generator.generate_mesh_from_dem_file(
-        dem_file_path=dem_file_path,
-        output_path=mesh_path,
-        add_uvs=True,
-        handle_nans=ctx.config.processing.handle_dem_nans,
-    )
+    dem_dataset = xr.open_zarr(dem_file_path)
+    dem_data = dem_dataset["elevation"]
 
+    refinement_cfg = ctx.config.mesh_refinement
+
+    if refinement_cfg is not None and refinement_cfg.enabled:
+        operations: list[TerraformOperation] = []
+        if ctx.config.roads is not None and ctx.config.roads.enabled:
+            from .roads import build_road_terraform_operations
+
+            operations.extend(
+                build_road_terraform_operations(ctx, dem_data, refinement_cfg)
+            )
+
+        if operations:
+            logging.info(
+                "Adaptive mesh refinement: %d operation(s), max_depth=%d",
+                len(operations),
+                refinement_cfg.max_depth,
+            )
+            mesh = mesh_generator.adaptive_dem_to_mesh(
+                dem_data,
+                operations,
+                refinement_cfg,
+                handle_nans=ctx.config.processing.handle_dem_nans,
+            )
+        else:
+            logging.info("No terraform operations produced — using uniform mesh")
+            mesh = mesh_generator.dem_to_mesh(
+                dem_data,
+                handle_nans=ctx.config.processing.handle_dem_nans,
+            )
+    else:
+        mesh = mesh_generator.dem_to_mesh(
+            dem_data,
+            handle_nans=ctx.config.processing.handle_dem_nans,
+        )
+
+    mesh = mesh_generator.add_uv_coordinates(mesh)
+    mesh_generator.save_mesh(mesh, mesh_path)
     ctx.assets.mesh_file = mesh_path
 
-    logging.info(f"Target mesh: {mesh_path}")
+    logging.info("Target mesh: %s", mesh_path)
     return mesh_path
 
 

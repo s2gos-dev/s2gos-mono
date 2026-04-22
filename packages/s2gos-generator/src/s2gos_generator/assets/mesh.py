@@ -118,6 +118,29 @@ class MeshGenerator:
         mesh.export(output_path)
         logging.info(f"Mesh saved to {output_path}")
 
+    def adaptive_dem_to_mesh(
+        self,
+        dem_data: xr.DataArray,
+        operations,
+        refinement_config,
+        handle_nans: bool = True,
+    ) -> trimesh.Trimesh:
+        """Build an adaptive quadtree mesh with terraforming operations.
+
+        Args:
+            dem_data: DEM elevation DataArray.
+            operations: ``list[TerraformOperation]`` — one per road segment,
+                or ``None`` for a uniform mesh.
+            refinement_config: MeshRefinementConfig instance.
+            handle_nans: Whether to remove NaN-containing faces.
+
+        Returns:
+            Adaptive Trimesh object.
+        """
+        from .terrain_mesh import build_refined_mesh
+
+        return build_refined_mesh(dem_data, operations, refinement_config, handle_nans)
+
     def generate_mesh_from_dem_file(
         self,
         dem_file_path: UPath,
