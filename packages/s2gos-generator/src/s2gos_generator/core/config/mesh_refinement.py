@@ -45,3 +45,27 @@ class MeshRefinementConfig(BaseModel):
             "Vertices beyond factor × half_feature_width blend back to original elevation."
         ),
     )
+    decimation_depth: int = Field(
+        0,
+        ge=0,
+        description=(
+            "Base-grid coarsening factor (powers of 2). 0 = no decimation "
+            "(base grid = DEM resolution). n = base cells are 2^n × DEM pitch; "
+            "cells are refined back toward DEM resolution where elevation "
+            "variation within a cell exceeds decimation_tolerance_m."
+        ),
+    )
+    decimation_tolerance_m: float = Field(
+        1.0,
+        ge=0.0,
+        description=(
+            "Maximum plane-residual (metres) within a coarse cell that triggers "
+            "subdivision during decimation. Measured as the largest absolute "
+            "deviation from the least-squares plane fitted to the DEM block — "
+            "smooth sloped terrain has near-zero residual and stays coarse, "
+            "while genuinely rough terrain is subdivided. Lower = more detail, "
+            "bigger mesh. 0 disables the tolerance check (always refine). "
+            "Note: this replaced the former peak-to-peak metric; re-tune "
+            "existing values (typical: 0.1–1.0 m for most scenes)."
+        ),
+    )

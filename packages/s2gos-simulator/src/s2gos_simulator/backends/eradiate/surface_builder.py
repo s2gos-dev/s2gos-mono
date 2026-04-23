@@ -4,6 +4,7 @@ import logging
 from typing import Any, Dict
 
 import numpy as np
+import PIL
 from PIL import Image
 from s2gos_utils.io.paths import exists, open_file
 from s2gos_utils.scene import SceneDescription
@@ -19,6 +20,7 @@ except ImportError:
     MITSUBA_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+PIL.Image.MAX_IMAGE_PIXELS = 40000000000
 
 
 class SurfaceBuilder:

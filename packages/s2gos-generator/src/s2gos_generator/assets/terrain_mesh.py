@@ -9,10 +9,12 @@ from scipy.ndimage import map_coordinates
 from shapely.ops import unary_union
 
 from .adaptive_grid import AdaptiveGrid
+from .error_pyramid import DemErrorPyramid
 from .terraforming import (
     TerraformOperation,
     apply_operations_batch,
     make_refinement_predicate,
+    make_roughness_predicate,
 )
 
 
@@ -64,8 +66,35 @@ def build_refined_mesh(
         y_idx = (xy[:, 1] - y0_dem) / dy_dem
         return map_coordinates(elev, np.vstack((y_idx, x_idx)), order=1, mode="nearest")
 
-    grid = AdaptiveGrid(x, y, max_depth=config.max_depth)
+    # 1. Subsample the base coords for the quadtree
+    stride = 1 << config.decimation_depth  # 1 when decimation disabled
+    x_base = x[::stride]
+    y_base = y[::stride]
 
+    # Ensure the AOI's last edge is preserved (array length may not be divisible)
+    if x_base[-1] != x[-1]:
+        x_base = np.append(x_base, x[-1])
+    if y_base[-1] != y[-1]:
+        y_base = np.append(y_base, y[-1])
+
+    # 2. Extend max_depth so refinement reaches the correct physical size
+    grid = AdaptiveGrid(
+        x_base, y_base, max_depth=config.decimation_depth + config.max_depth
+    )
+
+    # 3. First Refinement Pass: Terrain roughness decimation
+    if config.decimation_depth > 0 and config.decimation_tolerance_m > 0:
+        pyramid = DemErrorPyramid(
+            elev, x0_dem, y0_dem, dx_dem, dy_dem, config.decimation_depth
+        )
+        grid.refine(
+            make_roughness_predicate(
+                pyramid, tolerance_m=config.decimation_tolerance_m
+            ),
+            max_level=config.decimation_depth,
+        )
+
+    # 4. Second Refinement Pass: Terraforming operations (roads, etc.)
     if operations:
         merged_zone = unary_union([op.influence_zone for op in operations])
         predicate = make_refinement_predicate(merged_zone)

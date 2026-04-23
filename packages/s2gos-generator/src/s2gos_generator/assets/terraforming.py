@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Callable, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from .error_pyramid import DemErrorPyramid
 
 import numpy as np
 import shapely
@@ -125,27 +128,46 @@ class RoadFlattenOperation:
 
         Called by both :meth:`apply` and :func:`apply_operations_batch`.
         """
-        cl = self._centerline
+        nearest_xy, alpha, mask_apply = self._geometry_and_alpha(
+            vertex_indices, inside_points
+        )
+        if not mask_apply.any():
+            return
+        ref_z = elevation_fn(nearest_xy)
+        apply_indices = vertex_indices[mask_apply]
+        a = alpha[mask_apply]
+        vertices[apply_indices, 2] = (
+            a * ref_z[mask_apply] + (1.0 - a) * vertices[apply_indices, 2]
+        )
 
+    def _geometry_and_alpha(
+        self,
+        vertex_indices: np.ndarray,
+        inside_points,  # shapely geometry array
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute nearest-centerline XY coords, blend weights, and apply mask.
+
+        Returns:
+            nearest_xy:  (M, 2) XY coordinates of the nearest point on the
+                         centerline for each inside vertex (M = len(vertex_indices)).
+            alpha:       (M,) blend weight in [0, 1].
+            mask_apply:  (M,) boolean; True where alpha > 0.
+        """
+        cl = self._centerline
         dist_to_cl = shapely.distance(cl, inside_points)
         proj_dist = shapely.line_locate_point(cl, inside_points)
         nearest_pts = shapely.line_interpolate_point(cl, proj_dist)
-        ref_z = elevation_fn(shapely.get_coordinates(nearest_pts))
+        nearest_xy = shapely.get_coordinates(nearest_pts)
 
         hw = self._half_width
-        alpha = np.zeros(len(vertex_indices), dtype=float)
+        alpha = np.zeros(len(vertex_indices), dtype=np.float64)
         alpha[dist_to_cl <= hw] = 1.0
 
         if self._buffer_m > 0:
             mask_blend = (dist_to_cl > hw) & (dist_to_cl <= hw + self._buffer_m)
             alpha[mask_blend] = 1.0 - (dist_to_cl[mask_blend] - hw) / self._buffer_m
 
-        mask_apply = alpha > 0
-        if mask_apply.any():
-            apply_indices = vertex_indices[mask_apply]
-            orig_z = vertices[apply_indices, 2]
-            a = alpha[mask_apply]
-            vertices[apply_indices, 2] = a * ref_z[mask_apply] + (1.0 - a) * orig_z
+        return nearest_xy, alpha, alpha > 0
 
 
 def apply_operations_batch(
@@ -153,10 +175,7 @@ def apply_operations_batch(
     operations: list[TerraformOperation],
     elevation_fn: Callable[[np.ndarray], np.ndarray],
 ) -> np.ndarray:
-    """Apply all terraform operations efficiently using one STRtree query.
-
-    Creates shapely points and uses :class:`~shapely.strtree.STRtree`
-    to batch-match vertices to their covering influence zones.
+    """Apply all terraform operations efficiently with a single elevation sample.
 
     Args:
         vertices:     (N, 3) mesh vertex array — modified in-place.
@@ -170,11 +189,8 @@ def apply_operations_batch(
         return vertices
 
     xy = vertices[:, :2]
-
     points = shapely.points(xy[:, 0], xy[:, 1])
-
     buf_tree = STRtree([op.influence_zone for op in operations])
-
     pt_indices, buf_indices = buf_tree.query(points, predicate="intersects")
 
     if len(buf_indices) == 0:
@@ -183,17 +199,49 @@ def apply_operations_batch(
     order = np.argsort(buf_indices)
     buf_sorted = buf_indices[order]
     pt_sorted = pt_indices[order]
-
     unique_bufs, first_idx = np.unique(buf_sorted, return_index=True)
     split_pts = np.split(pt_sorted, first_idx[1:])
 
+    pending: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
+    all_nearest_xy: list[np.ndarray] = []
+
     for op_idx, vertex_idx_arr in zip(unique_bufs, split_pts):
         op = operations[int(op_idx)]
-        op.apply_to_subset(
-            vertices,
-            vertex_idx_arr,
-            points[vertex_idx_arr],
-            elevation_fn,
+        inside_pts = points[vertex_idx_arr]
+
+        if isinstance(op, RoadFlattenOperation):
+            nearest_xy, alpha, mask_apply = op._geometry_and_alpha(
+                vertex_idx_arr, inside_pts
+            )
+            pending.append((vertex_idx_arr, alpha, mask_apply))
+            all_nearest_xy.append(nearest_xy)
+        else:
+            op.apply_to_subset(vertices, vertex_idx_arr, inside_pts, elevation_fn)
+            pending.append(None)
+            all_nearest_xy.append(np.empty((0, 2), dtype=np.float64))
+
+    if all_nearest_xy:
+        concat_xy = np.concatenate(all_nearest_xy)
+        all_ref_z = elevation_fn(concat_xy) if len(concat_xy) else np.empty(0)
+    else:
+        all_ref_z = np.empty(0)
+
+    z_offset = 0
+    for entry, nearest_xy in zip(pending, all_nearest_xy):
+        n_pts = len(nearest_xy)
+        if entry is None:
+            z_offset += n_pts
+            continue
+        vertex_idx_arr, alpha, mask_apply = entry
+        ref_z = all_ref_z[z_offset : z_offset + n_pts]
+        z_offset += n_pts
+
+        if not mask_apply.any():
+            continue
+        apply_indices = vertex_idx_arr[mask_apply]
+        a = alpha[mask_apply]
+        vertices[apply_indices, 2] = (
+            a * ref_z[mask_apply] + (1.0 - a) * vertices[apply_indices, 2]
         )
 
     return vertices
@@ -234,6 +282,27 @@ def make_refinement_predicate(
                 shapely.box(xmin[idx], ymin[idx], xmax[idx], ymax[idx]),
             )
         return result
+
+    return predicate
+
+
+def make_roughness_predicate(
+    pyramid: "DemErrorPyramid",
+    tolerance_m: float,
+) -> Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], np.ndarray]:
+    """Predicate returning True for cells whose max plane-residual exceeds tolerance_m.
+
+    Args:
+        pyramid:     Precomputed DEM error pyramid.
+        tolerance_m: Max allowed plane-residual in metres before a cell is
+                     subdivided. Replaces the old peak-to-peak tolerance;
+                     typical values are 0.1–1.0 m depending on scene scale.
+    """
+
+    def predicate(
+        xmin: np.ndarray, ymin: np.ndarray, xmax: np.ndarray, ymax: np.ndarray
+    ) -> np.ndarray:
+        return pyramid.query(xmin, ymin, xmax, ymax, tolerance_m)
 
     return predicate
 
