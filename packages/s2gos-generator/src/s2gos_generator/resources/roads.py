@@ -12,15 +12,21 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon, mapping
+from shapely.geometry import LineString, MultiLineString, mapping
 
 from .._version import get_version
+from ..assets.terraforming import GradientFilter
+from ..assets.terrain_mesh import extract_dem
 from ..core.context import SceneResourceContext
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 OVERPASS_MAX_RETRIES = 5
 OVERPASS_RETRY_DELAY_S = 15
 OVERPASS_RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+
+
+class RoadsFetchError(RuntimeError):
+    """Raised when the Overpass API fails on every retry attempt."""
 
 
 def _is_transient_urlerror(exc: urllib.error.URLError) -> bool:
@@ -63,12 +69,9 @@ def _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east) -> Optional[di
                 )
                 time.sleep(OVERPASS_RETRY_DELAY_S)
             else:
-                logging.warning(
-                    "Overpass API request failed (%s): %s",
-                    type(exc).__name__,
-                    exc,
+                raise RoadsFetchError(
+                    f"Overpass API request failed ({type(exc).__name__}): {exc}"
                 )
-                return None
         except urllib.error.URLError as exc:
             if _is_transient_urlerror(exc) and attempt < OVERPASS_MAX_RETRIES:
                 logging.info(
@@ -80,13 +83,9 @@ def _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east) -> Optional[di
                 )
                 time.sleep(OVERPASS_RETRY_DELAY_S)
             else:
-                logging.warning(
-                    "Overpass API request failed (%s): %s",
-                    type(exc).__name__,
-                    exc,
+                raise RoadsFetchError(
+                    f"Overpass API request failed ({type(exc).__name__}): {exc}"
                 )
-                return None
-    return None
 
 
 def _parse_osm_width(width_str: str) -> Optional[float]:
@@ -105,26 +104,26 @@ def _parse_osm_width(width_str: str) -> Optional[float]:
 def _get_road_width(
     tags: dict,
     hw_type: str,
-    total_width_overrides: dict,
-    lane_count_map: dict,
-    lane_width_map: dict,
+    highway_overrides: dict,
+    road_type_table: dict,
     default_lane_width_m: float,
     default_shoulder_m: float,
 ) -> float:
-    """Determine road width checking user overrides, OSM tags, and defaults."""
+    """Determine road width checking user overrides, OSM tags, and defaults.
 
-    # 1. Total width override
-    if hw_type in total_width_overrides:
-        return total_width_overrides[hw_type]
+    Resolution order: override total_width → OSM width tag → lane-based calculation.
+    """
+    override = highway_overrides.get(hw_type)
 
-    # 2. OSM Tag Explicit Width
+    if override is not None and override.total_width_m is not None:
+        return override.total_width_m
+
     osm_width_str = tags.get("width")
     if osm_width_str:
         osm_width = _parse_osm_width(osm_width_str)
         if osm_width is not None:
             return osm_width
 
-    # 3. Calculated Lane-based Width
     lanes_str = tags.get("lanes")
     lanes: Optional[int] = None
     if lanes_str is not None:
@@ -138,9 +137,27 @@ def _get_road_width(
             )
     if lanes is None:
         fallback_lanes = 1 if tags.get("oneway") == "yes" else 2
-        lanes = lane_count_map.get(hw_type, fallback_lanes)
+        hw_defaults = road_type_table.get(hw_type)
+        lanes = (
+            (
+                override.lane_count
+                if override is not None and override.lane_count is not None
+                else None
+            )
+            or (hw_defaults.lane_count if hw_defaults is not None else None)
+            or fallback_lanes
+        )
 
-    lane_width = lane_width_map.get(hw_type, default_lane_width_m)
+    hw_defaults = road_type_table.get(hw_type)
+    lane_width = (
+        (
+            override.lane_width_m
+            if override is not None and override.lane_width_m is not None
+            else None
+        )
+        or (hw_defaults.lane_width_m if hw_defaults is not None else None)
+        or default_lane_width_m
+    )
 
     return lanes * lane_width + 2 * default_shoulder_m
 
@@ -148,17 +165,27 @@ def _get_road_width(
 def _get_road_material(
     tags: dict,
     hw_type: str,
-    surface_material_map: dict,
+    highway_overrides: dict,
     road_type_table: dict,
+    default_surface_materials: dict,
     default_material: str,
 ) -> str:
-    """Determine road material from OSM surface tag, with per-highway-type fallback."""
+    """Determine road material from OSM surface tag, with per-highway-type fallback.
+
+    Resolution order: OSM surface tag → override default_material → type-table default.
+    """
     surface_tag = tags.get("surface")
     if surface_tag:
-        return surface_material_map.get(surface_tag, default_material)
+        return default_surface_materials.get(surface_tag, default_material)
+
+    override = highway_overrides.get(hw_type)
+    if override is not None and override.default_material is not None:
+        return override.default_material
+
     hw_defaults = road_type_table.get(hw_type)
     if hw_defaults is not None:
         return hw_defaults.default_material
+
     return default_material
 
 
@@ -181,15 +208,13 @@ def _parse_roads(
     elements = osm_data.get("elements", [])
     roads: list[Road] = []
 
-    # Resolve once — avoids rebuilding merged dicts per road segment
-    total_width_overrides = roads_cfg.total_width_overrides
-    lane_count_map = roads_cfg.lane_count_mapping
-    lane_width_map = roads_cfg.lane_width_mapping
-    surface_material_map = roads_cfg.surface_material_mapping
+    # Resolve once — avoids repeated attribute lookups per road segment
+    highway_overrides = roads_cfg.highway_overrides
+    road_type_table = roads_cfg.ROAD_TYPE_TABLE
+    surface_materials = roads_cfg.DEFAULT_SURFACE_MATERIALS
     default_material = roads_cfg.default_material
     default_lane_width_m = roads_cfg.default_lane_width_m
     default_shoulder_m = roads_cfg.default_shoulder_m
-    road_type_table = roads_cfg.ROAD_TYPE_TABLE
 
     for element in elements:
         if element.get("type") != "way":
@@ -222,30 +247,26 @@ def _parse_roads(
             continue
 
         centerline = LineString(scene_coords)
+        clipped_cl = centerline.intersection(scene_bounds)
+        if clipped_cl.is_empty:
+            continue
+
         width = _get_road_width(
             tags,
             hw_type,
-            total_width_overrides,
-            lane_count_map,
-            lane_width_map,
+            highway_overrides,
+            road_type_table,
             default_lane_width_m,
             default_shoulder_m,
         )
-        road_poly = centerline.buffer(width / 2, cap_style="flat")
-
-        clipped_poly = road_poly.intersection(scene_bounds)
-        if clipped_poly.is_empty:
-            continue
-
-        if not isinstance(clipped_poly, (Polygon, MultiPolygon)):
-            continue
-
-        clipped_cl = centerline.intersection(scene_bounds)
-        if clipped_cl.is_empty:
-            clipped_cl = centerline
 
         material = _get_road_material(
-            tags, hw_type, surface_material_map, road_type_table, default_material
+            tags,
+            hw_type,
+            highway_overrides,
+            road_type_table,
+            surface_materials,
+            default_material,
         )
 
         # A road that re-enters the AOI after leaving produces a MultiLineString.
@@ -298,11 +319,15 @@ def process_target_roads(ctx: SceneResourceContext) -> Optional[Path]:
     if roads_cfg is None or not roads_cfg.enabled:
         return None
 
-    logging.info("=== Processing Roads ===")
-
     bbox_west, bbox_south, bbox_east, bbox_north = ctx.target_aoi_polygon.bounds
 
-    osm_data = _fetch_osm_data(roads_cfg, bbox_south, bbox_west, bbox_north, bbox_east)
+    try:
+        osm_data = _fetch_osm_data(
+            roads_cfg, bbox_south, bbox_west, bbox_north, bbox_east
+        )
+    except RoadsFetchError as exc:
+        logging.error("Road fetch failed, skipping roads: %s", exc)
+        return None
     if osm_data is None:
         logging.warning("No road data available — skipping roads")
         return None
@@ -326,6 +351,7 @@ def process_target_roads(ctx: SceneResourceContext) -> Optional[Path]:
         logging.info("Roads [%s]: %d segment(s)", material_name, len(road_list))
 
     sidecar = {
+        "version": 1,
         "road_layers": [
             {
                 "material_name": material,
@@ -363,9 +389,6 @@ def build_road_terraform_operations(
     filtered out by the gradient threshold. Caller is responsible for checking
     that roads are enabled.
     """
-    from ..assets.terraforming import GradientFilter
-    from ..assets.terrain_mesh import _extract_dem
-
     roads_cfg = ctx.config.roads
     all_roads = ctx.roads
 
@@ -376,7 +399,7 @@ def build_road_terraform_operations(
     centerlines = [r.centerline for r in all_roads]
     half_widths = [r.width / 2.0 for r in all_roads]
 
-    x, y, elev = _extract_dem(dem_data)
+    x, y, elev = extract_dem(dem_data)
 
     gf = GradientFilter(elev, x, y)
     operations = gf.build_operations(
@@ -384,7 +407,7 @@ def build_road_terraform_operations(
         half_widths,
         refinement_cfg.transition_buffer_m,
         threshold=roads_cfg.mesh_gradient_threshold,
-        thin_road_bypass_m=roads_cfg.mesh_thin_road_bypass_m,
+        thin_road_skip_m=roads_cfg.mesh_thin_road_skip_m,
     )
 
     if operations:

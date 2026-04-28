@@ -110,6 +110,7 @@ class TerrainMaterialGenerator:
         snow_material_index: Optional[int] = None,
         coordinate_system=None,
         snow_thermoprops: Optional[UPath] = None,
+        random_seed: Optional[int] = None,
     ) -> np.ndarray:
         """
         Converts land cover classification data to a material selection texture.
@@ -171,6 +172,7 @@ class TerrainMaterialGenerator:
                     snow_material_index=snow_material_index,
                     coordinate_system=coordinate_system,
                     snow_thermoprops=snow_thermoprops,
+                    random_seed=random_seed,
                 )
 
         if flip_vertical:
@@ -297,6 +299,7 @@ class TerrainMaterialGenerator:
         snow_material_index: int,
         coordinate_system,
         snow_thermoprops: Optional[UPath] = None,
+        random_seed: Optional[int] = None,
     ) -> np.ndarray:
         """
         Apply seasonal snow using temperature-based probability model.
@@ -325,14 +328,8 @@ class TerrainMaterialGenerator:
 
         y_grid_scene, x_grid_scene = np.meshgrid(y_coords, x_coords, indexing="ij")
 
-        center_x = coordinate_system._center_x
-        center_y = coordinate_system._center_y
-
-        x_absolute = x_grid_scene + center_x
-        y_absolute = y_grid_scene + center_y
-
-        lon_grid, lat_grid = coordinate_system._from_scene_transformer.transform(
-            x_absolute, y_absolute
+        lat_grid, lon_grid = coordinate_system.scene_to_latlon(
+            x_grid_scene, y_grid_scene
         )
 
         elevation_grid = dem_data.values
@@ -374,7 +371,8 @@ class TerrainMaterialGenerator:
             thermoprops=thermoprops_dataset,
         )
 
-        random_field = np.random.uniform(0, 1, snow_probs.shape)
+        rng = np.random.default_rng(random_seed)
+        random_field = rng.uniform(0, 1, snow_probs.shape)
         snow_mask = snow_probs > random_field
 
         snow_adjusted = selection_texture.copy()
@@ -400,6 +398,7 @@ class TerrainMaterialGenerator:
         snow_material_index: Optional[int] = None,
         coordinate_system=None,
         snow_thermoprops: Optional[UPath] = None,
+        random_seed: Optional[int] = None,
     ) -> Tuple[UPath, Optional[UPath]]:
         """
         Complete pipeline: loads land cover from file and generates textures.
@@ -450,6 +449,7 @@ class TerrainMaterialGenerator:
             snow_material_index=snow_material_index,
             coordinate_system=coordinate_system,
             snow_thermoprops=snow_thermoprops,
+            random_seed=random_seed,
         )
 
         # Preview texture shows base landcover (no snow adjustment)

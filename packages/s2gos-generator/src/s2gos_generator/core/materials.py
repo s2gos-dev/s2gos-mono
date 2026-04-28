@@ -37,7 +37,12 @@ def build_material_index_map(ctx: SceneResourceContext) -> dict[str, int]:
     if ctx.config.roads is not None and ctx.config.roads.enabled:
         roads_cfg = ctx.config.roads
         overlay_candidates.add(roads_cfg.default_material)
-        overlay_candidates.update(roads_cfg.surface_material_mapping.values())
+        overlay_candidates.update(roads_cfg.DEFAULT_SURFACE_MATERIALS.values())
+        overlay_candidates.update(
+            ov.default_material
+            for ov in roads_cfg.highway_overrides.values()
+            if ov.default_material is not None
+        )
 
     assert landcover_map, "landcover_map must not be empty"
     next_index = max(landcover_map.values()) + 1

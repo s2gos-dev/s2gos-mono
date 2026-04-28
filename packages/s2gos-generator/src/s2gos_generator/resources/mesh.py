@@ -6,17 +6,13 @@ from typing import Optional
 
 import xarray as xr
 
-from ..assets.mesh import MeshGenerator
+from ..assets.mesh_generator import MeshGenerator
 from ..assets.terraforming import TerraformOperation
 from ..core.context import SceneResourceContext
 
 
 def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
     """Generate 3D mesh from target area DEM data.
-
-    Uses adaptive quadtree refinement when ``mesh_refinement`` is enabled and
-    at least one feature contributes terraform operations; falls back to the
-    uniform DEM mesh otherwise.
 
     Args:
         ctx: Scene resource context
@@ -52,18 +48,16 @@ def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
                 len(operations),
                 refinement_cfg.max_depth,
             )
-            mesh = mesh_generator.adaptive_dem_to_mesh(
-                dem_data,
-                operations,
-                refinement_cfg,
-                handle_nans=ctx.config.processing.handle_dem_nans,
-            )
         else:
-            logging.info("No terraform operations produced — using uniform mesh")
-            mesh = mesh_generator.dem_to_mesh(
-                dem_data,
-                handle_nans=ctx.config.processing.handle_dem_nans,
+            logging.info(
+                "Adaptive mesh refinement: decimation only (no feature operations)"
             )
+        mesh = mesh_generator.adaptive_dem_to_mesh(
+            dem_data,
+            operations,
+            refinement_cfg,
+            handle_nans=ctx.config.processing.handle_dem_nans,
+        )
     else:
         mesh = mesh_generator.dem_to_mesh(
             dem_data,
@@ -89,8 +83,7 @@ def generate_buffer_mesh(ctx: SceneResourceContext) -> Optional[Path]:
     """
     buffer_dem_file_path = ctx.dependency_outputs["buffer_dem"]
     if buffer_dem_file_path is None:
-        logging.warning("Buffer DEM file not found from dependencies")
-        return None
+        raise ValueError("Buffer DEM file not found from dependencies")
 
     mesh_generator = MeshGenerator()
 

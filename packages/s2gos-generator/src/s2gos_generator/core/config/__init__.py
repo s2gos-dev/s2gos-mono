@@ -27,7 +27,7 @@ from .atmosphere import (
     create_molecular_atmosphere_config,
 )
 from .mesh_refinement import MeshRefinementConfig
-from .roads import RoadsConfig
+from .roads import HighwayOverride, RoadsConfig
 from .scene import (
     BackgroundConfig,
     BufferConfig,
@@ -88,6 +88,7 @@ __all__ = [
     # mesh_refinement
     "MeshRefinementConfig",
     # roads
+    "HighwayOverride",
     "RoadsConfig",
     # scene
     "Month",

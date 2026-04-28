@@ -140,7 +140,7 @@ def process_target_vegetation(
         logging.info("Vegetation disabled - skipping vegetation placement")
         return None
 
-    if vegetation_config.random_seed:
+    if vegetation_config.random_seed is not None:
         random.seed(vegetation_config.random_seed)
         np.random.seed(vegetation_config.random_seed)
         logging.info(

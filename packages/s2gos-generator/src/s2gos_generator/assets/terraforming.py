@@ -21,7 +21,7 @@ class TerraformOperation(Protocol):
     - ``influence_zone``: the spatial region this operation may alter.
     - ``apply()``: modifies ``vertices`` in-place and returns the array.
     - ``apply_to_subset()``: same, but for a pre-filtered vertex subset (used
-      by :func:`apply_operations_batch` for the STRtree fast path).
+      by :func:`apply_road_flatten_batch` for the STRtree fast path).
     """
 
     @property
@@ -54,7 +54,7 @@ class TerraformOperation(Protocol):
     ) -> None:
         """Apply modification for a pre-filtered subset of vertices (in-place).
 
-        Called by :func:`apply_operations_batch` to avoid re-creating shapely
+        Called by :func:`apply_road_flatten_batch` to avoid re-creating shapely
         points per operation when many operations share the same vertex array.
 
         Args:
@@ -102,7 +102,7 @@ class RoadFlattenOperation:
         vertices: np.ndarray,
         elevation_fn: Callable[[np.ndarray], np.ndarray],
     ) -> np.ndarray:
-        """Apply flattening.  For single-op use; prefer :func:`apply_operations_batch`
+        """Apply flattening.  For single-op use; prefer :func:`apply_road_flatten_batch`
         when applying multiple operations to avoid recreating shapely points per road."""
         xy = vertices[:, :2]
         points = shapely.points(xy[:, 0], xy[:, 1])
@@ -126,7 +126,7 @@ class RoadFlattenOperation:
     ) -> None:
         """Apply flattening for a pre-filtered subset of vertices (in-place).
 
-        Called by both :meth:`apply` and :func:`apply_operations_batch`.
+        Called by both :meth:`apply` and :func:`apply_road_flatten_batch`.
         """
         nearest_xy, alpha, mask_apply = self._geometry_and_alpha(
             vertex_indices, inside_points
@@ -170,16 +170,16 @@ class RoadFlattenOperation:
         return nearest_xy, alpha, alpha > 0
 
 
-def apply_operations_batch(
+def apply_road_flatten_batch(
     vertices: np.ndarray,
-    operations: list[TerraformOperation],
+    operations: list[RoadFlattenOperation],
     elevation_fn: Callable[[np.ndarray], np.ndarray],
 ) -> np.ndarray:
-    """Apply all terraform operations efficiently with a single elevation sample.
+    """Apply road-flatten operations efficiently with a single batched elevation sample.
 
     Args:
         vertices:     (N, 3) mesh vertex array — modified in-place.
-        operations:   List of :class:`TerraformOperation` to apply.
+        operations:   List of :class:`RoadFlattenOperation` to apply.
         elevation_fn: ``(M, 2) XY → (M,) Z`` elevation sampler.
 
     Returns:
@@ -196,7 +196,7 @@ def apply_operations_batch(
     if len(buf_indices) == 0:
         return vertices
 
-    order = np.argsort(buf_indices)
+    order = np.argsort(buf_indices, kind="stable")
     buf_sorted = buf_indices[order]
     pt_sorted = pt_indices[order]
     unique_bufs, first_idx = np.unique(buf_sorted, return_index=True)
@@ -208,31 +208,18 @@ def apply_operations_batch(
     for op_idx, vertex_idx_arr in zip(unique_bufs, split_pts):
         op = operations[int(op_idx)]
         inside_pts = points[vertex_idx_arr]
+        nearest_xy, alpha, mask_apply = op._geometry_and_alpha(
+            vertex_idx_arr, inside_pts
+        )
+        pending.append((vertex_idx_arr, alpha, mask_apply))
+        all_nearest_xy.append(nearest_xy)
 
-        if isinstance(op, RoadFlattenOperation):
-            nearest_xy, alpha, mask_apply = op._geometry_and_alpha(
-                vertex_idx_arr, inside_pts
-            )
-            pending.append((vertex_idx_arr, alpha, mask_apply))
-            all_nearest_xy.append(nearest_xy)
-        else:
-            op.apply_to_subset(vertices, vertex_idx_arr, inside_pts, elevation_fn)
-            pending.append(None)
-            all_nearest_xy.append(np.empty((0, 2), dtype=np.float64))
-
-    if all_nearest_xy:
-        concat_xy = np.concatenate(all_nearest_xy)
-        all_ref_z = elevation_fn(concat_xy) if len(concat_xy) else np.empty(0)
-    else:
-        all_ref_z = np.empty(0)
+    concat_xy = np.concatenate(all_nearest_xy)
+    all_ref_z = elevation_fn(concat_xy) if len(concat_xy) else np.empty(0)
 
     z_offset = 0
-    for entry, nearest_xy in zip(pending, all_nearest_xy):
+    for (vertex_idx_arr, alpha, mask_apply), nearest_xy in zip(pending, all_nearest_xy):
         n_pts = len(nearest_xy)
-        if entry is None:
-            z_offset += n_pts
-            continue
-        vertex_idx_arr, alpha, mask_apply = entry
         ref_z = all_ref_z[z_offset : z_offset + n_pts]
         z_offset += n_pts
 
@@ -251,10 +238,6 @@ def make_refinement_predicate(
     influence_zone: shapely.Geometry,
 ) -> Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], np.ndarray]:
     """Return a vectorised predicate for :class:`AdaptiveGrid.refine`.
-
-    Applies an axis-aligned bounding-box (AABB) pre-filter before calling
-    Shapely, which eliminates the majority of shapely geometry construction for
-    scenes where roads cover a small fraction of the AOI.
 
     Args:
         influence_zone: Merged polygon/multipolygon covering all road buffers.
@@ -332,9 +315,7 @@ class GradientFilter:
     """Filter road segments by DEM gradient magnitude along the centerline.
 
     Roads whose max gradient is below ``threshold`` are skipped (flat terrain,
-    flattening would be a no-op).  Roads narrower than one DEM cell are always
-    kept — the DEM can't resolve them so gradient sampling is meaningless.
-
+    flattening would be a no-op)
     Args:
         elev: 2-D elevation array, shape (ny, nx).
         x:    1-D x coordinates, length nx.
@@ -373,7 +354,7 @@ class GradientFilter:
         half_widths: list[float],
         buffer_m: float,
         threshold: float,
-        thin_road_bypass_m: float = 0.0,
+        thin_road_skip_m: float = 0.0,
     ) -> list[RoadFlattenOperation]:
         """Build a :class:`RoadFlattenOperation` for each segment above threshold.
 
@@ -382,9 +363,8 @@ class GradientFilter:
             half_widths: Per-road half-widths in metres.
             buffer_m:    Blend-zone width outside road edge.
             threshold:   Gradient threshold (m/m).  0.0 keeps all segments.
-            thin_road_bypass_m: If > 0, roads with total width (m) below this
-                value bypass the gradient check and are not included.
-                Set to 0.0 (default) to disable.
+            thin_road_skip_m: If > 0, roads narrower than this width (m) are
+                skipped (excluded from flattening). Set to 0.0 to disable.
 
         Returns:
             Filtered list of :class:`RoadFlattenOperation` objects.
@@ -393,7 +373,7 @@ class GradientFilter:
         n_filtered = 0
 
         for cl, hw in zip(centerlines, half_widths):
-            too_thin = thin_road_bypass_m > 0 and hw * 2 < thin_road_bypass_m
+            too_thin = thin_road_skip_m > 0 and hw * 2 < thin_road_skip_m
             if too_thin or not self.exceeds_threshold(cl, threshold):
                 n_filtered += 1
             else:

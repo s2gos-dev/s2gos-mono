@@ -248,7 +248,7 @@ class VegetationPlacementConfig(BaseModel):
             10: [
                 VegetationSpecies(
                     name="oak_trees",
-                    asset_xml_path="tree.xml",
+                    asset_xml_paths=["tree.xml"],
                     density_per_hectare=400.0,
                     scale_min=10.0,
                     scale_max=35.0,

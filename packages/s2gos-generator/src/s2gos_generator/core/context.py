@@ -149,6 +149,12 @@ class SceneResourceContext:
         try:
             with open(str(self.assets.roads_file), "r") as f:
                 data = json.load(f)
+            version = data.get("version", 1)
+            if version != 1:
+                logging.warning(
+                    "Unknown road sidecar version %s; skipping roads", version
+                )
+                return []
             from ..resources.roads import Road
 
             result = []

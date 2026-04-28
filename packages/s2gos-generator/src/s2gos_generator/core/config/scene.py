@@ -52,6 +52,11 @@ class SnowConfig(BaseModel):
         description="Optional CAMS thermoprops for snow temperature calculation. "
         "If None, uses synthetic temperature model.",
     )
+    random_seed: Optional[int] = Field(
+        None,
+        ge=0,
+        description="Random seed for reproducible snow mask generation. If None, uses system entropy.",
+    )
 
 
 class BufferConfig(BaseModel):

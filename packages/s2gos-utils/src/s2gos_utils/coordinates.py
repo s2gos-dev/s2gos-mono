@@ -63,13 +63,19 @@ class CoordinateSystem:
         target_x, target_y = self._to_scene_transformer.transform(lon, lat)
         return (target_x - self._center_x, target_y - self._center_y)
 
-    def scene_to_latlon(self, x: float, y: float) -> Tuple[float, float]:
+    def scene_to_latlon(
+        self,
+        x: Union[float, "np.ndarray"],
+        y: Union[float, "np.ndarray"],
+    ) -> Tuple[Union[float, "np.ndarray"], Union[float, "np.ndarray"]]:
         """
         Convert scene-local coordinates back to WGS84 lat/lon.
 
+        Accepts scalar floats or NumPy arrays (e.g. a meshgrid of scene coords).
+
         Args:
-            x: X coordinate in meters relative to scene center
-            y: Y coordinate in meters relative to scene center
+            x: X coordinate(s) in meters relative to scene center
+            y: Y coordinate(s) in meters relative to scene center
 
         Returns:
             Tuple of (lat, lon) in decimal degrees

@@ -13,6 +13,16 @@ from ..core.context import SceneResourceContext
 from ..core.materials import build_material_index_map
 
 
+def _lc_bounds(lc_data: xr.DataArray) -> tuple[float, float, float, float, float]:
+    """Return (xmin, xmax, ymin, ymax, native_res) from landcover pixel-centre coordinates."""
+    x = lc_data.coords["x"].values
+    y = lc_data.coords["y"].values
+    xmin, xmax = float(x.min()), float(x.max())
+    ymin, ymax = float(y.min()), float(y.max())
+    native_res = abs(xmax - xmin) / (len(x) - 1) if len(x) > 1 else 0.0
+    return xmin, xmax, ymin, ymax, native_res
+
+
 def _apply_region_materials_to_array(
     texture_2d: np.ndarray,
     landcover_path: Path,
@@ -38,12 +48,8 @@ def _apply_region_materials_to_array(
         landcover_data = ds[list(ds.data_vars)[0]]
         width_px = len(landcover_data.coords["x"].values)
         height_px = len(landcover_data.coords["y"].values)
-        scene_bounds = {
-            "xmin": float(landcover_data.coords["x"].min()),
-            "xmax": float(landcover_data.coords["x"].max()),
-            "ymin": float(landcover_data.coords["y"].min()),
-            "ymax": float(landcover_data.coords["y"].max()),
-        }
+        xmin, xmax, ymin, ymax, _ = _lc_bounds(landcover_data)
+        scene_bounds = {"xmin": xmin, "xmax": xmax, "ymin": ymin, "ymax": ymax}
 
         landcover_2d = None
         if any(r.landcover_filter is not None for r in applicable_regions):
@@ -94,7 +100,7 @@ def _apply_roads_to_array(
     ctx: SceneResourceContext,
     road_material_indices: dict[str, int],
     area_name: str = "target",
-) -> tuple[np.ndarray, bool]:
+) -> tuple[np.ndarray, Optional[np.ndarray]]:
     """Rasterize road polygons onto an in-memory texture array.
 
     Args:
@@ -106,30 +112,26 @@ def _apply_roads_to_array(
         area_name: Logging label
 
     Returns:
-        (texture_2d, modified) — texture_2d may have new dimensions after upsampling.
+        (texture_2d, union_mask) — texture_2d may have new dimensions after
+        upsampling; ``union_mask`` is a boolean array of every painted road pixel
+        (same shape as the returned ``texture_2d``), or ``None`` if no roads were
+        applied. The caller can reuse it to overlay roads on the preview texture.
     """
     from rasterio.features import rasterize
     from rasterio.transform import from_bounds
 
     road_geoms = ctx.road_polygons_by_material
     if not road_geoms:
-        return texture_2d, False
+        return texture_2d, None
 
     with xr.open_zarr(landcover_path) as ds:
         lc_data = ds[list(ds.data_vars)[0]]
-        lc_x = lc_data.coords["x"].values
-        lc_y = lc_data.coords["y"].values
-        native_width_px = len(lc_x)
-        native_height_px = len(lc_y)
-        xmin = float(lc_x.min())
-        xmax = float(lc_x.max())
-        ymin = float(lc_y.min())
-        ymax = float(lc_y.max())
-
-    native_res = abs(xmax - xmin) / (native_width_px - 1)
+        native_width_px = len(lc_data.coords["x"].values)
+        native_height_px = len(lc_data.coords["y"].values)
+        xmin, xmax, ymin, ymax, native_res = _lc_bounds(lc_data)
 
     texture_res = ctx.config.texture_resolution_m
-    if texture_res is not None and native_res is not None and texture_res < native_res:
+    if texture_res is not None and texture_res < native_res:
         scale = native_res / texture_res
         target_width = round(native_width_px * scale)
         target_height = round(native_height_px * scale)
@@ -139,7 +141,7 @@ def _apply_roads_to_array(
         target_height = native_height_px
         raster_res = native_res
 
-    half_px = raster_res / 2 if raster_res is not None else 0.0
+    half_px = raster_res / 2
     transform = from_bounds(
         xmin - half_px,
         ymin - half_px,
@@ -156,7 +158,7 @@ def _apply_roads_to_array(
             )
         )
 
-    modified = False
+    union_mask = np.zeros((target_height, target_width), dtype=bool)
     for material_name, merged_poly in road_geoms.items():
         mat_idx = road_material_indices.get(material_name)
         if mat_idx is None:
@@ -170,12 +172,12 @@ def _apply_roads_to_array(
             dtype=np.uint8,
             all_touched=True,
         )
-        road_mask = np.flipud(road_mask)
+        road_mask = np.flipud(road_mask) > 0
 
-        pixels_modified = np.sum(road_mask > 0)
+        pixels_modified = int(road_mask.sum())
         if pixels_modified > 0:
-            texture_2d[road_mask > 0] = mat_idx
-            modified = True
+            texture_2d[road_mask] = mat_idx
+            union_mask |= road_mask
             logging.info(
                 "Applied roads [%s] to %s texture: %d pixels → material index %d (%dx%d px @ %.1fm/px)",
                 material_name,
@@ -187,7 +189,29 @@ def _apply_roads_to_array(
                 raster_res,
             )
 
-    return texture_2d, modified
+    return texture_2d, (union_mask if union_mask.any() else None)
+
+
+def _apply_roads_to_preview(
+    preview_path: Path,
+    road_mask: np.ndarray,
+    debug_color: tuple[int, int, int] = (50, 50, 50),
+) -> None:
+    """Resize the RGB preview to match ``road_mask`` and paint roads on it.
+
+    The mask comes in selection-texture orientation (row 0 = south, no flipud
+    on save), but the RGB preview is saved with ``flip_vertical=True`` for
+    Blender's V-at-bottom convention (row 0 = north). Flip the mask once more
+    before applying so roads land on the correct latitude in the preview.
+    """
+    target_h, target_w = road_mask.shape
+    with Image.open(preview_path) as img:
+        rgb = img.convert("RGB")
+        if rgb.size != (target_w, target_h):
+            rgb = rgb.resize((target_w, target_h), Image.NEAREST)
+        arr = np.array(rgb)
+    arr[np.flipud(road_mask)] = debug_color
+    Image.fromarray(arr, mode="RGB").save(preview_path)
 
 
 def _generate_texture(
@@ -199,6 +223,7 @@ def _generate_texture(
     snow_material_index: Optional[int],
     snow_thermoprops: Optional[Path],
     area_name: str,  # "target" | "buffer" | "background" — used for region filtering and log
+    random_seed: Optional[int] = None,
 ) -> tuple[Path, Optional[Path]]:
     material_gen = TerrainMaterialGenerator()
     selection_texture_path, preview_texture_path = (
@@ -212,6 +237,7 @@ def _generate_texture(
             snow_material_index=snow_material_index,
             coordinate_system=ctx.coordinate_system,
             snow_thermoprops=snow_thermoprops,
+            random_seed=random_seed,
         )
     )
     material_index_map = build_material_index_map(ctx)
@@ -236,14 +262,19 @@ def _generate_texture(
             )
             dirty |= changed
 
+    road_mask: Optional[np.ndarray] = None
     if ctx.dependency_outputs.get("target_roads") is not None and area_name == "target":
-        texture_2d, changed = _apply_roads_to_array(
+        texture_2d, road_mask = _apply_roads_to_array(
             texture_2d, landcover_path, ctx, material_index_map, area_name
         )
-        dirty |= changed
+        if road_mask is not None:
+            dirty = True
 
     if dirty:
         Image.fromarray(texture_2d, mode="L").save(selection_texture_path)
+
+    if road_mask is not None and preview_texture_path is not None:
+        _apply_roads_to_preview(preview_texture_path, road_mask)
 
     return selection_texture_path, preview_texture_path
 
@@ -266,11 +297,13 @@ def generate_target_texture(ctx: SceneResourceContext) -> Optional[Path]:
     season_month = None
     snow_material_index = None
     snow_thermoprops = None
+    random_seed = None
 
     if ctx.config.snow is not None:
         dem_file_path = ctx.dependency_outputs["target_dem"]
         season_month = ctx.config.snow.season_month
         snow_material_index = ctx.config.snow.material_index
+        random_seed = ctx.config.snow.random_seed
         if ctx.config.snow.thermoprops:
             snow_thermoprops = ctx.config.snow.thermoprops.thermoprops_file
 
@@ -287,6 +320,7 @@ def generate_target_texture(ctx: SceneResourceContext) -> Optional[Path]:
         snow_material_index,
         snow_thermoprops,
         "target",
+        random_seed,
     )
 
     ctx.assets.selection_texture_file = selection_texture_path
@@ -315,11 +349,13 @@ def generate_buffer_texture(ctx: SceneResourceContext) -> Optional[Path]:
     season_month = None
     snow_material_index = None
     snow_thermoprops = None
+    random_seed = None
 
     if ctx.config.snow is not None:
         dem_file_path = ctx.dependency_outputs.get("buffer_dem")
         season_month = ctx.config.snow.season_month
         snow_material_index = ctx.config.snow.material_index
+        random_seed = ctx.config.snow.random_seed
         if ctx.config.snow.thermoprops:
             snow_thermoprops = ctx.config.snow.thermoprops.thermoprops_file
 
@@ -337,6 +373,7 @@ def generate_buffer_texture(ctx: SceneResourceContext) -> Optional[Path]:
         snow_material_index,
         snow_thermoprops,
         "buffer",
+        random_seed,
     )
 
     ctx.assets.buffer_selection_texture_file = selection_texture_path

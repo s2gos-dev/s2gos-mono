@@ -16,6 +16,15 @@ class HighwayDefaults(NamedTuple):
     default_material: str
 
 
+class HighwayOverride(BaseModel):
+    """Per-highway-type override for geometry and material defaults."""
+
+    total_width_m: Optional[float] = None
+    lane_count: Optional[int] = None
+    lane_width_m: Optional[float] = None
+    default_material: Optional[str] = None
+
+
 class RoadsConfig(BaseModel):
     """Configuration for road infrastructure in scenes."""
 
@@ -117,10 +126,10 @@ class RoadsConfig(BaseModel):
         None, description="Highway types to include"
     )
 
-    total_width_overrides: dict[str, float] = Field(default_factory=dict)
-    lane_width_overrides: dict[str, float] = Field(default_factory=dict)
-    lane_count_overrides: dict[str, int] = Field(default_factory=dict)
-    surface_material_overrides: dict[str, str] = Field(default_factory=dict)
+    highway_overrides: dict[str, HighwayOverride] = Field(
+        default_factory=dict,
+        description="Per-highway-type overrides for geometry and material.",
+    )
 
     default_material: str = Field("asphalt")
     default_lane_width_m: float = Field(3.0, gt=0.0)
@@ -134,28 +143,14 @@ class RoadsConfig(BaseModel):
             "Set to 0.0 to always flatten regardless of terrain slope."
         ),
     )
-    mesh_thin_road_bypass_m: float = Field(
+    mesh_thin_road_skip_m: float = Field(
         0.0,
         ge=0.0,
         description=(
-            "Roads with total width (m) below this value bypass the gradient check "
-            "and are not flattened. Set to 0.0 (default) to disable "
+            "Roads with total width (m) below this value are skipped (not flattened). "
+            "Set to 0.0 to disable (flatten all roads regardless of width)."
         ),
     )
-
-    @property
-    def surface_material_mapping(self) -> dict[str, str]:
-        return {**self.DEFAULT_SURFACE_MATERIALS, **self.surface_material_overrides}
-
-    @property
-    def lane_width_mapping(self) -> dict[str, float]:
-        base = {k: v.lane_width_m for k, v in self.ROAD_TYPE_TABLE.items()}
-        return {**base, **self.lane_width_overrides}
-
-    @property
-    def lane_count_mapping(self) -> dict[str, int]:
-        base = {k: v.lane_count for k, v in self.ROAD_TYPE_TABLE.items()}
-        return {**base, **self.lane_count_overrides}
 
     @model_validator(mode="after")
     def validate_file_source(self):

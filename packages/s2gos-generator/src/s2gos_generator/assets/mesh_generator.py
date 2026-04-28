@@ -7,7 +7,7 @@ from upath import UPath
 
 
 class MeshGenerator:
-    """Converts DEM data to 3D meshes with optional UV mapping and texture support."""
+    """Converts DEM data to 3D meshes"""
 
     def __init__(self):
         """Initialize the mesh generator."""
@@ -16,21 +16,9 @@ class MeshGenerator:
         self, dem_data: xr.DataArray, handle_nans: bool = True
     ) -> trimesh.Trimesh:
         """Convert a DEM DataArray to a Trimesh object."""
+        from .terrain_mesh import extract_dem
 
-        dem_data.load()
-
-        if "x" in dem_data.dims and "y" in dem_data.dims:
-            x_coords = dem_data.x.values
-            y_coords = dem_data.y.values
-        elif "lon" in dem_data.dims and "lat" in dem_data.dims:
-            x_coords = dem_data.lon.values
-            y_coords = dem_data.lat.values
-        else:
-            raise ValueError(
-                "DEM data must have either (x, y) or (lon, lat) coordinates"
-            )
-
-        elevation = dem_data.values
+        x_coords, y_coords, elevation = extract_dem(dem_data)
         nx, ny = len(x_coords), len(y_coords)
 
         x_grid, y_grid = np.meshgrid(x_coords, y_coords)
@@ -149,7 +137,7 @@ class MeshGenerator:
         handle_nans: bool = True,
     ) -> trimesh.Trimesh:
         """
-        Complete pipeline: loads DEM from file, generates mesh, optionally adds UVs, and saves.
+        Complete pipeline: loads DEM from file, generates mesh, and saves.
 
         Args:
             dem_file_path: UPath to the DEM NetCDF file.
