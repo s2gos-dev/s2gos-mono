@@ -23,6 +23,7 @@ from .atmosphere import (
     ThermophysicalConfig,
     _default_atmosphere_config,
 )
+from .buildings import BuildingsConfig
 from .mesh_refinement import MeshRefinementConfig
 from .roads import RoadsConfig
 from .vegetation import VegetationExclusionZone, VegetationPlacementConfig
@@ -243,6 +244,10 @@ class SceneGenConfig(BaseModel):
     roads: Optional[RoadsConfig] = Field(
         None,
         description="Road infrastructure configuration (None disables roads). See [RoadsConfig][s2gos_generator.core.config.roads.RoadsConfig].",
+    )
+    buildings: Optional[BuildingsConfig] = Field(
+        None,
+        description="Building configuration (None disables buildings). See [BuildingsConfig][s2gos_generator.core.config.buildings.BuildingsConfig].",
     )
     mesh_refinement: Optional[MeshRefinementConfig] = Field(
         None,

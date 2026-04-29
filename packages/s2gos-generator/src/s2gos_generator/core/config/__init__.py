@@ -26,6 +26,7 @@ from .atmosphere import (
     create_heterogeneous_atmosphere_config,
     create_molecular_atmosphere_config,
 )
+from .buildings import BuildingsConfig
 from .mesh_refinement import MeshRefinementConfig
 from .roads import HighwayOverride, RoadsConfig
 from .scene import (
@@ -90,6 +91,8 @@ __all__ = [
     # roads
     "HighwayOverride",
     "RoadsConfig",
+    # buildings
+    "BuildingsConfig",
     # scene
     "Month",
     "SceneLocation",

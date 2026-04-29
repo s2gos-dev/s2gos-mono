@@ -51,6 +51,7 @@ class SceneGenerationPipeline:
         """Register all pipeline resources and their inter-dependencies."""
         # Import resource functions
         from ..resources.assets import process_user_assets
+        from ..resources.buildings import process_target_buildings
         from ..resources.dem import process_buffer_dem, process_target_dem
         from ..resources.hamster import process_hamster_data
         from ..resources.landcover import (
@@ -76,6 +77,13 @@ class SceneGenerationPipeline:
 
         if self.config.roads is not None and self.config.roads.enabled:
             self.registry.register("target_roads", [], process_target_roads)
+
+        if self.config.buildings is not None and self.config.buildings.enabled:
+            self.registry.register(
+                "target_buildings",
+                ["target_dem"],
+                process_target_buildings,
+            )
 
         self.registry.register(
             "target_mesh",
@@ -362,6 +370,7 @@ class SceneGenerationPipeline:
                 "user_assets": "#FFA07A",
                 "hamster_data": "#20B2AA",
                 "target_roads": "#A9A9A9",
+                "target_buildings": "#C8A2C8",
                 "scene_description": "#FF6347",
             }
 

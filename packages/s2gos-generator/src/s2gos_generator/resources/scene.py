@@ -110,6 +110,10 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         include_files.append(
             str(ctx.assets.vegetation_objects_file.relative_to(ctx.output_dir))
         )
+    if ctx.assets.buildings_objects_file:
+        include_files.append(
+            str(ctx.assets.buildings_objects_file.relative_to(ctx.output_dir))
+        )
 
     scene_description = create_s2gos_scene(
         scene_name=ctx.scene_name,

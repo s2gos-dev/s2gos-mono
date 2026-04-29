@@ -132,6 +132,29 @@ def _validate_vegetation_files(
     return True
 
 
+def _validate_building_files(output_dir: UPath, asset_paths: Dict[str, UPath]) -> bool:
+    """Check that every .ply mesh referenced in buildings.yml exists."""
+    sidecar = asset_paths.get("buildings_objects_file")
+    if sidecar is None or not sidecar.exists():
+        return False
+    try:
+        from s2gos_utils.io.paths import open_file
+
+        with open_file(sidecar, "r") as f:
+            data = yaml.safe_load(f)
+        for obj in data.get("objects", []):
+            mesh = obj.get("mesh")
+            if mesh and not (output_dir / mesh).exists():
+                logging.info(
+                    "Cache miss: target_buildings (secondary file missing: %s)", mesh
+                )
+                return False
+    except Exception as exc:
+        logging.warning("Deep validation failed for buildings: %s", exc)
+        return False
+    return True
+
+
 def _validate_user_asset_files(
     output_dir: UPath, asset_paths: Dict[str, UPath]
 ) -> bool:
@@ -185,6 +208,9 @@ _RESOURCE_CACHE_SPECS: Dict[str, ResourceCacheSpec] = {
     ),
     "hamster_data": ResourceCacheSpec(["hamster_paths_file"]),
     "target_roads": ResourceCacheSpec(["roads_file"]),
+    "target_buildings": ResourceCacheSpec(
+        ["buildings_objects_file"], validator=_validate_building_files
+    ),
 }
 
 
