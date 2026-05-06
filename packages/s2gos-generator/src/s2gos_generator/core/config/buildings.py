@@ -40,6 +40,41 @@ class BuildingsConfig(BaseModel):
         None,
         description="Seed for reproducible per-building material assignment.",
     )
+    pitched_roof_proportion: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Fraction of eligible buildings that get a pitched roof. "
+            "0 disables pitched roofs entirely (flat-top everywhere)."
+        ),
+    )
+    pitched_roof_min_area_m2: float | None = Field(
+        None,
+        gt=0.0,
+        description="Footprint area below which a building stays flat-topped.",
+    )
+    pitched_roof_min_height_m: float | None = Field(
+        None, gt=0.0, description="Building height below which it stays flat-topped."
+    )
+    roof_pitch_deg: float = Field(
+        30.0, gt=0.0, lt=80.0, description="Pitch angle for hip roofs."
+    )
+    roof_height_m: float = Field(
+        3.0,
+        gt=0.0,
+        description=(
+            "Target roof height (apex above eaves). Capped per-building when the "
+            "footprint is too narrow to support it at the configured pitch."
+        ),
+    )
+    roof_material: str = Field(
+        "baresoil", description="Material name applied to the roof mesh group."
+    )
+    roof_seed: int | None = Field(
+        None,
+        description="Seed for reproducible per-building pitched/flat selection.",
+    )
     elevation_offset_m: float = Field(
         0.0, description="Extra Z offset added on top of the DEM-sampled base."
     )
@@ -49,6 +84,16 @@ class BuildingsConfig(BaseModel):
         description=(
             "Extrude this far below the building base so steep terrain doesn't expose "
             "a gap between footprint and DEM."
+        ),
+    )
+    roof_workers: int | None = Field(
+        None,
+        ge=1,
+        description=(
+            "Number of worker processes to use for per-building mesh construction. "
+            "None defaults to max(os.cpu_count() // 2, 1). Set to 1 for sequential "
+            "execution (useful for debugging or when subprocess overhead dominates "
+            "the workload, e.g. very small scenes)."
         ),
     )
 

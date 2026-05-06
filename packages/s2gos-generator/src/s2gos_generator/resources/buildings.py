@@ -6,7 +6,10 @@ DEM, and emits a YAML sidecar referenced by the scene description.
 from __future__ import annotations
 
 import logging
+import os
 import re
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
@@ -19,6 +22,7 @@ import yaml
 from s2gos_utils.io.paths import open_file
 from shapely.geometry import MultiPolygon, Polygon
 
+from ._building_roof import build_hip_roof, compute_pitched_geometry
 from ..assets.terrain_mesh import _make_elevation_fn, extract_dem
 from ..core.context import SceneResourceContext
 
@@ -124,6 +128,90 @@ def _safe_name(name: str) -> str:
     return _SAFE_NAME_RE.sub("_", name)
 
 
+@dataclass
+class _BuildingTask:
+    """One building's worth of pre-computed inputs, marshalled to a worker.
+
+    All RNG draws (material assignment, pitched-vs-flat selection) are made in
+    the main thread before constructing the task, so per-building results stay
+    deterministic regardless of worker count or scheduling order.
+    """
+
+    idx: int
+    geom: Union[Polygon, MultiPolygon]
+    height_m: float
+    base_z: float
+    skirt_m: float
+    material_name: str
+    pitched: bool
+    pitch_deg: float
+    target_roof_height: float
+
+
+@dataclass
+class _BuildingResult:
+    idx: int
+    material_name: str
+    wall_mesh: Optional[trimesh.Trimesh]
+    roof_mesh: Optional[trimesh.Trimesh]
+    pitched_attempted: bool
+    pitched_succeeded: bool
+
+
+def _process_one_building(task: _BuildingTask) -> _BuildingResult:
+    """Worker-side: build the wall mesh and (optionally) the hip-roof mesh.
+    Pure function — no shared state — safe to call from a subprocess."""
+    geom = task.geom
+    wall_mesh: Optional[trimesh.Trimesh] = None
+    roof_mesh: Optional[trimesh.Trimesh] = None
+    pitched_attempted = task.pitched
+    pitched_succeeded = False
+
+    roof_info = None
+    if task.pitched:
+        try:
+            roof_info = compute_pitched_geometry(
+                total_height=task.height_m,
+                pitch_deg=task.pitch_deg,
+                target_roof_height=task.target_roof_height,
+            )
+        except Exception:
+            roof_info = None
+
+    if roof_info is None:
+        wall_mesh = _build_one_building(geom, task.height_m, task.skirt_m, task.base_z)
+    else:
+        eaves_z = task.base_z + roof_info["eaves_z_offset"]
+        apex_z = task.base_z + roof_info["apex_z_offset"]
+        wall_mesh = _build_one_building(
+            geom, roof_info["eaves_z_offset"], task.skirt_m, task.base_z
+        )
+        try:
+            roof_mesh = build_hip_roof(geom, eaves_z, apex_z, roof_info["pitch_deg"])
+        except Exception:
+            roof_mesh = None
+        if roof_mesh is None:
+            wall_mesh = _build_one_building(
+                geom, task.height_m, task.skirt_m, task.base_z
+            )
+        else:
+            pitched_succeeded = True
+
+    return _BuildingResult(
+        idx=task.idx,
+        material_name=task.material_name,
+        wall_mesh=wall_mesh,
+        roof_mesh=roof_mesh,
+        pitched_attempted=pitched_attempted,
+        pitched_succeeded=pitched_succeeded,
+    )
+
+
+def _process_chunk(tasks: list[_BuildingTask]) -> list[_BuildingResult]:
+    """Worker entrypoint: process a batch of buildings to amortize IPC overhead."""
+    return [_process_one_building(t) for t in tasks]
+
+
 def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
     """Clip GPKG footprints to the AOI, extrude each, and emit a YAML sidecar
     of per-building scene objects placed on top of the DEM. When the building
@@ -154,32 +242,93 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
 
     names, weights = _resolve_material_distribution(cfg.material)
     rng = np.random.default_rng(cfg.material_seed)
+    roof_rng = np.random.default_rng(cfg.roof_seed)
 
     meshes_by_material: dict[str, list[trimesh.Trimesh]] = {n: [] for n in names}
+    roof_meshes: list[trimesh.Trimesh] = []
     skipped = 0
+    pitched_count = 0
+    flat_fallback = 0
+
+    # Pass 1 (sequential, deterministic): parse heights, sample DEM elevation,
+    # draw all RNG outcomes (material + pitched/flat), and build a list of
+    # self-contained per-building tasks. Doing all RNG draws here keeps results
+    # reproducible regardless of how the worker pool schedules things.
+    tasks: list[_BuildingTask] = []
     for idx, row in gdf.iterrows():
         geom = row.geometry
         if geom is None or geom.is_empty:
             skipped += 1
             continue
-
         taxonomy = (
             row.get(cfg.height_column) if cfg.height_column in gdf.columns else None
         )
         height_m = _parse_taxonomy_height(
             taxonomy, cfg.story_height_m, cfg.default_height_m
         )
-
         cx, cy = float(geom.centroid.x), float(geom.centroid.y)
         base_z = float(elev_fn(np.array([[cx, cy]]))[0]) + cfg.elevation_offset_m
 
-        mesh = _build_one_building(geom, height_m, cfg.base_skirt_m, base_z)
-        if mesh is None:
+        eligible = (
+            cfg.pitched_roof_proportion > 0.0
+            and (
+                cfg.pitched_roof_min_area_m2 is None
+                or geom.area >= cfg.pitched_roof_min_area_m2
+            )
+            and (
+                cfg.pitched_roof_min_height_m is None
+                or height_m >= cfg.pitched_roof_min_height_m
+            )
+        )
+        # Always draw so removing eligibility filters doesn't reshuffle the rest of the stream
+        u = roof_rng.random()
+        pitched = eligible and u < cfg.pitched_roof_proportion
+        material_name = (
+            names[0] if weights is None else str(rng.choice(names, p=weights))
+        )
+        tasks.append(
+            _BuildingTask(
+                idx=int(idx),
+                geom=geom,
+                height_m=height_m,
+                base_z=base_z,
+                skirt_m=cfg.base_skirt_m,
+                material_name=material_name,
+                pitched=pitched,
+                pitch_deg=cfg.roof_pitch_deg,
+                target_roof_height=cfg.roof_height_m,
+            )
+        )
+
+    # Pass 2: parallel mesh construction.
+    workers = (
+        cfg.roof_workers
+        if cfg.roof_workers is not None
+        else max((os.cpu_count() or 2) // 2, 1)
+    )
+    if workers > 1 and len(tasks) >= 64:
+        chunk_size = max(8, (len(tasks) + workers - 1) // workers)
+        chunks = [tasks[i : i + chunk_size] for i in range(0, len(tasks), chunk_size)]
+        results: list[_BuildingResult] = []
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            for chunk_results in ex.map(_process_chunk, chunks):
+                results.extend(chunk_results)
+        results.sort(key=lambda r: r.idx)
+    else:
+        results = [_process_one_building(t) for t in tasks]
+
+    # Pass 3 (sequential): assemble results into the per-material mesh lists.
+    for r in results:
+        if r.wall_mesh is None:
             skipped += 1
             continue
-
-        chosen = names[0] if weights is None else str(rng.choice(names, p=weights))
-        meshes_by_material[chosen].append(mesh)
+        if r.pitched_attempted and not r.pitched_succeeded:
+            flat_fallback += 1
+        if r.pitched_succeeded:
+            pitched_count += 1
+        meshes_by_material[r.material_name].append(r.wall_mesh)
+        if r.roof_mesh is not None:
+            roof_meshes.append(r.roof_mesh)
 
     total = sum(len(m) for m in meshes_by_material.values())
     if total == 0:
@@ -211,13 +360,36 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
             }
         )
 
+    if roof_meshes:
+        combined_roof = (
+            roof_meshes[0]
+            if len(roof_meshes) == 1
+            else trimesh.util.concatenate(roof_meshes)
+        )
+        roof_safe = _safe_name(cfg.roof_material)
+        roof_ply_path = ctx.meshes_dir / f"roofs_{roof_safe}.ply"
+        combined_roof.export(str(roof_ply_path))
+        objects.append(
+            {
+                "id": f"{cfg.object_id_prefix}_roof_{roof_safe}",
+                "mesh": str(roof_ply_path.relative_to(ctx.output_dir)),
+                "position": [0.0, 0.0, 0.0],
+                "scale": 1.0,
+                "rotation": [0.0, 0.0, 0.0],
+                "material": cfg.roof_material,
+                "face_normals": True,
+            }
+        )
+
     counts = ", ".join(
         f"{n}={len(meshes_by_material[n])}" for n in names if meshes_by_material[n]
     )
     logging.info(
-        "Buildings meshes saved: %d buildings (%s), %d skipped",
+        "Buildings meshes saved: %d buildings (%s), %d pitched, %d flat-fallback, %d skipped",
         total,
         counts,
+        pitched_count,
+        flat_fallback,
         skipped,
     )
 

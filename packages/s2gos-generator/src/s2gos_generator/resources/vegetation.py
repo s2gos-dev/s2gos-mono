@@ -914,7 +914,8 @@ def _batch_elevation_lookup(
 
     Returns:
         List of vegetation positions with 'elevation' field set from DEM interpolation.
-        Uses 0.0 for out-of-bounds or invalid positions.
+        Drops instances whose (x, y) lies outside DEM bounds; uses 0.0 only if
+        interpolator construction itself fails.
     """
     if not positions:
         return positions
@@ -932,12 +933,11 @@ def _batch_elevation_lookup(
             z_values,
             method="linear",
             bounds_error=False,
-            fill_value=0.0,
+            fill_value=np.nan,
         )
 
         points = np.column_stack([y_coords, x_coords])
         elevations = interpolator(points)
-        elevations = np.nan_to_num(elevations, nan=0.0)
 
     except Exception as e:
         logging.warning(
@@ -949,19 +949,24 @@ def _batch_elevation_lookup(
                 z_values,
                 method="nearest",
                 bounds_error=False,
-                fill_value=0.0,
+                fill_value=np.nan,
             )
             points = np.column_stack([y_coords, x_coords])
             elevations = interpolator(points)
-            elevations = np.nan_to_num(elevations, nan=0.0)
         except Exception:
             logging.warning("All elevation lookups failed. Using zero elevation.")
             elevations = np.zeros(len(positions))
 
+    valid_mask = ~np.isnan(elevations)
+    dropped = int((~valid_mask).sum())
+    if dropped:
+        logging.info(f"Dropped {dropped} vegetation instances outside DEM bounds")
+    filtered = []
     for i, pos in enumerate(positions):
-        pos["elevation"] = float(elevations[i])
-
-    return positions
+        if valid_mask[i]:
+            pos["elevation"] = float(elevations[i])
+            filtered.append(pos)
+    return filtered
 
 
 def _apply_spacing_filter_optimized(
