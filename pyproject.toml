@@ -20,6 +20,7 @@ s3fs = "*"
 dask = "*"
 xarray = "<2025"
 zarr = "<3"
+jupyterlab = ">=4.5.7,<5"
 
 [tool.pixi.pypi-dependencies]
 pydantic = "*"
@@ -29,17 +30,22 @@ s2gos_utils     = { path = "packages/s2gos-utils",      editable = true }
 s2gos_generator = { path = "packages/s2gos-generator",  editable = true }
 s2gos_simulator = { path = "packages/s2gos-simulator",  editable = true }
 s2gos_apps      = { path = "packages/s2gos-apps",       editable = true }
+appligator   = { path = "../eozilla/appligator",             editable = true }
+cuiman       = { path = "../eozilla/cuiman",                 editable = true }
+gavicore     = { path = "../eozilla/gavicore",               editable = true }
+procodile    = { path = "../eozilla/procodile",              editable = true }
+wraptile     = { path = "../eozilla/wraptile",               editable = true }
 s2gos-client = { git = "https://github.com/s2gos-dev/s2gos-controller.git", subdirectory = "s2gos-client" }
 s2gos-server = { git = "https://github.com/s2gos-dev/s2gos-controller.git", subdirectory = "s2gos-server" }
 pinttrs = ">=23.2.0,<26"
 # eozilla packages: declared explicitly so they are pinned in pixi.lock and available
 # in the Docker image. procodile is used directly by s2gos-apps processors; the rest
 # are its dependencies plus appligator, which is required at runtime in the container.
-procodile  = ">=0.0.8,<0.0.9"
-gavicore   = ">=0.0.8,<0.0.9"
-cuiman     = ">=0.0.8,<0.0.9"
-wraptile   = ">=0.0.8,<0.0.9"
-appligator = ">=0.0.8,<0.0.9"
+#procodile  = ">=0.0.8,<0.0.9"
+#gavicore   = ">=0.0.8,<0.0.9"
+#cuiman     = ">=0.0.8,<0.0.9"
+#wraptile   = ">=0.0.8,<0.0.9"
+#appligator = ">=0.0.8,<0.0.9"
 
 # ── feature: notebook ─────────────────────────────────────────
 [tool.pixi.feature.notebook.dependencies]
@@ -52,14 +58,17 @@ ipyleaflet = "*"
 
 
 # ── feature: local-deps (local sibling repo overrides) uncomment these lines and the environment below for local installs ────────
-# [tool.pixi.feature.local-deps.pypi-dependencies]
-# appligator   = { path = "../eozilla/appligator",             editable = true }
-# cuiman       = { path = "../eozilla/cuiman",                 editable = true }
-# gavicore     = { path = "../eozilla/gavicore",               editable = true }
-# procodile    = { path = "../eozilla/procodile",              editable = true }
-# wraptile     = { path = "../eozilla/wraptile",               editable = true }
-# s2gos-client = { path = "../s2gos-controller/s2gos-client", editable = true }
-# s2gos-server = { path = "../s2gos-controller/s2gos-server", editable = true }
+#[tool.pixi.feature.local-deps.pypi-dependencies]
+#appligator   = { path = "../eozilla/appligator",             editable = true }
+#cuiman       = { path = "../eozilla/cuiman",                 editable = true }
+#gavicore     = { path = "../eozilla/gavicore",               editable = true }
+#procodile    = { path = "../eozilla/procodile",              editable = true }
+#wraptile     = { path = "../eozilla/wraptile",               editable = true }
+#s2gos-client = { path = "../s2gos-controller/s2gos-client", editable = true }
+#s2gos-server = { path = "../s2gos-controller/s2gos-server", editable = true }
+
+[tool.pixi.tasks.local-test-server]
+cmd      = "wraptile  run -- s2gos_apps.service:service --processes --max-workers=5"
 
 # ── feature: test ─────────────────────────────────────────────
 [tool.pixi.feature.test.dependencies]
@@ -95,7 +104,7 @@ snakeviz = "*"
 default   = { solve-group = "default" }
 test      = { features = ["test"], solve-group = "default" }
 dev       = { features = ["notebook",  "test", "docs", "dev-tools"], solve-group = "default" }
-# dev-local = { features = ["notebook", "local-deps", "test", "docs", "dev-tools"], solve-group = "dev-local" } # uncomment for local installs
+#dev-local = { features = ["notebook", "local-deps", "test", "docs", "dev-tools"], solve-group = "dev-local" } # uncomment for local installs
 
 # ── tasks ─────────────────────────────────────────────────────
 [tool.pixi.tasks]
