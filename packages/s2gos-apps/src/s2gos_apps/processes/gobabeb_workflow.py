@@ -12,8 +12,8 @@ from s2gos_apps.registry import registry
 
 
 @registry.main(
-    id="frascati_generation_simulation_workflow",
-    title="Frascati Generation Config",
+    id="gobabeb_generation_simulation_workflow",
+    title="Gobabeb Generation and Simulation Workflow",
     outputs={
         "scene_name": Field(..., description="Scene id name."),
         "target_lat": Field(..., description="Target's center latitude."),
@@ -22,20 +22,26 @@ from s2gos_apps.registry import registry
         "gmt_hour": Field(),
         "spp": Field(),
         "config_path": Field(
-                    title="PathRef class with generated config as output"
-                ),
+            title="PathRef class with generated config as output"
+        ),
         "scene_output_dir": Field(),
         "config_output_dir_simulation": Field(),
         "output_dir_simulation": Field(),
     },
 )
-def frascati_generation_simulation_workflow(
-    scene_name: Annotated[str, Field(default="frascati", description="Scene id name.")],
-    target_lat: Annotated[float, Field(default=41.808, description="Target's center latitude.")],
-    target_lon: Annotated[float, Field(default=12.681, description="Target's center longitude.")],
-    target_size: Annotated[float, Field(default=10.0, description="Target's size in [km].")],
+def gobabeb_generation_simulation_workflow(
+    scene_name: Annotated[str, Field(default="gobabeb", description="Scene id name.")],
+    target_lat: Annotated[
+        float, Field(default=-23.6015417, description="Target's center latitude.")
+    ],
+    target_lon: Annotated[
+        float, Field(default=15.1258696, description="Target's center longitude.")
+    ],
+    target_size: Annotated[
+        float, Field(default=10.0, description="Target's size in [km].")
+    ],
     gmt_hour: Annotated[
-        float, Field(default=11.0, description="Hour of observation at target in GMT time.")
+        float, Field(default=9.0, description="Hour of observation at target in GMT time.")
     ],
     spp: Annotated[int, Field(..., description="Number of Monte Carlo samples.")] = 8,
     config_output_dir_generation: Annotated[
@@ -47,8 +53,8 @@ def frascati_generation_simulation_workflow(
         Field(..., description="Scene description output directory."),
     ] = None,
     config_output_dir_simulation: Annotated[
-            PathRef | None,
-            Field(..., description="Simulation configuration output directory."),
+        PathRef | None,
+        Field(..., description="Simulation configuration output directory."),
     ] = None,
     output_dir_simulation: Annotated[
         PathRef | None,
@@ -67,7 +73,7 @@ def frascati_generation_simulation_workflow(
     PathRef | None,
 ]:
     """
-    Create the scene configuration corresponding the Frascati scene.
+    Create the scene configuration corresponding to the Gobabeb scene.
     """
     from s2gos_generator import create_scene_config
     from s2gos_generator.core.config import (
@@ -76,8 +82,6 @@ def frascati_generation_simulation_workflow(
         BufferConfig,
         MolecularAtmosphereConfig,
         ThermophysicalConfig,
-        VegetationPlacementConfig,
-        VegetationSpecies,
     )
 
     # Enforce PathRef type
@@ -92,7 +96,6 @@ def frascati_generation_simulation_workflow(
     print("=" * 60)
     print("Configuring generation...")
 
-    # Create basic configuration using defaults
     config = create_scene_config(
         scene_name=scene_name,
         center_lat=target_lat,
@@ -102,59 +105,12 @@ def frascati_generation_simulation_workflow(
         if scene_output_dir is None
         else scene_output_dir,
         target_resolution_m=10.0,
-        description="Frascati city and surroundings",
+        description="Gobabeb PICS with HyperNET mast.",
     )
 
     config.buffer = BufferConfig(size_km=60.0, resolution_m=60.0)
     config.background = BackgroundConfig(
         size_km=150.0, resolution_m=200.0, elevation=0.0
-    )
-
-    # Configure multi-species vegetation placement with trees and shrubs
-    config.vegetation_placement = VegetationPlacementConfig(
-        enabled=True,
-        landcover_species_mapping={
-            10: [  # Treecover
-                VegetationSpecies(
-                    name="trees",
-                    asset_xml_paths=[
-                        "tls_tree_25.xml",
-                        "tls_tree_71.xml",
-                        "tls_tree_165.xml",
-                        "tls_tree_228.xml",
-                        "tls_tree_290.xml",
-                        "tls_tree_300.xml",
-                        "tls_tree_336.xml",
-                    ],  # Single asset in list
-                    # For multiple variants with uniform distribution:
-                    # asset_xml_paths=["tree1.xml", "tree2.xml", "tree3.xml"]
-                    # For weighted distribution:
-                    # asset_xml_paths={"tree_mature.xml": 5.0, "tree_young.xml": 2.0, "tree_old.xml": 1.0}
-                    density_per_hectare=450.0,  # Moderate forest density
-                    scale_min=0.8,
-                    scale_max=1.4,
-                )
-            ],
-            20: [  # Shrubland
-                VegetationSpecies(
-                    name="shrubs",
-                    asset_xml_paths=["tls_tree_336.xml"],  # Single asset in list
-                    density_per_hectare=40.0,
-                    scale_min=0.4,
-                    scale_max=0.8,
-                )
-            ],
-        },
-        density_variation=0.5,
-        min_spacing=0.1,
-        max_instances_per_pixel=2000,
-        spillover_max_distance_m=50.0,
-        spillover_compatibility={  # Optional: override global
-            30: 0.9,  # High spillover into grassland
-            20: 0.5,  # Moderate spillover into shrubland
-            60: 0.5,
-            100: 0.5,
-        },
     )
 
     molecular_config = MolecularAtmosphereConfig(
@@ -167,10 +123,8 @@ def frascati_generation_simulation_workflow(
     config.set_atmosphere_molecular(molecular_config)
 
     print("Basic configuration created")
-
     print("Configuration validation passed")
 
-    # Save generation config file
     config_filename = f"{config.scene_name}_gen_config.json"
 
     if config_output_dir is None:
@@ -198,12 +152,12 @@ def frascati_generation_simulation_workflow(
         scene_output_dir,
         config_output_dir_simulation,
         output_dir_simulation,
-            )
+    )
 
 
-@frascati_generation_simulation_workflow.step(
-    id="frascati-generation",
-    title="Generate Scenes for Frascati",
+@gobabeb_generation_simulation_workflow.step(
+    id="gobabeb-generation",
+    title="Generate Scenes for Gobabeb",
     inputs={
         "config_path": FromMain(output="config_path"),
     },
@@ -211,15 +165,14 @@ def frascati_generation_simulation_workflow(
         "scene_description_path": Field()
     }
 )
-def frascati_generation(config_path: PathRef) -> PathRef:
+def gobabeb_generation(config_path: PathRef) -> PathRef:
     from common.generation import generation
     return generation(config_path)
 
 
-
-@frascati_generation_simulation_workflow.step(
-    id="frascati-simulation-config",
-    title="Frascati Simulation Config",
+@gobabeb_generation_simulation_workflow.step(
+    id="gobabeb-simulation-config",
+    title="Gobabeb Simulation Config",
     inputs={
         "scene_name": FromMain(output="scene_name"),
         "target_lat": FromMain(output="target_lat"),
@@ -235,7 +188,7 @@ def frascati_generation(config_path: PathRef) -> PathRef:
         )
     }
 )
-def simulation_configs(
+def gobabeb_simulation_config(
     scene_name: str,
     target_lat: float,
     target_lon: float,
@@ -262,12 +215,12 @@ def simulation_configs(
     return PathRef(config_path) if config_path is not None else None
 
 
-@frascati_generation_simulation_workflow.step(
-    id="frascati-simulation",
+@gobabeb_generation_simulation_workflow.step(
+    id="gobabeb-simulation",
     inputs={
-        "scene_description_path": FromStep(step_id="frascati-generation",
-                                          output="scene_description_path"),
-        "config_path": FromStep(step_id="frascati-simulation-config",
+        "scene_description_path": FromStep(step_id="gobabeb-generation",
+                                           output="scene_description_path"),
+        "config_path": FromStep(step_id="gobabeb-simulation-config",
                                 output="config_path"),
         "simulation_output_dir": FromMain(output="output_dir_simulation"),
     },
@@ -275,8 +228,10 @@ def simulation_configs(
         "simulation_path": Field()
     }
 )
-def frascati_simulation(scene_description_path: PathRef, config_path:
-PathRef, simulation_output_dir: PathRef | None) -> UPath:
+def gobabeb_simulation(
+    scene_description_path: PathRef,
+    config_path: PathRef,
+    simulation_output_dir: PathRef | None,
+) -> UPath:
     from common.simulation import simulation
-    return simulation(scene_description_path, config_path,
-                      simulation_output_dir)
+    return simulation(scene_description_path, config_path, simulation_output_dir)
