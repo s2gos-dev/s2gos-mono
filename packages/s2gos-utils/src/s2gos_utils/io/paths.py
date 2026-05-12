@@ -14,6 +14,8 @@ from pydantic import (
     PrivateAttr,
     model_validator,
 )
+from pydantic import GetJsonSchemaHandler
+from pydantic_core import CoreSchema
 from upath import UPath
 
 from ..typing import PathLike
@@ -135,6 +137,19 @@ class PathRef(BaseModel):
     def __str__(self) -> str:
         """Return the path value as a string."""
         return self.value
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> dict[str, Any]:
+        # Strip title and description so that when PathRef is inlined into a
+        # field's anyOf schema, the field-level title and description (from
+        # Field() annotations) are not overwritten by PathRef's class name and
+        # docstring.
+        schema = handler(core_schema)
+        schema.pop("title", None)
+        schema.pop("description", None)
+        return schema
 
     model_config = {"frozen": True}
 
