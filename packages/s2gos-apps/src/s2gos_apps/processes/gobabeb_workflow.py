@@ -46,20 +46,20 @@ def gobabeb_generation_simulation_workflow(
     spp: Annotated[int, Field(..., description="Number of Monte Carlo samples.")] = 8,
     config_output_dir_generation: Annotated[
         PathRef | None,
-        Field(..., description="Generation configuration output directory."),
-    ] = None,
+        Field(description="Generation configuration output directory."),
+    ] = PathRef("/mnt/s2gos-output/gen_config"),
     scene_output_dir_generation: Annotated[
         PathRef | None,
-        Field(..., description="Scene description output directory."),
-    ] = None,
+        Field(description="Scene description output directory."),
+    ] = PathRef("/mnt/s2gos-output/gen_output"),
     config_output_dir_simulation: Annotated[
         PathRef | None,
-        Field(..., description="Simulation configuration output directory."),
-    ] = None,
+        Field(description="Simulation configuration output directory."),
+    ] = PathRef("/mnt/s2gos-output/sim_config"),
     output_dir_simulation: Annotated[
         PathRef | None,
-        Field(..., description="Simulation output directory."),
-    ] = None,
+        Field(description="Simulation output directory."),
+    ] = PathRef("/mnt/s2gos-output/sim_output"),
 ) -> tuple[
     str,
     float,
