@@ -1,0 +1,21 @@
+image_name: quay.io/s2gos/s2gos-mono:0.0.5
+dag_name: workflow_dags
+
+secret_names:
+  - s2gos-credentials
+
+cpu_request: "2"
+memory_request: "8Gi"
+cpu_limit: "4"
+memory_limit: "16Gi"
+
+pvc_mounts:
+  - name: s2gos-output
+    claim_name: s2gos-output-pvc
+    mount_path: /mnt/output
+
+config_map_mounts:
+  - name: s2gos-settings
+    config_map_name: s2gos-settings
+    mount_path: /opt/pixi/
+    sub_path: s2gos_settings.yaml   # omit to mount the whole ConfigMap as a directory
