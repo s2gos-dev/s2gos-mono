@@ -5,16 +5,26 @@ from appligator.airflow.gen_dockerfile import generate
 generate(
   package_manager="pixi",
   output_dir=Path("image"),
-  extra_files={"extra_data": Path("extra_data")},
+  extra_files={
+      "extra_data": Path("extra_data"),
+      # resources/data is not installed by pip (only *.py is included in the
+      # package), but s2gos_settings.yaml search_paths expects it at
+      # /opt/pixi/packages/s2gos-generator/resources/data at runtime.
+      "generator_resources": Path("packages/s2gos-generator/resources/data"),
+  },
   build_commands=[],
-  packages_dir = Path("packages"),
+  packages_dir=Path("packages"),
   local_packages=[
         "s2gos-utils",
         "s2gos-generator",
         "s2gos-simulator",
         "s2gos-apps",
     ],
-   # runtime_commands=[...],
+  runtime_commands=[
+      "COPY ./generator_resources /opt/pixi/packages/s2gos-generator/resources/data",
+      "RUN /opt/pixi/.pixi/envs/default/bin/eradiate data install core gecko monotropa",
+      "RUN /opt/pixi/.pixi/envs/default/bin/python -c \"import s2gos_apps; print('s2gos_apps OK')\"",
+  ],
 )
 
 shutil.copy("pixi.lock", "image/pixi.lock")
@@ -37,28 +47,3 @@ image_packages = Path("image/packages")
 if image_packages.exists():
     shutil.rmtree(image_packages)
 shutil.copytree("packages", image_packages)
-
-# # build_image.py
-# from pathlib import Path
-# from textwrap import dedent
-#
-# from procodile import WorkflowStepRegistry
-# from appligator.airflow.gen_image import gen_image
-#
-# registry = WorkflowStepRegistry()
-#
-# gen_image(
-#     registry,
-#     image_name="myrepo/s2gos-apps:latest",
-#     extra_files={"extra_data": Path("extra_data")},
-#     build_stage_extra=dedent("""\
-#           RUN pixi add apache-airflow-providers-cncf-kubernetes
-#
-#           # Everything — including eozilla — is in the lock file"""),
-#     dockerfile_extra=dedent("""\
-#           COPY ./extra_data  /opt/pixi/hypstar_data
-#           # s2gos_settings.yaml is not baked in — mount it as a ConfigMap in Kubernetes
-#
-#           RUN eradiate data install core gecko monotropa
-#           RUN python -c "import s2gos_apps; print('s2gos_apps OK')" """),
-# )
