@@ -1,6 +1,6 @@
 # WARNING - THIS IS GENERATED CODE
 #   Generator: Eozilla Appligator v0.1.0
-#        Date: 2026-05-12T10:37:22.546221
+#        Date: 2026-05-12T11:18:21.695062
 
 import json
 from datetime import datetime
@@ -25,8 +25,8 @@ with DAG(
     "hour": Param(type='number', title='Hour', description='Time of day. For satelites, the closest overpass time will be used'),
     "include_TLS": Param(default=False, type='boolean', title='Include Tls', description='Include Telestrial Laser Scanned data.'),
     "observation": Param(title='Observation', description='Observations.', anyOf=[{'type': 'object', 'title': 'SatelliteObservation', 'properties': {'satellite_instrument': {'type': 'string', 'title': 'SatelliteInstrument', 'description': 'Satellite Instrument', 'enum': ['CHIME', 'MSI'], 'default': 'CHIME'}, 'spp': {'type': 'integer', 'title': 'Spp', 'description': 'Sample Per Pixel', 'default': 8}, 'orthorectified': {'type': 'boolean', 'title': 'Orthorectified', 'description': 'Specifies whether the simulation is done in sensor space or target space.', 'default': True}, 'psf': {'type': 'boolean', 'title': 'Psf', 'description': 'Point spread function.', 'default': False}, 'srf': {'type': 'boolean', 'title': 'Srf', 'description': 'Spectral response function.', 'default': True}, 'radiometric_noise': {'type': 'number', 'title': 'Radiometric Noise', 'description': '', 'default': 0.0}}}, {'type': 'object', 'title': 'GroundObservation', 'properties': {'observation_type': {'type': 'string', 'title': 'GroundObservationType', 'description': 'Ground observation type', 'enum': ['Hypstar HCRF', 'camera'], 'default': 'Hypstar HCRF'}, 'spp': {'type': 'integer', 'title': 'Spp', 'description': 'Sample Per Pixel', 'default': 8}}}, {'type': 'object', 'title': 'SurfaceL2', 'properties': {'L2_product': {'type': 'string', 'title': 'SurfaceL2Type', 'description': 'L2 Product', 'enum': ['HDRF'], 'default': 'HDRF'}, 'footprint': {'type': 'number', 'title': 'Footprint', 'description': 'Pixel footprint resolution in meters', 'default': 30.0}, 'satellite': {'type': 'string', 'title': 'SatelliteInstrument', 'description': 'If specified, informs the pixel footprint of the L2 product. Takes precedence over `footprint`.', 'enum': ['CHIME', 'MSI'], 'nullable': True}, 'spp': {'type': 'integer', 'title': 'Spp', 'description': 'Sample Per Pixel', 'default': 8}}}]),
-    "config_output_dir": Param(type='object', description='Generation configuration output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'type': 'string', 'title': 'Cid', 'description': 'Credential ID', 'nullable': True}}, required=['value']),
-    "scene_output_dir": Param(type='object', description='Scene description output directiory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'type': 'string', 'title': 'Cid', 'description': 'Credential ID', 'nullable': True}}, required=['value'])
+    "config_output_dir": Param(type='object', description='Generation configuration output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'title': 'Cid', 'description': 'Credential ID'}}, required=['value']),
+    "scene_output_dir": Param(type='object', description='Scene description output directiory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'title': 'Cid', 'description': 'Credential ID'}}, required=['value'])
     },
 ) as dag:
 

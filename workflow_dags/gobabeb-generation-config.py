@@ -1,6 +1,6 @@
 # WARNING - THIS IS GENERATED CODE
 #   Generator: Eozilla Appligator v0.1.0
-#        Date: 2026-05-12T10:37:22.525781
+#        Date: 2026-05-12T11:18:21.673829
 
 import json
 from datetime import datetime
@@ -23,8 +23,8 @@ with DAG(
     "target_lat": Param(default=-23.6015417, type='number', title='Target Lat', description="Target's center latitude."),
     "target_lon": Param(default=15.1258696, type='number', title='Target Lon', description="Target's center longitude."),
     "target_size": Param(default=10, type='number', title='Target Size', description="Target's size in [km]."),
-    "config_output_dir": Param(type='object', description='Generation configuration output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'type': 'string', 'title': 'Cid', 'description': 'Credential ID', 'nullable': True}}, required=['value']),
-    "scene_output_dir": Param(type='object', description='Scene description output directiory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'type': 'string', 'title': 'Cid', 'description': 'Credential ID', 'nullable': True}}, required=['value'])
+    "config_output_dir": Param(type='object', description='Generation configuration output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'title': 'Cid', 'description': 'Credential ID'}}, required=['value']),
+    "scene_output_dir": Param(type='object', description='Scene description output directiory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'title': 'Cid', 'description': 'Credential ID'}}, required=['value'])
     },
 ) as dag:
 

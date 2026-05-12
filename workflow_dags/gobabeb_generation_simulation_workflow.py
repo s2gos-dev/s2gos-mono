@@ -1,6 +1,6 @@
 # WARNING - THIS IS GENERATED CODE
 #   Generator: Eozilla Appligator v0.1.0
-#        Date: 2026-05-12T10:37:22.532601
+#        Date: 2026-05-12T11:18:21.679115
 
 import json
 from datetime import datetime
@@ -25,10 +25,10 @@ with DAG(
     "target_size": Param(default=10.0, type='number', title='Target Size', description="Target's size in [km]."),
     "gmt_hour": Param(default=9.0, type='number', title='Gmt Hour', description='Hour of observation at target in GMT time.'),
     "spp": Param(default=8, type='integer', title='Spp', description='Number of Monte Carlo samples.'),
-    "config_output_dir_generation": Param(default={'value': '/mnt/s2gos-output/gen_config', 'cid': None}, type='object', description='Generation configuration output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'type': 'string', 'title': 'Cid', 'description': 'Credential ID', 'nullable': True}}, required=['value']),
-    "scene_output_dir_generation": Param(default={'value': '/mnt/s2gos-output/gen_output', 'cid': None}, type='object', description='Scene description output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'type': 'string', 'title': 'Cid', 'description': 'Credential ID', 'nullable': True}}, required=['value']),
-    "config_output_dir_simulation": Param(default={'value': '/mnt/s2gos-output/sim_config', 'cid': None}, type='object', description='Simulation configuration output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'type': 'string', 'title': 'Cid', 'description': 'Credential ID', 'nullable': True}}, required=['value']),
-    "output_dir_simulation": Param(default={'value': '/mnt/s2gos-output/sim_output', 'cid': None}, type='object', description='Simulation output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'type': 'string', 'title': 'Cid', 'description': 'Credential ID', 'nullable': True}}, required=['value'])
+    "config_output_dir_generation": Param(default={'value': '/mnt/s2gos-output/gen_config', 'cid': None}, type='object', description='Generation configuration output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'title': 'Cid', 'description': 'Credential ID'}}, required=['value']),
+    "scene_output_dir_generation": Param(default={'value': '/mnt/s2gos-output/gen_output', 'cid': None}, type='object', description='Scene description output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'title': 'Cid', 'description': 'Credential ID'}}, required=['value']),
+    "config_output_dir_simulation": Param(default={'value': '/mnt/s2gos-output/sim_config', 'cid': None}, type='object', description='Simulation configuration output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'title': 'Cid', 'description': 'Credential ID'}}, required=['value']),
+    "output_dir_simulation": Param(default={'value': '/mnt/s2gos-output/sim_output', 'cid': None}, type='object', description='Simulation output directory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'title': 'Cid', 'description': 'Credential ID'}}, required=['value'])
     },
 ) as dag:
 

@@ -1,6 +1,6 @@
 # WARNING - THIS IS GENERATED CODE
 #   Generator: Eozilla Appligator v0.1.0
-#        Date: 2026-05-12T10:37:22.535895
+#        Date: 2026-05-12T11:18:21.683433
 
 import json
 from datetime import datetime
@@ -25,7 +25,7 @@ with DAG(
     "target_size": Param(type='number', title='Target Size', description="Target's size in [km]."),
     "gmt_hour": Param(type='number', title='Gmt Hour', description='Hour of observation at target in GMT time.'),
     "spp": Param(default=8, type='integer', title='Spp', description='Number of Monte Carlo samples.'),
-    "config_output_dir": Param(type='object', description='Simulation configuration output directiory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'type': 'string', 'title': 'Cid', 'description': 'Credential ID', 'nullable': True}}, required=['value'])
+    "config_output_dir": Param(type='object', description='Simulation configuration output directiory.', nullable=True, properties={'value': {'type': 'string', 'title': 'Value', 'description': 'Full path URI'}, 'cid': {'title': 'Cid', 'description': 'Credential ID'}}, required=['value'])
     },
 ) as dag:
 
