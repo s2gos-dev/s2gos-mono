@@ -17,6 +17,16 @@ RUN pixi add apache-airflow-providers-cncf-kubernetes
 # Everything — including eozilla — is in the lock file
 RUN pixi install --locked -e default
 
+# Overwrite editable installs with non-editable ones so the runtime image
+# only needs the environment — not the source tree.
+# --no-deps: all deps already satisfied by pixi.
+# --no-build-isolation: use the already-installed build tools in the env.
+RUN /opt/pixi/.pixi/envs/default/bin/pip install --no-deps --no-build-isolation \
+    ./packages/s2gos-utils \
+    ./packages/s2gos-generator \
+    ./packages/s2gos-simulator \
+    ./packages/s2gos-apps
+
 # ── Stage 2: runtime ──────────────────────────────────────────
 FROM debian:bookworm-slim
 WORKDIR /opt/pixi
@@ -26,9 +36,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /opt/pixi/.pixi/envs/default /opt/pixi/.pixi/envs/default
-COPY --from=build /opt/pixi/packages           /opt/pixi/packages
-COPY --from=build /opt/pixi/pyproject.toml     /opt/pixi/pyproject.toml
-COPY --from=build /opt/pixi/pixi.lock          /opt/pixi/pixi.lock
 # Application files — copied directly from build context
 COPY ./run_step.py /opt/pixi/run_step.py
 COPY ./extra_data  /opt/pixi/hypstar_data
