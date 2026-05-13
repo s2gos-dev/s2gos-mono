@@ -213,7 +213,7 @@ def frascati_generation_simulation_workflow(
 )
 def frascati_generation(config_path: PathRef) -> PathRef:
     from s2gos_apps.processes.common.generation import generation
-    return generation(config_path)
+    return generation(config_path=config_path)
 
 
 
@@ -278,5 +278,4 @@ def simulation_configs(
 def frascati_simulation(scene_description_path: PathRef, config_path:
 PathRef, simulation_output_dir: PathRef | None) -> UPath:
     from s2gos_apps.processes.common.simulation import simulation
-    return simulation(scene_description_path, config_path,
-                      simulation_output_dir)
+    return simulation(scene_description_path=scene_description_path, config_path=config_path, simulation_output_dir=simulation_output_dir)
