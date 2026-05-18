@@ -1,5 +1,4 @@
-image_name: quay.io/s2gos/s2gos-mono:0.0.7
-dag_name: workflow_dags
+image_name: quay.io/s2gos/s2gos-mono:0.0.13
 
 secret_names:
   - s2gos-credentials
