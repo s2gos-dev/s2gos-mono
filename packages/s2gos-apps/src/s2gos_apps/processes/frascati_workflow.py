@@ -278,4 +278,22 @@ def simulation_configs(
 def frascati_simulation(scene_description_path: PathRef, config_path:
 PathRef, simulation_output_dir: PathRef | None) -> UPath:
     from s2gos_apps.processes.common.simulation import simulation
-    return simulation(scene_description_path=scene_description_path, config_path=config_path, simulation_output_dir=simulation_output_dir)
+
+    def _to_upath(v, key=None):
+        # Procodile may pass step output as the full dict {"output_key": value}
+        # or as a PathRef-shaped dict {"value": "...", "cid": ...}, or as a
+        # PathRef instance, UPath, or plain string.
+        if isinstance(v, dict):
+            if "value" in v:
+                return PathRef(v).upath
+            if key and key in v:
+                return _to_upath(v[key])
+        if hasattr(v, "upath"):
+            return v.upath
+        return UPath(str(v)) if v is not None else None
+
+    return simulation(
+        scene_description_path=_to_upath(scene_description_path, "scene_description_path"),
+        config_path=_to_upath(config_path, "config_path"),
+        simulation_output_dir=_to_upath(simulation_output_dir, "simulation_output_dir"),
+    )
