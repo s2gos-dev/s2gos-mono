@@ -22,6 +22,7 @@ generate(
     ],
   runtime_commands=[
       "COPY ./generator_resources /opt/pixi/packages/s2gos-generator/resources/data",
+      "COPY ./extra_data /opt/pixi/hypstar_data",
       "RUN /opt/pixi/.pixi/envs/default/bin/eradiate data install core gecko monotropa",
       "RUN /opt/pixi/.pixi/envs/default/bin/python -c \"import s2gos_apps; print('s2gos_apps OK')\"",
   ],
