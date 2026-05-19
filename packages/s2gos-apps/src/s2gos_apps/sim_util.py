@@ -94,7 +94,7 @@ def simulation_config(
         config_path = UPath(f"./sim_config/{config_filename}")
     else:
         if not config_output_dir.exists():
-            config_output_dir.mkdir()
+            config_output_dir.mkdir(parents=True, exist_ok=True)
 
         config_path = config_output_dir / config_filename
 

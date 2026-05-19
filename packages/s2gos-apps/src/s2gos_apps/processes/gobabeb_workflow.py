@@ -135,7 +135,7 @@ def gobabeb_generation_simulation_workflow(
     else:
         config_output_dir = PathRef(config_output_dir)
         if not config_output_dir.upath.exists():
-            config_output_dir.upath.mkdir()
+            config_output_dir.upath.mkdir(parents=True, exist_ok=True)
 
         config_path = config_output_dir / config_filename
 
