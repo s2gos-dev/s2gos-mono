@@ -1,4 +1,4 @@
-image_name: quay.io/s2gos/s2gos-mono:0.0.13
+image_name: quay.io/s2gos/s2gos-mono:0.0.15
 
 secret_names:
   - s2gos-credentials
@@ -11,7 +11,7 @@ memory_limit: "16Gi"
 pvc_mounts:
   - name: s2gos-output
     claim_name: s2gos-output-pvc
-    mount_path: /mnt/output
+    mount_path: /mnt/s2gos-ouput
 
 config_map_mounts:
   - name: s2gos-settings
