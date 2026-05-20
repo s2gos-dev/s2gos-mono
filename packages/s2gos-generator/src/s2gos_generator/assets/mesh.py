@@ -116,7 +116,10 @@ class MeshGenerator:
         if not output_path.suffix:
             output_path = output_path.with_suffix(f".{format}")
 
-        mesh.export(output_path)
+        file_type = output_path.suffix.lstrip(".")
+        data = mesh.export(file_type=file_type)
+        with output_path.open("wb") as f:
+            f.write(data)
         logging.info(f"Mesh saved to {output_path}")
 
     def generate_mesh_from_dem_file(
