@@ -8,7 +8,7 @@ import logging
 from typing import Dict, List, Optional
 
 import xarray as xr
-from s2gos_utils.io.paths import PathRef, open_dataset
+from s2gos_utils.io.paths import PathRef, open_dataset, to_upath
 from s2gos_utils.scene import SceneDescription
 
 from .atmosphere_builder import AtmosphereBuilder
@@ -239,7 +239,7 @@ class EradiateBackend(SimulationBackend):
         if output_dir is None:
             output_dir = scene_dir / "eradiate_renders"
 
-        output_dir = PathRef(output_dir)
+        output_dir = to_upath(output_dir)
         from s2gos_utils.io.paths import mkdir
 
         mkdir(output_dir)

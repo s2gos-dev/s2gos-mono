@@ -1,5 +1,8 @@
 import os
+import shutil
+import tempfile
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 from s2gos_simulator.backends.eradiate.backend import (
@@ -104,6 +107,35 @@ def simulation_config(
     return config_path
 
 
+_MITSUBA_EXTENSIONS = {".ply", ".png", ".bmp", ".exr", ".xml", ".obj"}
+
+
+def _download_scene_assets(s3_scene_dir: UPath, local_dir: Path) -> None:
+    """Download scene assets required by Mitsuba from S3 to a local directory.
+
+    Skips zarr datasets and YAML/JSON files — only mesh and texture files
+    that Mitsuba's file resolver needs are copied.
+
+    Uses fs.find() + fs.open() directly on the authenticated filesystem so
+    child paths cannot silently lose credentials (unlike rglob).
+    """
+    print(f"  Downloading scene assets from {s3_scene_dir} → {local_dir}")
+    downloaded = 0
+    fs = s3_scene_dir.fs
+    s3_prefix = s3_scene_dir.path.rstrip("/")
+    for file_path_str in fs.find(s3_prefix):
+        suffix = Path(file_path_str).suffix.lower()
+        if suffix not in _MITSUBA_EXTENSIONS:
+            continue
+        rel = file_path_str[len(s3_prefix):].lstrip("/")
+        local_path = local_dir / rel
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        with fs.open(file_path_str, "rb") as src, open(local_path, "wb") as dst:
+            dst.write(src.read())
+        downloaded += 1
+    print(f"  Downloaded {downloaded} scene asset(s)")
+
+
 def simulation_from_config(
     scene_description_path: UPath,
     config: SimulationConfig,
@@ -157,12 +189,30 @@ def simulation_from_config(
 
         if scene_input:
             simulator = EradiateBackend(config)
-            simulator.run_simulation(
-                scene_input,
-                scene_dir=scene_description_path.parent,
-                output_dir=simulation_output_dir,
-                plot_image=True,
-            )
+
+            # Mitsuba can only load mesh/texture files from the local filesystem.
+            # If the scene is on S3, download assets to a temp directory first.
+            s3_scene_dir = scene_description_path.parent
+            tmp_dir = None
+            if getattr(s3_scene_dir, "protocol", None) in ("s3", "s3a"):
+                tmp_dir = tempfile.mkdtemp(prefix="s2gos_scene_")
+                local_scene_dir = Path(tmp_dir)
+                _download_scene_assets(s3_scene_dir, local_scene_dir)
+                effective_scene_dir = UPath(tmp_dir)
+            else:
+                effective_scene_dir = s3_scene_dir
+
+            try:
+                simulator.run_simulation(
+                    scene_input,
+                    scene_dir=effective_scene_dir,
+                    output_dir=simulation_output_dir,
+                    plot_image=True,
+                )
+            finally:
+                if tmp_dir:
+                    shutil.rmtree(tmp_dir, ignore_errors=True)
+
             print("Simulation completed successfully!")
         else:
             print("Skipping simulation - no valid scene description available")
