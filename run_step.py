@@ -79,6 +79,18 @@ def coerce_inputs(func, inputs: dict[str, Any]) -> dict[str, Any]:
         if hint in _SCALAR_TYPES and isinstance(value, str):
             coerced[key] = hint(value)
         elif (model_cls := _pydantic_type(hint)) and not isinstance(value, model_cls):
+            if isinstance(value, str):
+                # Airflow Jinja renders dict XCom/param values as Python repr
+                # strings (single-quoted, None not null). Try JSON first, then
+                # ast.literal_eval to recover the dict before model construction.
+                try:
+                    value = json.loads(value)
+                except (json.JSONDecodeError, ValueError):
+                    try:
+                        import ast
+                        value = ast.literal_eval(value)
+                    except (ValueError, SyntaxError):
+                        pass
             coerced[key] = model_cls(value)
         elif isinstance(value, str):
             # Fallback: JSON-parse strings that look like non-string scalars.
@@ -133,7 +145,9 @@ def main(
     local testing.
     """
     func = resolve_function(func_module, func_qualname)
+    print(f"[run_step] RAW inputs: {inputs}")
     inputs = coerce_inputs(func, inputs)
+    print(f"[run_step] COERCED inputs: {inputs}")
 
     result = func(**inputs)
 
