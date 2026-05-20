@@ -256,7 +256,11 @@ class TerrainMaterialGenerator:
 
         mkdir(output_path.parent)
         image = Image.fromarray(texture, mode="L")
-        image.save(output_path)
+        import io
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        with output_path.open("wb") as f:
+            f.write(buf.getvalue())
 
     def _save_color_texture(self, texture: np.ndarray, output_path: UPath) -> None:
         """Save color texture as RGB PNG."""
@@ -275,7 +279,11 @@ class TerrainMaterialGenerator:
 
         mkdir(output_path.parent)
         image = Image.fromarray(texture, mode="RGB")
-        image.save(output_path)
+        import io
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        with output_path.open("wb") as f:
+            f.write(buf.getvalue())
 
     def get_material_info(self) -> Dict:
         """

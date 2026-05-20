@@ -1,3 +1,5 @@
+import io
+
 import numpy as np
 from PIL import Image
 from upath import UPath
@@ -34,6 +36,9 @@ def generate_buffer_mask(mask_size: int, target_size: int, output_path: UPath) -
 
     mkdir(output_path.parent)
     image = Image.fromarray(mask, mode="L")
-    image.save(output_path)
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    with output_path.open("wb") as f:
+        f.write(buf.getvalue())
 
     return output_path
