@@ -246,11 +246,11 @@ def simulation_configs(
 ) -> PathRef | None:
     from s2gos_apps.sim_util import simulation_config
 
-    print(f"[simulation_configs] received config_output_dir: {config_output_dir!r} (type={type(config_output_dir).__name__})")
-    config_output_dir = (
-        PathRef(config_output_dir).upath if config_output_dir is not None else None
-    )
-    print(f"[simulation_configs] resolved config_output_dir UPath: {config_output_dir!r}")
+    print(f"[simulation_configs] config_output_dir raw: {config_output_dir!r}")
+    input_ref = PathRef(config_output_dir) if config_output_dir is not None else None
+    cid = input_ref.cid if input_ref is not None else None
+    config_output_upath = input_ref.upath if input_ref is not None else None
+    print(f"[simulation_configs] config_output_upath={config_output_upath!r}  cid={cid!r}")
 
     config_path = simulation_config(
         scene_name,
@@ -259,9 +259,14 @@ def simulation_configs(
         target_size,
         gmt_hour,
         spp,
-        config_output_dir,
+        config_output_upath,
     )
-    return PathRef(config_path) if config_path is not None else None
+    print(f"[simulation_configs] config_path={config_path!r}")
+    if config_path is not None:
+        result = PathRef(value=str(config_path), cid=cid)
+        print(f"[simulation_configs] returning PathRef(value={result.value!r}, cid={result.cid!r})")
+        return result
+    return None
 
 
 @frascati_generation_simulation_workflow.step(
@@ -281,6 +286,10 @@ def frascati_simulation(scene_description_path: PathRef, config_path:
 PathRef, simulation_output_dir: PathRef | None) -> UPath:
     from s2gos_apps.processes.common.simulation import simulation
 
+    print(f"[frascati_simulation] scene_description_path raw: {scene_description_path!r}")
+    print(f"[frascati_simulation] config_path raw: {config_path!r}")
+    print(f"[frascati_simulation] simulation_output_dir raw: {simulation_output_dir!r}")
+
     def _to_upath(v, key=None):
         # Procodile may pass step output as the full dict {"output_key": value}
         # or as a PathRef-shaped dict {"value": "...", "cid": ...}, or as a
@@ -294,8 +303,15 @@ PathRef, simulation_output_dir: PathRef | None) -> UPath:
             return v.upath
         return UPath(str(v)) if v is not None else None
 
+    sdp = _to_upath(scene_description_path, "scene_description_path")
+    cp = _to_upath(config_path, "config_path")
+    sod = _to_upath(simulation_output_dir, "simulation_output_dir")
+    print(f"[frascati_simulation] resolved: scene_description_path={sdp!r}")
+    print(f"[frascati_simulation] resolved: config_path={cp!r}")
+    print(f"[frascati_simulation] resolved: simulation_output_dir={sod!r}")
+
     return simulation(
-        scene_description_path=_to_upath(scene_description_path, "scene_description_path"),
-        config_path=_to_upath(config_path, "config_path"),
-        simulation_output_dir=_to_upath(simulation_output_dir, "simulation_output_dir"),
+        scene_description_path=sdp,
+        config_path=cp,
+        simulation_output_dir=sod,
     )

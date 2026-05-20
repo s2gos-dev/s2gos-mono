@@ -262,6 +262,9 @@ class CachedDAGExecutor(DAGExecutor):
         for resource_id in self.registry.get_execution_order():
             resource = self.registry.get_resource(resource_id)
             context.dependency_outputs = results
+            is_optional = (
+                self.registry._categorize_resource(resource_id) == "optional"
+            )
 
             if resource_id in self.NEVER_CACHE:
                 logging.info("Cache skip: %s (always regenerate)", resource_id)
@@ -287,6 +290,14 @@ class CachedDAGExecutor(DAGExecutor):
                 try:
                     result = resource(context)
                 except Exception as exc:
+                    if is_optional:
+                        logging.warning(
+                            "Optional resource '%s' failed (skipping): %s",
+                            resource_id,
+                            exc,
+                        )
+                        results[resource_id] = None
+                        continue
                     raise RuntimeError(
                         f"Resource '{resource_id}' failed: {exc}"
                     ) from exc

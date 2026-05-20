@@ -164,9 +164,11 @@ def simulation_configs(
 ) -> PathRef | None:
     from s2gos_apps.sim_util import simulation_config
 
-    config_output_dir = (
-        PathRef(config_output_dir).upath if config_output_dir is not None else None
-    )
+    print(f"[frascati simulation_config] config_output_dir raw: {config_output_dir!r}")
+    input_ref = PathRef(config_output_dir) if config_output_dir is not None else None
+    cid = input_ref.cid if input_ref is not None else None
+    config_output_upath = input_ref.upath if input_ref is not None else None
+    print(f"[frascati simulation_config] config_output_upath={config_output_upath!r}  cid={cid!r}")
 
     config_path = simulation_config(
         scene_name,
@@ -175,6 +177,11 @@ def simulation_configs(
         target_size,
         gmt_hour,
         spp,
-        config_output_dir,
+        config_output_upath,
     )
-    return config_path
+    print(f"[frascati simulation_config] config_path={config_path!r}")
+    if config_path is not None:
+        result = PathRef(value=str(config_path), cid=cid)
+        print(f"[frascati simulation_config] returning PathRef(value={result.value!r}, cid={result.cid!r})")
+        return result
+    return None

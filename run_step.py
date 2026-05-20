@@ -91,6 +91,10 @@ def coerce_inputs(func, inputs: dict[str, Any]) -> dict[str, Any]:
                         value = ast.literal_eval(value)
                     except (ValueError, SyntaxError):
                         pass
+            # A procodile Workflow called directly returns {"return_value": result}
+            # instead of the bare result. Unwrap it so PathRef receives the path string.
+            if isinstance(value, dict) and "return_value" in value and "value" not in value:
+                value = value["return_value"]
             coerced[key] = model_cls(value)
         elif isinstance(value, str):
             # Fallback: JSON-parse strings that look like non-string scalars.
@@ -111,11 +115,39 @@ def resolve_function(module_name: str, qualname: str):
     *qualname* may be a dotted path to a nested attribute, e.g.
     ``"MyClass.my_method"``, which is walked attribute-by-attribute after the
     module is imported.
+
+    If a segment of *qualname* is ``"function"`` and the current object is a
+    procodile Workflow (which stores its main callable in registry.main), the
+    main function is extracted directly.  This handles both old procodile
+    builds (no .function property) and new ones transparently.
     """
     module = importlib.import_module(module_name)
     obj = module
     for attr in qualname.split("."):
-        obj = getattr(obj, attr)
+        try:
+            obj = getattr(obj, attr)
+        except AttributeError:
+            if (
+                attr == "function"
+                and hasattr(obj, "registry")
+                and hasattr(obj.registry, "main")
+            ):
+                try:
+                    main_id = next(iter(obj.registry.main))
+                    obj = obj.registry.main[main_id].function
+                except StopIteration:
+                    raise AttributeError(
+                        f"Workflow registry has no main step (attr={attr!r})"
+                    )
+            else:
+                raise
+
+    # If the resolved object is a procodile Step (has a .function attribute
+    # holding the original callable), use the bare function so that calling it
+    # returns the raw result rather than a procodile-wrapped output dict.
+    if hasattr(obj, "function") and callable(obj.function):
+        obj = obj.function
+
     return obj
 
 

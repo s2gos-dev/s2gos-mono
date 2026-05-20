@@ -265,9 +265,11 @@ def _process_vegetation_with_shared_datasets(
         f"Processing vegetation with {len(vegetation_config.landcover_species_mapping)} landcover classes"
     )
 
+    from s2gos_utils.io.paths import expand_mapper
+
     with (
-        xr.open_dataarray(landcover_path) as landcover_data,
-        xr.open_dataarray(dem_path) as dem_data,
+        xr.open_dataarray(expand_mapper(landcover_path), engine="zarr") as landcover_data,
+        xr.open_dataarray(expand_mapper(dem_path), engine="zarr") as dem_data,
     ):
         logging.info(
             f"Loaded datasets - Landcover: {landcover_data.dims}, DEM: {dem_data.dims}"
