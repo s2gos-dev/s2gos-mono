@@ -375,7 +375,7 @@ class EradiateBackend(SimulationBackend):
             sensor_config = self.eradiate_translator.get_sensor_by_id(measure_id)
             if sensor_config:
                 post_processed_dataset = self.sensor_processor.process_sensor_result(
-                    raw_dataset, sensor_config
+                    raw_dataset, sensor_config, output_dir=output_dir
                 )
 
                 if post_processed_dataset is not raw_dataset:
@@ -525,7 +525,7 @@ class EradiateBackend(SimulationBackend):
             sensor_config = self.eradiate_translator.get_sensor_by_id(measure_id)
             if sensor_config:
                 post_processed_dataset = self.sensor_processor.process_sensor_result(
-                    raw_dataset, sensor_config
+                    raw_dataset, sensor_config, output_dir=radiance_output_dir
                 )
 
                 if post_processed_dataset is not raw_dataset:

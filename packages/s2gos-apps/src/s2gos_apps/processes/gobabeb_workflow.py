@@ -167,7 +167,21 @@ def gobabeb_generation_simulation_workflow(
 )
 def gobabeb_generation(config_path: PathRef) -> PathRef:
     from s2gos_apps.processes.common.generation import generation
-    return generation(config_path=config_path)
+
+    print(f"[gobabeb_generation] config_path raw: {config_path!r}")
+    input_ref = PathRef(config_path) if config_path is not None else None
+    cid = input_ref.cid if input_ref is not None else None
+
+    result = generation(config_path=config_path)
+
+    # generation() is a Workflow; it wraps its return as {"return_value": upath}
+    if isinstance(result, dict) and "return_value" in result:
+        result = result["return_value"]
+
+    print(f"[gobabeb_generation] scene_description_path={result!r}  cid={cid!r}")
+    if result is not None:
+        return PathRef(value=str(result), cid=cid)
+    return None
 
 
 @gobabeb_generation_simulation_workflow.step(

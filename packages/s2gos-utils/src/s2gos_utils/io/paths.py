@@ -195,6 +195,8 @@ class PathRef(BaseModel):
 def to_upath(path: PathLike | PathRef) -> UPath:
     if isinstance(path, PathRef):
         return path.upath
+    elif isinstance(path, UPath):
+        return path  # preserve storage options / credentials
     else:
         return UPath(path)
 
@@ -392,7 +394,11 @@ def mkdir(
     path: PathLike, parents: bool = True, exist_ok: bool = True, **kwargs
 ) -> None:
     """Create directory using UPath (supports local and some remote protocols)."""
-    to_upath(path).mkdir(parents=parents, exist_ok=exist_ok, **kwargs)
+    p = to_upath(path)
+    protocol = getattr(p, "protocol", None)
+    if protocol in ("s3", "s3a"):
+        return  # S3 has no real directories; objects are created on write
+    p.mkdir(parents=parents, exist_ok=exist_ok, **kwargs)
 
 
 def copy(src: PathLike | PathRef, dst: PathLike | PathRef, **kwargs) -> None:

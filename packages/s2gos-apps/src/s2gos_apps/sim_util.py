@@ -113,7 +113,6 @@ def simulation_from_config(
     print("=" * 60)
     print("Simulating observation...")
 
-    scene_description_path = UPath(scene_description_path)
     scene_description = SceneDescription.load_yaml(scene_description_path)
 
     # Generate schema for reference
