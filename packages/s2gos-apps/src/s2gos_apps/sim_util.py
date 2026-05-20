@@ -87,6 +87,7 @@ def simulation_config(
     # Save simulation configuration
     config_filename = f"{scene_name}_sim_config.json"
 
+    print(f"  config_output_dir: {config_output_dir!r}")
     if config_output_dir is None:
         if not os.path.exists("./sim_config"):
             os.mkdir("./sim_config")
@@ -99,7 +100,7 @@ def simulation_config(
         config_path = config_output_dir / config_filename
 
     simulation_config.to_json(config_path)
-    print("  Saved: simulation_config.json")
+    print(f"  Saved: {config_path}")
     return config_path
 
 

@@ -260,8 +260,8 @@ class BaseTileProcessor(ABC):
 
     def _save_dataset(self, dataset: xr.Dataset, output_path: UPath) -> None:
         """Save dataset to zarr format with proper directory creation."""
-        from s2gos_utils.io.paths import mkdir
+        from s2gos_utils.io.paths import expand_mapper, mkdir
 
         mkdir(output_path.parent)
-        dataset.to_zarr(output_path, mode="w")
+        dataset.to_zarr(expand_mapper(output_path), mode="w")
         logging.info(f"{self.data_description} saved to {output_path}")

@@ -246,9 +246,11 @@ def simulation_configs(
 ) -> PathRef | None:
     from s2gos_apps.sim_util import simulation_config
 
+    print(f"[simulation_configs] received config_output_dir: {config_output_dir!r} (type={type(config_output_dir).__name__})")
     config_output_dir = (
         PathRef(config_output_dir).upath if config_output_dir is not None else None
     )
+    print(f"[simulation_configs] resolved config_output_dir UPath: {config_output_dir!r}")
 
     config_path = simulation_config(
         scene_name,
