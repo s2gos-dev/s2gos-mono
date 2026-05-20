@@ -23,7 +23,7 @@ generate(
   runtime_commands=[
       "COPY ./generator_resources /opt/pixi/packages/s2gos-generator/resources/data",
       "COPY ./extra_data /opt/pixi/hypstar_data",
-      "RUN /opt/pixi/.pixi/envs/default/bin/eradiate data install core gecko monotropa",
+      "RUN XDG_CACHE_HOME=/opt/pixi/cache /opt/pixi/.pixi/envs/default/bin/eradiate data install core gecko monotropa",
       "RUN /opt/pixi/.pixi/envs/default/bin/python -c \"import s2gos_apps; print('s2gos_apps OK')\"",
   ],
 )
@@ -48,3 +48,7 @@ image_packages = Path("image/packages")
 if image_packages.exists():
     shutil.rmtree(image_packages)
 shutil.copytree("packages", image_packages)
+
+# run_step.py is hand-maintained at the project root; always overwrite what
+# appligator may have placed in image/ so the build context stays in sync.
+shutil.copy("run_step.py", "image/run_step.py")
