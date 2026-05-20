@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import trimesh
 import xarray as xr
+from s2gos_utils.io.paths import expand_mapper
 from upath import UPath
 
 
@@ -149,7 +150,7 @@ class MeshGenerator:
             The generated mesh.
         """
 
-        dem_dataset = xr.open_zarr(dem_file_path)
+        dem_dataset = xr.open_zarr(expand_mapper(dem_file_path))
         dem_data = dem_dataset["elevation"]
 
         if isinstance(dem_data, xr.Dataset):

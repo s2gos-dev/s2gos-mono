@@ -7,6 +7,7 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 from PIL import Image
+from s2gos_utils.io.paths import expand_mapper
 
 from ..assets.terrain_material import TerrainMaterialGenerator
 from ..core.context import SceneResourceContext
@@ -44,7 +45,7 @@ def _apply_region_materials_to_array(
     Returns:
         (texture_2d, modified) where modified is True if any pixels were changed.
     """
-    with xr.open_zarr(landcover_path) as ds:
+    with xr.open_zarr(expand_mapper(landcover_path)) as ds:
         landcover_data = ds[list(ds.data_vars)[0]]
         width_px = len(landcover_data.coords["x"].values)
         height_px = len(landcover_data.coords["y"].values)
