@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import xarray as xr
 from PIL import Image
-from s2gos_utils.io.paths import open_dataset
+from s2gos_utils.io.paths import expand_mapper, open_dataset
 from upath import UPath
 
 PERMANENT_WATER_MATERIAL_INDEX = 7
@@ -419,7 +419,7 @@ class TerrainMaterialGenerator:
             Tuple of (selection_texture_path, preview_texture_path).
         """
 
-        landcover_dataset = xr.open_zarr(landcover_file_path)
+        landcover_dataset = xr.open_zarr(expand_mapper(landcover_file_path))
         landcover_data = landcover_dataset["landcover"]
 
         if isinstance(landcover_data, xr.Dataset):
@@ -433,7 +433,7 @@ class TerrainMaterialGenerator:
         # Load DEM if provided for seasonal snow adjustment
         dem_data = None
         if dem_file_path is not None:
-            dem_dataset = xr.open_zarr(dem_file_path)
+            dem_dataset = xr.open_zarr(expand_mapper(dem_file_path))
             dem_data = dem_dataset["elevation"]
 
         selection_path = output_dir / f"{base_name}_selection.png"
