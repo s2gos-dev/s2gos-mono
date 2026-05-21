@@ -8,10 +8,13 @@ from .context import SceneResourceContext
 class Resource:
     """Represents a single resource with dependencies."""
 
-    def __init__(self, id: str, dependencies: List[str], func: Callable):
+    def __init__(
+        self, id: str, dependencies: List[str], func: Callable, optional: bool = False
+    ):
         self.id = id
         self.dependencies = dependencies or []
         self.func = func
+        self.optional = optional
 
     def __call__(self, ctx: SceneResourceContext) -> Optional[Path]:
         """Execute the resource function."""
@@ -24,9 +27,11 @@ class ResourceRegistry:
     def __init__(self):
         self.resources: Dict[str, Resource] = {}
 
-    def register(self, id: str, dependencies: List[str], func: Callable):
+    def register(
+        self, id: str, dependencies: List[str], func: Callable, optional: bool = False
+    ):
         """Register a resource explicitly."""
-        self.resources[id] = Resource(id, dependencies, func)
+        self.resources[id] = Resource(id, dependencies, func, optional=optional)
 
     def get_resource(self, id: str) -> Resource:
         """Get a resource by ID."""
@@ -136,7 +141,7 @@ class DAGExecutor:
                 result = resource(context)
                 results[resource_id] = result
             except Exception as e:
-                if self.registry._categorize_resource(resource_id) == "optional":
+                if resource.optional:
                     logging.warning(
                         "Optional resource '%s' failed (skipping): %s", resource_id, e
                     )
