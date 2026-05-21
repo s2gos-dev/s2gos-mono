@@ -1,0 +1,21 @@
+image_name: quay.io/s2gos/s2gos-mono:<version>  # e.g. 0.1.8
+
+secret_names:
+  - s2gos-credentials  # k8s Secret mounted as env vars into every KPO pod
+
+cpu_request: "2"
+memory_request: "8Gi"
+cpu_limit: "4"
+memory_limit: "16Gi"
+
+# Remove this block if using S3 for inter-step output (recommended)
+# pvc_mounts:
+#   - name: s2gos-output
+#     claim_name: s2gos-output-pvc
+#     mount_path: /mnt/s2gos-output
+
+config_map_mounts:
+  - name: s2gos-settings
+    config_map_name: s2gos-settings
+    mount_path: /opt/pixi/
+    sub_path: s2gos_settings.yaml  # omit to mount the whole ConfigMap as a directory

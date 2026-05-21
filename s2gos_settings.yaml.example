@@ -1,0 +1,44 @@
+# s2gos_settings.yaml — copy to s2gos_settings.yaml and fill in your values.
+# Secrets (tokens, keys) belong in .secrets.yaml, not here.
+
+## ========================================================================== ##
+common:
+## ========================================================================== ##
+    # Directories the file resolver searches for assets (materials, spectra, etc.)
+    search_paths:
+        - "/opt/pixi/packages/s2gos-generator/resources/data"
+        - "/opt/pixi/hypstar_data"
+
+    local_fsspec_cache: "/tmp/fsspec_cache"  # optional, defaults to ./tmp/fsspec_cache
+
+    # How credentials are resolved inside pods:
+    #   dynaconf    — reads .secrets.yaml (suitable for local runs)
+    #   environment — reads S2GOS_CREDENTIALS__<cid>__* env vars (required in k8s pods)
+    credential_provider: "environment"
+
+## ========================================================================== ##
+generator:
+## ========================================================================== ##
+    dataset:
+        dem:
+            name: "Copernicus-DEM-30"   # optional, human-readable label
+            crs: "EPSG:4326"            # optional, defaults to EPSG:4326
+
+            type: "zarr"
+            path:
+                value: "https://data.earthdatahub.destine.eu/copernicus-dem/GLO-30-v0.zarr"
+                cid: "edh"              # credential ID — must exist in s2gos-credentials secret
+            variable_name: dsm          # optional but recommended
+
+        landcover:
+            name: "ESA Worldcover 2021" # optional
+            crs: "EPSG:4326"            # optional
+
+            type: "zarr"
+            path:
+                value: "s3://<your-bucket>/worldcover.zarr"
+                cid: "<your-s3-cid>"    # credential ID for S3 access
+            variable_name: wc           # optional but recommended
+
+    files:
+        material_config: "./materials.json"  # resolved by the file resolver above
