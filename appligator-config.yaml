@@ -1,4 +1,4 @@
-image_name: quay.io/s2gos/s2gos-mono:0.0.15
+image_name: quay.io/s2gos/s2gos-mono:0.1.8
 
 secret_names:
   - s2gos-credentials
