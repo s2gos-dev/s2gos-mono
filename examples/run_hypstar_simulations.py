@@ -52,7 +52,7 @@ from upath import UPath
 # ==============================================================================
 
 # Input / Output Paths (resolved via s2gos_settings.toml -> ./hypstar_data/)
-HYPSTAR_L2A_PATH = "/home/gonzalezm/s2gos/s2gos/experimenting/gobabeb_hypernets/HYPERNETS_L_GHNA_L2A_REF_20220517T0743_20230424T0625_v1.0.nc"
+HYPSTAR_L2A_PATH = "/home/s2gos-mono/extra_data/HYPERNETS_L_GHNA_L2A_REF_20220517T0743_20230424T0625_v1.0.nc"
 OUTPUT_DIR = Path("./hypstar_simulation_output")
 SIM_DIR = OUTPUT_DIR / "simulations"
 SCENE_NAME = "hypstar_gobabeb"
@@ -237,7 +237,6 @@ def build_scene_config(resolved_paths: dict) -> object:
         center_lat=TARGET_COORDS[0],
         center_lon=TARGET_COORDS[1],
         aoi_size_km=10.0,
-        target_resolution_m=10.0,
         output_dir=UPath(OUTPUT_DIR) / "scene",
         description="HYPSTAR validation scene",
     )
@@ -337,14 +336,15 @@ def build_sim_config(idx: int, geo: dict, l2a_path: str) -> SimulationConfig:
                     zenith=geo["vza"],
                     azimuth=geo["vaa"],
                     up=[0, 0, 1] if geo["vza"] != 180 else [0, 1, 0],
-                    terrain_relative_height=True,
+                    # terrain_relative_height=True,
+                    relative_to_asset="hypernets_mast_better.xml",
                 ),
                 fov=5.0,
                 resolution=(128, 128),
                 reference_file=l2a_path,
                 sensor_id=sensor_id,
                 samples_per_pixel=SENSOR_SAMPLES,
-            )
+            ),
         ],
         # Measurements (Irradiance + HCRF)
         measurements=[
@@ -354,7 +354,7 @@ def build_sim_config(idx: int, geo: dict, l2a_path: str) -> SimulationConfig:
                     target_lat=TARGET_COORDS[0],
                     target_lon=TARGET_COORDS[1],
                     height_offset_m=IRR_HEIGHT,
-                    srf=SpectralResponse(type="uniform", wmin=379, wmax=1681),
+                    srf=SpectralResponse(type="uniform", wmin=375, wmax=1685),
                     samples_per_pixel=IRR_SAMPLES,
                 ),
             ),

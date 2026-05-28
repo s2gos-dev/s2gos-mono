@@ -151,7 +151,7 @@ class BRFProcessor:
                         output_dir / f"{self.simulation_config.name}_{config.id}.zarr"
                     )
                     brf_ds.attrs["id"] = config.id
-                    brf_ds.to_zarr(output_path, mode="w")
+                    brf_ds.to_zarr(str(output_path), mode="w")
                     logger.info(f"Saved BRF '{config.id}' to {output_path}")
 
             except Exception as e:

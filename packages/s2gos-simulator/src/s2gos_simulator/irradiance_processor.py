@@ -263,8 +263,8 @@ class IrradianceProcessor:
             result_ds = xr.Dataset(dataset_vars)
 
             output_file = output_dir / f"{config.id}.zarr"
-            result_ds.to_zarr(output_file, mode="w")
-            logger.info(f"  ✓ Saved {output_file.name}")
+            result_ds.to_zarr(str(output_file), mode="w")
+            logger.info(f"  ✓ Saved {output_file}")
 
             results[config.id] = result_ds
 

@@ -51,8 +51,8 @@ class ResultProcessor:
             dataset.attrs["sensor_id"] = sensor_id
             dataset.attrs["result_type"] = result_type
 
-            dataset.to_zarr(sensor_output, mode="w")
-            logger.info(f"Saved '{sensor_id}' → {sensor_output.name}")
+            dataset.to_zarr(str(sensor_output), mode="w")
+            logger.info(f"Saved '{sensor_id}' → {sensor_output}")
 
             return True
 
