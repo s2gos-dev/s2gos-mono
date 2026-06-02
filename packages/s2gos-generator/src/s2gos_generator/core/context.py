@@ -3,6 +3,7 @@
 import logging
 from typing import Dict, List, Optional
 
+from shapely.geometry import box
 from upath import UPath
 
 from .assets import SceneAssets
@@ -49,7 +50,8 @@ class SceneResourceContext:
         self.center_lat = config.location.center_lat
         self.center_lon = config.location.center_lon
         self.aoi_size_km = config.location.aoi_size_km
-        self.target_resolution_m = config.target_resolution_m
+        self.dem_resolution_m = config.dem_resolution_m
+        self.landcover_resolution_m = config.landcover_resolution_m
 
         # Scene-specific data
         self.assets = SceneAssets()
@@ -58,11 +60,14 @@ class SceneResourceContext:
 
         # AOI polygon storage for geometric operations
         self._target_aoi_polygon: Optional[object] = None
+        self._target_scene_bounds: Optional[object] = None
         self._buffer_aoi_polygon: Optional[object] = None
         self._background_aoi_polygon: Optional[object] = None
 
         self._coord_system: Optional[object] = None
         self._exclusion_zone_geometries: Optional[list] = None
+        self._roads: Optional[list] = None
+        self._road_polygons_by_material: Optional[dict] = None
 
     @property
     def user_assets(self):
@@ -106,18 +111,15 @@ class SceneResourceContext:
             self._target_aoi_polygon = self.coordinate_system.create_scene_polygon(
                 self.aoi_size_km
             )
-            corners = list(self._target_aoi_polygon.exterior.coords[:-1])
-            logging.info("AOI corners (lon, lat):")
-            for i, (lon, lat) in enumerate(corners):
-                logging.info("  Corner %d: (%.6f, %.6f)", i + 1, lat, lon)
-            logging.info(
-                "AOI polygon: %.1fkm × %.1fkm at (%.6f, %.6f)",
-                self.aoi_size_km,
-                self.aoi_size_km,
-                self.center_lat,
-                self.center_lon,
-            )
         return self._target_aoi_polygon
+
+    @property
+    def target_scene_bounds(self):
+        """Lazy axis-aligned scene-coord clip bounds for the target AOI."""
+        if self._target_scene_bounds is None:
+            half = (self.aoi_size_km * 1000) / 2
+            self._target_scene_bounds = box(-half, -half, half, half)
+        return self._target_scene_bounds
 
     @property
     def buffer_aoi_polygon(self):
@@ -136,6 +138,67 @@ class SceneResourceContext:
                 self.config.background.size_km
             )
         return self._background_aoi_polygon
+
+    def _load_roads_from_sidecar(self) -> list:
+        import json
+
+        from shapely.geometry import shape
+
+        if self.assets.roads_file is None:
+            return []
+        try:
+            with open(str(self.assets.roads_file), "r") as f:
+                data = json.load(f)
+            version = data.get("version", 1)
+            if version != 1:
+                logging.warning(
+                    "Unknown road sidecar version %s; skipping roads", version
+                )
+                return []
+            from ..resources.roads import Road
+
+            result = []
+            for layer in data.get("road_layers", []):
+                mat = layer["material_name"]
+                for r in layer.get("roads", []):
+                    result.append(
+                        Road(
+                            centerline=shape(r["centerline"]),
+                            width=r["width"],
+                            material=mat,
+                        )
+                    )
+            return result
+        except (json.JSONDecodeError, KeyError) as exc:
+            logging.warning("Failed to load roads from sidecar: %s", exc)
+            return []
+
+    @property
+    def roads(self) -> list:
+        """All road segments, lazily loaded from the roads sidecar."""
+        if self._roads is None:
+            self._roads = self._load_roads_from_sidecar()
+        return self._roads
+
+    @property
+    def road_polygons_by_material(self) -> dict:
+        """Merged road footprints per material, derived from the roads list.
+
+        Computed once and cached. Each value is the unary_union of all buffered
+        centerlines for that material — the same geometry the texture painter and
+        vegetation filter need, without storing it redundantly in the sidecar.
+        """
+        if self._road_polygons_by_material is None:
+            from shapely.ops import unary_union
+
+            by_mat: dict[str, list] = {}
+            for road in self.roads:
+                poly = road.centerline.buffer(road.width / 2, cap_style="flat")
+                by_mat.setdefault(road.material, []).append(poly)
+            self._road_polygons_by_material = {
+                mat: unary_union(polys) for mat, polys in by_mat.items()
+            }
+        return self._road_polygons_by_material
 
     @property
     def exclusion_zone_geometries(self) -> list:

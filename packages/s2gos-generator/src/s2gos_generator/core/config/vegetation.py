@@ -219,6 +219,15 @@ class VegetationSpecies(BaseModel):
     }
 
 
+class RoadExclusionConfig(BaseModel):
+    """Controls how vegetation reacts to road geometry."""
+
+    enabled: bool = Field(True, description="Exclude vegetation from road footprints")
+    buffer_m: float = Field(
+        2.0, ge=0.0, description="Extra buffer (m) around road polygons"
+    )
+
+
 class VegetationPlacementConfig(BaseModel):
     """Configuration for multi-species vegetation placement system.
 
@@ -239,7 +248,7 @@ class VegetationPlacementConfig(BaseModel):
             10: [
                 VegetationSpecies(
                     name="oak_trees",
-                    asset_xml_path="tree.xml",
+                    asset_xml_paths=["tree.xml"],
                     density_per_hectare=400.0,
                     scale_min=10.0,
                     scale_max=35.0,
@@ -293,6 +302,7 @@ class VegetationPlacementConfig(BaseModel):
         ge=0,
         description="Random seed for reproducible scene generation. If None, uses system entropy.",
     )
+    road_exclusion: RoadExclusionConfig = Field(default_factory=RoadExclusionConfig)
 
     model_config = {
         "validate_assignment": True,

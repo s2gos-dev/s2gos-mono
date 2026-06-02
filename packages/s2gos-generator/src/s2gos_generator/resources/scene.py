@@ -9,6 +9,7 @@ from s2gos_utils.io.paths import open_file
 from upath import UPath
 
 from ..core.context import SceneResourceContext
+from ..core.materials import build_material_index_map, landcover_material_to_index
 from ..scene import create_s2gos_scene
 
 
@@ -90,12 +91,14 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
     if ctx.config.region_material_defs:
         additional_material_libraries.append(ctx.config.region_material_defs)
 
-    region_material_indices = None
-    if ctx.config.material_regions:
-        names = sorted(set(r.material_name for r in ctx.config.material_regions))
-        region_material_indices = {
-            name: idx for idx, name in enumerate(names, start=11)
-        }
+    full_index_map = build_material_index_map(ctx)
+    landcover_names = set(
+        landcover_material_to_index(
+            ctx.config.data_sources.material_config_path.upath
+        ).keys()
+    )
+    overlay_only = {k: v for k, v in full_index_map.items() if k not in landcover_names}
+    region_material_indices = overlay_only or None
 
     # Build include_files from available sidecars
     include_files = []
@@ -115,7 +118,7 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         center_lat=ctx.center_lat,
         center_lon=ctx.center_lon,
         aoi_size_km=ctx.aoi_size_km,
-        resolution_m=ctx.target_resolution_m,
+        resolution_m=ctx.dem_resolution_m,
         buffer_mesh_path=buffer_mesh_path,
         buffer_texture_path=buffer_texture_path,
         buffer_size_km=buffer_size_km,

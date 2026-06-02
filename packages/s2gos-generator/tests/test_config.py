@@ -35,7 +35,6 @@ def sample_scene_location():
 @pytest.fixture
 def sample_processing_options():
     return ProcessingOptions(
-        target_resolution_m=30.0,
         generate_texture_preview=True,
         handle_dem_nans=True,
     )

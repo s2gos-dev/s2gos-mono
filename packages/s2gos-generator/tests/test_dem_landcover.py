@@ -9,7 +9,8 @@ def mock_ctx(tmp_path):
     ctx.data_dir = tmp_path
     ctx.meshes_dir = tmp_path
     ctx.scene_name = "test_scene"
-    ctx.target_resolution_m = 30.0
+    ctx.dem_resolution_m = 30.0
+    ctx.landcover_resolution_m = 30.0
     ctx.aoi_size_km = 10.0
     ctx.center_lat = 45.0
     ctx.center_lon = 15.0

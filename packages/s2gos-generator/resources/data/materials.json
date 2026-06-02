@@ -68,23 +68,11 @@
         "variable": "rho_c"
       }
     },
-    "baresoil": {
-      "type": "rpv",
-      "rho_0": {
-        "path": "spectra/spectrum_baresoil_low.nc",
-        "variable": "rho_0"
-      },
-      "k": {
-        "path": "spectra/spectrum_baresoil_low.nc",
-        "variable": "k"
-      },
-      "Theta": {
-        "path": "spectra/spectrum_baresoil_low.nc",
-        "variable": "Theta"
-      },
-      "rho_c": {
-        "path": "spectra/spectrum_baresoil_low.nc",
-        "variable": "rho_c"
+   "baresoil": {
+      "type": "diffuse",
+      "reflectance": {
+        "path": "spectra/spectrum_baresoil_high.nc",
+        "variable": "reflectance"
       }
     },
     "wetland": {
@@ -138,6 +126,20 @@
       "type": "rough_conductor",
       "material": "Al",
       "roughness": 1.0
+    },
+    "asphalt": {
+      "type": "diffuse",
+      "reflectance": {
+        "path": "spectra/spectrum_paving_asphalt.nc",
+        "variable": "reflectance"
+      }
+    },
+    "gravel_road": {
+      "type": "diffuse",
+      "reflectance": {
+        "path": "spectra/spectrum_gravel_road.nc",
+        "variable": "reflectance"
+      }
     }
   },
   "landcover_mapping": {

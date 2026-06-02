@@ -45,11 +45,11 @@ def process_target_landcover(ctx: SceneResourceContext) -> Optional[Path]:
         raise ValueError("Target AOI polygon not found in context")
 
     output_path = _process_landcover(
-        ctx, aoi_polygon, ctx.target_resolution_m, "landcover", ctx.aoi_size_km
+        ctx, aoi_polygon, ctx.landcover_resolution_m, "landcover", ctx.aoi_size_km
     )
     ctx.assets.landcover_file = output_path
 
-    logging.info(f"Target landcover ({ctx.target_resolution_m}m): {output_path}")
+    logging.info(f"Target landcover ({ctx.landcover_resolution_m}m): {output_path}")
     return output_path
 
 

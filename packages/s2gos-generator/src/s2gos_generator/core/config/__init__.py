@@ -26,6 +26,8 @@ from .atmosphere import (
     create_heterogeneous_atmosphere_config,
     create_molecular_atmosphere_config,
 )
+from .mesh_refinement import MeshRefinementConfig
+from .roads import HighwayOverride, RoadsConfig
 from .scene import (
     BackgroundConfig,
     BufferConfig,
@@ -83,6 +85,11 @@ __all__ = [
     "XmlSceneConfig",
     "MaterialRegion",
     "load_assets_from_xml",
+    # mesh_refinement
+    "MeshRefinementConfig",
+    # roads
+    "HighwayOverride",
+    "RoadsConfig",
     # scene
     "Month",
     "SceneLocation",

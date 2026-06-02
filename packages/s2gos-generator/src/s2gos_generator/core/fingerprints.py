@@ -35,7 +35,7 @@ class ResourceFingerprints:
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "aoi_size_km": config.location.aoi_size_km,
-            "target_resolution_m": config.target_resolution_m,
+            "dem_resolution_m": config.dem_resolution_m,
             "dem": config.data_sources.dem.model_dump(),
             "dem_fillna_value": config.processing.dem_fillna_value,
             "flatten_dem": config.processing.flatten_dem,
@@ -61,7 +61,7 @@ class ResourceFingerprints:
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "aoi_size_km": config.location.aoi_size_km,
-            "target_resolution_m": config.target_resolution_m,
+            "landcover_resolution_m": config.landcover_resolution_m,
             "landcover": config.data_sources.landcover.model_dump(),
         }
 
@@ -93,11 +93,24 @@ class ResourceFingerprints:
 
     @staticmethod
     def _target_mesh(config) -> dict:
-        return {"handle_dem_nans": config.processing.handle_dem_nans}
+        fp = {"handle_dem_nans": config.processing.handle_dem_nans}
+        mesh_ref = getattr(config, "mesh_refinement", None)
+        if mesh_ref is not None:
+            fp["mesh_refinement"] = mesh_ref.model_dump()
+        return fp
 
     @staticmethod
     def _buffer_mesh(config) -> dict:
         return {"handle_dem_nans": config.processing.handle_dem_nans}
+
+    @staticmethod
+    def _target_roads(config) -> dict:
+        return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "aoi_size_km": config.location.aoi_size_km,
+            "roads": config.roads.model_dump() if config.roads else None,
+        }
 
     @staticmethod
     def _target_texture(config) -> dict:
@@ -107,6 +120,8 @@ class ResourceFingerprints:
         return {
             "snow": config.snow.model_dump() if config.snow else None,
             "material_regions": target_regions,
+            "roads_enabled": config.roads.enabled if config.roads is not None else None,
+            "texture_resolution_m": config.texture_resolution_m,
             "generate_texture_preview": config.processing.generate_texture_preview,
         }
 
@@ -171,6 +186,8 @@ class ResourceFingerprints:
                 if config.vegetation_placement
                 else None
             ),
+            "texture_resolution_m": config.texture_resolution_m,
+            "landcover_resolution_m": config.landcover_resolution_m,
         }
 
     @staticmethod
@@ -184,7 +201,7 @@ class ResourceFingerprints:
                 config.background.size_km if config.background else None
             ),
             "hamster": config.hamster.model_dump() if config.hamster else None,
-            "target_resolution_m": config.target_resolution_m,
+            "landcover_resolution_m": config.landcover_resolution_m,
             "buffer_resolution_m": config.buffer.resolution_m
             if config.buffer
             else None,

@@ -9,10 +9,16 @@ class Resource:
     """Represents a single resource with dependencies."""
 
     def __init__(
-        self, id: str, dependencies: List[str], func: Callable, optional: bool = False
+        self,
+        id: str,
+        dependencies: List[str],
+        func: Callable,
+        optional: bool = False,
+        optional_deps: Optional[List[str]] = None,
     ):
         self.id = id
-        self.dependencies = dependencies or []
+        self.dependencies = list(dependencies or [])
+        self.optional_deps = list(optional_deps or [])
         self.func = func
         self.optional = optional
 
@@ -28,10 +34,25 @@ class ResourceRegistry:
         self.resources: Dict[str, Resource] = {}
 
     def register(
-        self, id: str, dependencies: List[str], func: Callable, optional: bool = False
+        self,
+        id: str,
+        dependencies: List[str],
+        func: Callable,
+        *,
+        optional: bool = False,
+        optional_deps: Optional[List[str]] = None,
     ):
-        """Register a resource explicitly."""
-        self.resources[id] = Resource(id, dependencies, func, optional=optional)
+        """Register a resource explicitly.
+
+        Args:
+            id: Unique resource identifier.
+            dependencies: Required dependencies that must run before this resource.
+            func: Resource function to execute.
+            optional: If True, resource failures are skipped with a warning.
+            optional_deps: Optional dependencies — added to the required list only if
+                they are already registered when ``update_scene_dependencies`` runs.
+        """
+        self.resources[id] = Resource(id, dependencies, func, optional=optional, optional_deps=optional_deps)
 
     def get_resource(self, id: str) -> Resource:
         """Get a resource by ID."""
@@ -97,7 +118,13 @@ class ResourceRegistry:
             return "optional"
 
     def update_scene_dependencies(self):
-        """Update scene_description dependencies based on currently registered resources."""
+        """Resolve optional deps and update scene_description dependencies."""
+        # Wire optional deps
+        for resource in self.resources.values():
+            for opt in resource.optional_deps:
+                if opt in self.resources and opt not in resource.dependencies:
+                    resource.dependencies.append(opt)
+
         if "scene_description" not in self.resources:
             return
 
