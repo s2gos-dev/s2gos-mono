@@ -93,8 +93,9 @@ class AtmosphereBuilder:
             import xarray as xr
             from upath import UPath
 
+            from s2gos_utils.io.paths import open_dataset
             thermoprops_file = UPath(mol_dict["thermoprops_file"])
-            thermoprops = xr.open_dataset(thermoprops_file).squeeze(drop=True)
+            thermoprops = open_dataset(thermoprops_file).squeeze(drop=True)
         else:
             thermoprops_id = mol_dict.get(
                 "thermoprops_identifier", "afgl_1986-us_standard"
