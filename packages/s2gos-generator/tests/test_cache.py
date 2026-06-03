@@ -119,6 +119,7 @@ def minimal_config() -> Any:
         vegetation_exclusion_zones=[],
         vegetation_placement=None,
         hamster=None,
+        roads=None,
     )
 
 
@@ -150,7 +151,7 @@ class TestHashingAndFingerprints:
         )
         assert (
             ResourceFingerprints.get("target_texture", cfg)["texture_resolution_m"]
-            is None
+            is not None
         )
         assert "snow" not in ResourceFingerprints.get("background_texture", cfg)
 
@@ -344,7 +345,7 @@ class TestCachedDAGExecutor:
         """Resource exceptions are re-raised as RuntimeError with the original cause."""
         r = ResourceRegistry()
         r.register(
-            "failing_res", [], lambda ctx: (_ for _ in ()).throw(ValueError("boom"))
+            "target_dem", [], lambda ctx: (_ for _ in ()).throw(ValueError("boom"))
         )
         executor = CachedDAGExecutor(r)
         ctx = _make_ctx(tmp_path, config=minimal_config)
