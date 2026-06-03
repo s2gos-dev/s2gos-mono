@@ -1,8 +1,11 @@
+import logging
 import os
 import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 from s2gos_simulator.backends.eradiate.backend import (
@@ -55,9 +58,8 @@ def simulation_config(
         UPath(config_output_dir) if config_output_dir is not None else None
     )
 
-    print("\n")
-    print("=" * 60)
-    print("Configuring simulation...")
+    logger.info("=" * 60)
+    logger.info("Configuring simulation...")
 
     # create top down sensor
     fov = 50
@@ -78,19 +80,19 @@ def simulation_config(
         backend_hints={"eradiate": {"mode": "mono"}},
     )
 
-    print("Simulation configured:")
-    print(f"  Sensors: {len(simulation_config.sensors)}")
+    logger.info("Simulation configured:")
+    logger.info(f"  Sensors: {len(simulation_config.sensors)}")
     for i, sensor in enumerate(simulation_config.sensors):
         platform = sensor.platform_type.value
         instrument = getattr(sensor, "instrument", "N/A")
         if hasattr(instrument, "value"):
             instrument = instrument.value
-        print(f"    {i + 1}. {sensor.id} ({platform}/{instrument})")
+        logger.info(f"    {i + 1}. {sensor.id} ({platform}/{instrument})")
 
     # Save simulation configuration
     config_filename = f"{scene_name}_sim_config.json"
 
-    print(f"  config_output_dir: {config_output_dir!r}")
+    logger.info(f"  config_output_dir: {config_output_dir!r}")
     if config_output_dir is None:
         if not os.path.exists("./sim_config"):
             os.mkdir("./sim_config")
@@ -103,7 +105,7 @@ def simulation_config(
         config_path = config_output_dir / config_filename
 
     simulation_config.to_json(config_path)
-    print(f"  Saved: {config_path}")
+    logger.info(f"  Saved: {config_path}")
     return config_path
 
 
@@ -119,7 +121,7 @@ def _download_scene_assets(s3_scene_dir: UPath, local_dir: Path) -> None:
     Uses fs.find() + fs.open() directly on the authenticated filesystem so
     child paths cannot silently lose credentials (unlike rglob).
     """
-    print(f"  Downloading scene assets from {s3_scene_dir} → {local_dir}")
+    logger.info(f"  Downloading scene assets from {s3_scene_dir} → {local_dir}")
     downloaded = 0
     fs = s3_scene_dir.fs
     s3_prefix = s3_scene_dir.path.rstrip("/")
@@ -133,7 +135,7 @@ def _download_scene_assets(s3_scene_dir: UPath, local_dir: Path) -> None:
         with fs.open(file_path_str, "rb") as src, open(local_path, "wb") as dst:
             dst.write(src.read())
         downloaded += 1
-    print(f"  Downloaded {downloaded} scene asset(s)")
+    logger.info(f"  Downloaded {downloaded} scene asset(s)")
 
 
 def simulation_from_config(
@@ -141,9 +143,8 @@ def simulation_from_config(
     config: SimulationConfig,
     simulation_output_dir: UPath | None = None,
 ) -> UPath | None:
-    print("\n")
-    print("=" * 60)
-    print("Simulating observation...")
+    logger.info("=" * 60)
+    logger.info("Simulating observation...")
 
     scene_description = SceneDescription.load_yaml(scene_description_path)
 
@@ -153,13 +154,13 @@ def simulation_from_config(
 
     # Step 4: Run simulation (if available)
     if ERADIATE_AVAILABLE and scene_description:
-        print("\nValidating materials and running simulation...")
+        logger.info("Validating materials and running simulation...")
 
         available_materials = list(scene_description.materials.keys())
         objects_to_check = scene_description.objects
 
         if available_materials:
-            print(f"Available materials: {available_materials}")
+            logger.info(f"Available materials: {available_materials}")
 
             # Check objects for invalid material references
             material_issues = []
@@ -172,18 +173,18 @@ def simulation_from_config(
                         )
 
             if material_issues:
-                print("WARNING: Material validation found issues:")
+                logger.warning("Material validation found issues:")
                 for issue in material_issues:
-                    print(f"  - {issue}")
-                print(
-                    "Note: Material validation issues found, but simulation may still work"
+                    logger.warning(f"  - {issue}")
+                logger.warning(
+                    "Material validation issues found, but simulation may still work"
                 )
             else:
-                print(
+                logger.info(
                     f"OK: All {len(objects_to_check)} object material references are valid"
                 )
         else:
-            print("Skipping detailed material validation - using scene file as-is")
+            logger.info("Skipping detailed material validation - using scene file as-is")
 
         scene_input = scene_description
 
@@ -213,18 +214,18 @@ def simulation_from_config(
                 if tmp_dir:
                     shutil.rmtree(tmp_dir, ignore_errors=True)
 
-            print("Simulation completed successfully!")
+            logger.info("Simulation completed successfully!")
         else:
-            print("Skipping simulation - no valid scene description available")
+            logger.info("Skipping simulation - no valid scene description available")
     else:
-        print("\nSimulation skipped")
+        logger.info("Simulation skipped")
         if not ERADIATE_AVAILABLE:
-            print("  Eradiate not available")
+            logger.info("  Eradiate not available")
         if not scene_description:
-            print("  Scene generation failed")
+            logger.info("  Scene generation failed")
 
     # Summary
-    print("\n" + "=" * 60)
-    print(f"Output directory: {simulation_output_dir}")
+    logger.info("=" * 60)
+    logger.info(f"Output directory: {simulation_output_dir}")
 
     return simulation_output_dir
