@@ -257,6 +257,7 @@ class TerrainMaterialGenerator:
         mkdir(output_path.parent)
         image = Image.fromarray(texture, mode="L")
         import io
+
         buf = io.BytesIO()
         image.save(buf, format="PNG")
         with output_path.open("wb") as f:
@@ -280,6 +281,7 @@ class TerrainMaterialGenerator:
         mkdir(output_path.parent)
         image = Image.fromarray(texture, mode="RGB")
         import io
+
         buf = io.BytesIO()
         image.save(buf, format="PNG")
         with output_path.open("wb") as f:

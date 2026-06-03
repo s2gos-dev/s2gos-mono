@@ -127,7 +127,7 @@ def _download_scene_assets(s3_scene_dir: UPath, local_dir: Path) -> None:
         suffix = Path(file_path_str).suffix.lower()
         if suffix not in _MITSUBA_EXTENSIONS:
             continue
-        rel = file_path_str[len(s3_prefix):].lstrip("/")
+        rel = file_path_str[len(s3_prefix) :].lstrip("/")
         local_path = local_dir / rel
         local_path.parent.mkdir(parents=True, exist_ok=True)
         with fs.open(file_path_str, "rb") as src, open(local_path, "wb") as dst:

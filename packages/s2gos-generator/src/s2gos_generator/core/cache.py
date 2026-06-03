@@ -263,9 +263,7 @@ class CachedDAGExecutor(DAGExecutor):
         for resource_id in self.registry.get_execution_order():
             resource = self.registry.get_resource(resource_id)
             context.dependency_outputs = results
-            is_optional = (
-                self.registry._categorize_resource(resource_id) == "optional"
-            )
+            is_optional = self.registry._categorize_resource(resource_id) == "optional"
 
             if resource_id in self.NEVER_CACHE:
                 logging.info("Cache skip: %s (always regenerate)", resource_id)

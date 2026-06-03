@@ -152,6 +152,7 @@ class BRFProcessor:
                     )
                     brf_ds.attrs["id"] = config.id
                     from s2gos_utils.io.paths import expand_mapper
+
                     brf_ds.to_zarr(expand_mapper(output_path), mode="w")
                     logger.info(f"Saved BRF '{config.id}' to {output_path}")
 

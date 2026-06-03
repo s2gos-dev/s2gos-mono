@@ -113,6 +113,7 @@ class TerrainQuery:
         try:
             # Load DEM data
             from s2gos_utils.io.paths import expand_mapper
+
             with xr.open_zarr(expand_mapper(dem_path)) as dem_ds:
                 dem_data = dem_ds["elevation"]
 
@@ -247,6 +248,7 @@ class TerrainQuery:
 
         try:
             from s2gos_utils.io.paths import expand_mapper
+
             with xr.open_zarr(expand_mapper(dem_path)) as dem_ds:
                 dem_data = dem_ds["elevation"]
                 return {

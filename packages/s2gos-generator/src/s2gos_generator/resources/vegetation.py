@@ -317,7 +317,9 @@ def _process_vegetation_with_shared_datasets(
     from s2gos_utils.io.paths import expand_mapper
 
     with (
-        xr.open_dataarray(expand_mapper(landcover_path), engine="zarr") as landcover_data,
+        xr.open_dataarray(
+            expand_mapper(landcover_path), engine="zarr"
+        ) as landcover_data,
         xr.open_dataarray(expand_mapper(dem_path), engine="zarr") as dem_data,
     ):
         logging.info(
