@@ -13,6 +13,7 @@ All meshes are returned in world coordinates (z is absolute).
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass
 from typing import Optional
@@ -23,10 +24,6 @@ import trimesh
 from shapely.geometry import Polygon
 
 from ._straight_skeleton import Skeleton
-
-# Coverage tolerance: summed skeleton-face area must match the footprint to
-# within this fraction, otherwise the arc set is incomplete and we bail.
-_COVERAGE_TOL = 0.005
 
 
 @dataclass
@@ -45,9 +42,7 @@ def _skeleton_faces(poly: Polygon) -> Optional[_SkelFaces]:
 
     The skeleton emits ``nodes`` (x, y, t) and one CCW face per polygon edge
     directly (see ``_straight_skeleton.Skeleton``); the node height ``t`` is the
-    sweep distance, exactly what the roof lift needs. We add a cheap coverage
-    guard -- summed face area must match the footprint -- to fall back to a flat
-    roof when the arc set is incomplete.
+    sweep distance, exactly what the roof lift needs.
     """
     if poly is None or poly.is_empty:
         return None
@@ -55,28 +50,14 @@ def _skeleton_faces(poly: Polygon) -> Optional[_SkelFaces]:
     try:
         sk = Skeleton(poly)
         sk.compute()
-    except Exception:
+    except Exception as exc:
+        logging.debug("Skeleton computation failed: %s", exc)
         return None
 
     if not sk.faces:
         return None
 
-    nodes = sk.nodes
-    covered = 0.0
-    for f in sk.faces:
-        coords = nodes[f, :2]
-        n = len(coords)
-        a = 0.0
-        for i in range(n):
-            x0, y0 = coords[i]
-            x1, y1 = coords[(i + 1) % n]
-            a += x0 * y1 - x1 * y0
-        covered += abs(a) * 0.5
-
-    if poly.area <= 0 or abs(covered - poly.area) / poly.area > _COVERAGE_TOL:
-        return None
-
-    return _SkelFaces(nodes=nodes, faces=sk.faces)
+    return _SkelFaces(nodes=sk.nodes, faces=sk.faces)
 
 
 def _orient_normals_up(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:

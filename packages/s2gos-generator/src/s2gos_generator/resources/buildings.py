@@ -189,7 +189,8 @@ def _process_one_building(task: _BuildingTask) -> _BuildingResult:
                 pitch_deg=task.pitch_deg,
                 target_roof_height=task.target_roof_height,
             )
-        except Exception:
+        except Exception as exc:
+            logging.debug("Building %d: pitched geometry failed: %s", task.idx, exc)
             roof_info = None
 
     if roof_info is None:
@@ -202,7 +203,10 @@ def _process_one_building(task: _BuildingTask) -> _BuildingResult:
         )
         try:
             roof_mesh = build_hip_roof(geom, eaves_z, apex_z, roof_info["pitch_deg"])
-        except Exception:
+        except Exception as exc:
+            logging.debug(
+                "Building %d: hip-roof build failed, using flat: %s", task.idx, exc
+            )
             roof_mesh = None
         if roof_mesh is None:
             wall_mesh = _build_one_building(
