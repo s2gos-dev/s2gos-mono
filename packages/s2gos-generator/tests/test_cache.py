@@ -113,6 +113,8 @@ def minimal_config() -> Any:
         buffer=None,
         background=None,
         snow=None,
+        roads=None,
+        buildings=None,
         material_regions=[],
         user_assets=[],
         xml_scenes=[],
@@ -151,7 +153,7 @@ class TestHashingAndFingerprints:
         )
         assert (
             ResourceFingerprints.get("target_texture", cfg)["texture_resolution_m"]
-            is not None
+            == cfg.texture_resolution_m
         )
         assert "snow" not in ResourceFingerprints.get("background_texture", cfg)
 

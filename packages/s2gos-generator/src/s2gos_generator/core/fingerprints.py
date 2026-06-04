@@ -113,6 +113,15 @@ class ResourceFingerprints:
         }
 
     @staticmethod
+    def _target_buildings(config) -> dict:
+        return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "aoi_size_km": config.location.aoi_size_km,
+            "buildings": config.buildings.model_dump() if config.buildings else None,
+        }
+
+    @staticmethod
     def _target_texture(config) -> dict:
         target_regions = [
             r.model_dump() for r in config.material_regions if "target" in r.applies_to
