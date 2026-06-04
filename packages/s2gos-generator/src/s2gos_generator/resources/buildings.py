@@ -248,10 +248,7 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
         logging.info("No buildings found in AOI — skipping")
         return None
 
-    cs = ctx.coordinate_system
-    gdf = gdf.to_crs(cs.scene_crs)
-    # to_crs gives raw omerc coords; shift to scene-local (same as latlon_to_scene)
-    gdf.geometry = gdf.geometry.translate(-cs._center_x, -cs._center_y)
+    gdf = ctx.coordinate_system.geodataframe_to_scene_local(gdf)
     elev_fn = _make_dem_elev_fn(target_dem_path)
 
     names, weights = _resolve_material_distribution(cfg.material)

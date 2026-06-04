@@ -63,6 +63,24 @@ class CoordinateSystem:
         target_x, target_y = self._to_scene_transformer.transform(lon, lat)
         return (target_x - self._center_x, target_y - self._center_y)
 
+    def geodataframe_to_scene_local(self, gdf):
+        """Reproject a GeoDataFrame's geometries to scene-local meters.
+
+        Equivalent to ``latlon_to_scene`` for whole geometries: reproject to the
+        scene oblique-mercator CRS, then shift so the scene center is the origin.
+        Returns a copy; the input is left untouched.
+
+        Args:
+            gdf: GeoDataFrame in any CRS.
+
+        Returns:
+            A new GeoDataFrame with geometries in scene-local coordinates (meters
+            relative to the scene center).
+        """
+        gdf = gdf.to_crs(self.scene_crs).copy()
+        gdf.geometry = gdf.geometry.translate(-self._center_x, -self._center_y)
+        return gdf
+
     def scene_to_latlon(
         self,
         x: Union[float, "np.ndarray"],
