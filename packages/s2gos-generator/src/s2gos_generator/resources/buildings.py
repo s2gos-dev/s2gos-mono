@@ -280,20 +280,35 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
     # draw all RNG outcomes (material + pitched/flat), and build a list of
     # self-contained per-building tasks. Doing all RNG draws here keeps results
     # reproducible regardless of how the worker pool schedules things.
+    valid_mask = gdf.geometry.notna() & ~gdf.geometry.is_empty
+    skipped += int((~valid_mask).sum())
+    gdf_valid = gdf[valid_mask]
+    n = len(gdf_valid)
+
+    if n:
+        centroids = gdf_valid.geometry.centroid
+        xy = np.column_stack([centroids.x.to_numpy(), centroids.y.to_numpy()])
+        base_zs = elev_fn(xy) + cfg.elevation_offset_m
+    else:
+        base_zs = np.empty(0)
+
+    us = roof_rng.random(n)
+    if weights is None:
+        material_names = [names[0]] * n
+    else:
+        material_names = [str(m) for m in rng.choice(names, size=n, p=weights)]
+
     tasks: list[_BuildingTask] = []
-    for idx, row in gdf.iterrows():
+    for (idx, row), base_z, u, material_name in zip(
+        gdf_valid.iterrows(), base_zs, us, material_names
+    ):
         geom = row.geometry
-        if geom is None or geom.is_empty:
-            skipped += 1
-            continue
         raw_height = row.get(cfg.height_column) if has_height_col else None
         height_m, parsed = _parse_height(
             raw_height, cfg.story_height_m, cfg.default_height_m
         )
         if not parsed:
             unparsed_height += 1
-        cx, cy = float(geom.centroid.x), float(geom.centroid.y)
-        base_z = float(elev_fn(np.array([[cx, cy]]))[0]) + cfg.elevation_offset_m
 
         eligible = (
             cfg.pitched_roof_proportion > 0.0
@@ -306,18 +321,13 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
                 or height_m >= cfg.pitched_roof_min_height_m
             )
         )
-        # Always draw so removing eligibility filters doesn't reshuffle the rest of the stream
-        u = roof_rng.random()
         pitched = eligible and u < cfg.pitched_roof_proportion
-        material_name = (
-            names[0] if weights is None else str(rng.choice(names, p=weights))
-        )
         tasks.append(
             _BuildingTask(
                 idx=int(idx),
                 geom=geom,
                 height_m=height_m,
-                base_z=base_z,
+                base_z=float(base_z),
                 skirt_m=cfg.base_skirt_m,
                 material_name=material_name,
                 pitched=pitched,
