@@ -7,22 +7,31 @@ shrinks to zero) and split events (a reflex vertex runs into an opposite edge, p
 merging two boundary loops).
 """
 
+from __future__ import annotations
+
 import heapq
 import itertools
 import math
+from typing import Optional, Union
 
 import numpy as np
+from shapely.geometry import MultiPolygon, Polygon
 from shapely.geometry.polygon import orient
+
+# A 2D point in the working plane.
+Point = tuple[float, float]
+# A skeleton arc as an ordered pair of endpoints.
+Arc = tuple[Point, Point]
 
 
 class Edge:
     """An oriented polygon edge e_i."""
 
-    def __init__(self, p1, p2):
-        self.p1 = p1
-        self.p2 = p2
-        self.ground_start_node = None
-        self.ground_end_node = None
+    def __init__(self, p1: Point, p2: Point) -> None:
+        self.p1: Point = p1
+        self.p2: Point = p2
+        self.ground_start_node: Optional[int] = None
+        self.ground_end_node: Optional[int] = None
 
         dx, dy = p2[0] - p1[0], p2[1] - p1[1]
         length = math.hypot(dx, dy)
@@ -42,18 +51,25 @@ class VertexNode:
     # sensitive to tie-break order among coincident candidates).
     _seq = itertools.count()
 
-    def __init__(self, edge_in, edge_out, point, tol_angle, t0=0.0):
-        self.seq = next(VertexNode._seq)
-        self.edge_in = edge_in
-        self.edge_out = edge_out
-        self.v0 = point
-        self.t0 = t0
-        self.prev_node = None
-        self.next_node = None
-        self.processed = False
+    def __init__(
+        self,
+        edge_in: Edge,
+        edge_out: Edge,
+        point: Point,
+        tol_angle: float,
+        t0: float = 0.0,
+    ) -> None:
+        self.seq: int = next(VertexNode._seq)
+        self.edge_in: Edge = edge_in
+        self.edge_out: Edge = edge_out
+        self.v0: Point = point
+        self.t0: float = t0
+        self.prev_node: Optional[VertexNode] = None
+        self.next_node: Optional[VertexNode] = None
+        self.processed: bool = False
 
         cross_dir = edge_in.dir_x * edge_out.dir_y - edge_in.dir_y * edge_out.dir_x
-        self.is_reflex = cross_dir < -tol_angle
+        self.is_reflex: bool = cross_dir < -tol_angle
 
         # Vertex velocity v ensures the node stays on both incident edges as they sweep
         # inward at unit speed (v . n == 1). Solved as: v = (n_in + n_out) / (1 + n_in . n_out).
@@ -66,11 +82,11 @@ class VertexNode:
         if denom < tol_angle:
             # Needle vertex: keep a unit placeholder (the shared edge tangent) so
             # _in_wedge / plotting never divide by zero; it never times an event.
-            self.v = (edge_out.dir_x, edge_out.dir_y)
+            self.v: Point = (edge_out.dir_x, edge_out.dir_y)
         else:
             self.v = ((n_in[0] + n_out[0]) / denom, (n_in[1] + n_out[1]) / denom)
 
-    def pos(self, t):
+    def pos(self, t: float) -> Point:
         dt = t - self.t0
         return (self.v0[0] + dt * self.v[0], self.v0[1] + dt * self.v[1])
 
@@ -80,23 +96,31 @@ class IntersectionEvent:
 
     _id_counter = itertools.count()
 
-    def __init__(self, t, event_type, point, v_a, v_b=None, opp_edge=None):
-        self.t = t
-        self.event_type = event_type
-        self.I = point
-        self.v_a = v_a
-        self.v_b = v_b
-        self.opp_edge = opp_edge
-        self.opp_Y = None
-        self.opp_X = None
-        self.two_node = False
-        self._auto_id = next(IntersectionEvent._id_counter)
+    def __init__(
+        self,
+        t: float,
+        event_type: str,
+        point: Point,
+        v_a: VertexNode,
+        v_b: Optional[VertexNode] = None,
+        opp_edge: Optional[Edge] = None,
+    ) -> None:
+        self.t: float = t
+        self.event_type: str = event_type
+        self.I: Point = point
+        self.v_a: VertexNode = v_a
+        self.v_b: Optional[VertexNode] = v_b
+        self.opp_edge: Optional[Edge] = opp_edge
+        self.opp_Y: Optional[VertexNode] = None
+        self.opp_X: Optional[VertexNode] = None
+        self.two_node: bool = False
+        self._auto_id: int = next(IntersectionEvent._id_counter)
 
-    def __lt__(self, other):
+    def __lt__(self, other: IntersectionEvent) -> bool:
         return (self.t, self._auto_id) < (other.t, other._auto_id)
 
 
-def _dedupe_consecutive(seq):
+def _dedupe_consecutive(seq: list[int]) -> list[int]:
     """Drop consecutive duplicate node indices and any closing repeat."""
     out = []
     for x in seq:
@@ -107,7 +131,9 @@ def _dedupe_consecutive(seq):
     return out
 
 
-def _remove_collinear(face, nodes, tol=1e-6):
+def _remove_collinear(
+    face: list[int], nodes: np.ndarray, tol: float = 1e-6
+) -> list[int]:
     """Drop vertices nearly collinear with their neighbours (keeps >= 3)."""
     if len(face) <= 3:
         return face
@@ -137,37 +163,45 @@ def _remove_collinear(face, nodes, tol=1e-6):
 
 
 class Skeleton:
-    def __init__(self, poly, tol_dist=1e-8, tol_angle=1e-19, tol_time=0):
-        self.poly = poly
-        self.tol_dist = tol_dist
-        self.tol_angle = tol_angle
-        self.tol_time = tol_time
+    def __init__(
+        self,
+        poly: Union[Polygon, MultiPolygon],
+        tol_dist: float = 1e-8,
+        tol_angle: float = 1e-19,
+        tol_time: float = 0,
+    ) -> None:
+        self.poly: Union[Polygon, MultiPolygon] = poly
+        self.tol_dist: float = tol_dist
+        self.tol_angle: float = tol_angle
+        self.tol_time: float = tol_time
 
-        self.current_time = 0.0  # sweep distance / roof height
-        self.rings = []
-        self.active_nodes = set()
-        self.edges = []
-        self.pq = []
-        self.arcs = []
+        self.current_time: float = 0.0  # sweep distance / roof height
+        self.rings: list[list[tuple[float, ...]]] = []
+        self.active_nodes: set[VertexNode] = set()
+        self.edges: list[Edge] = []
+        self.pq: list[IntersectionEvent] = []
+        self.arcs: list[Arc] = []
 
-        self.nodes = None
-        self.faces = []
-        self._nodes = []
-        self._node_index = {}
-        self._node_eps = 1e-9
-        self._arc_records = []
-        self._edge_arcs = {}
+        self.nodes: np.ndarray = np.empty((0, 3))
+        self.faces: list[list[int]] = []
+        self._nodes: list[tuple[float, float, float]] = []
+        self._node_index: dict[tuple[int, int], int] = {}
+        self._node_eps: float = 1e-9
+        self._arc_records: list[tuple[int, int, Edge, Edge]] = []
+        self._edge_arcs: dict[Edge, list[int]] = {}
 
         # Coordinates are solved in a unit-span normalized frame so the absolute
         # tolerances behave the same regardless of input units;
         # results are mapped back at the end.
-        self._scale = 1.0
-        self._origin = (0.0, 0.0)
+        self._scale: float = 1.0
+        self._origin: Point = (0.0, 0.0)
         # Hard safety net: if the event loop fails to terminate (degenerate input),
         # bail and leave faces empty so the caller falls back to a flat roof.
-        self.timed_out = False
+        self.timed_out: bool = False
+        # Per-run cap on event-loop iterations, set in _run_once.
+        self._event_cap: int = 0
 
-    def _node(self, pos, t):
+    def _node(self, pos: Point, t: float) -> int:
         """Return the index of the node at ``pos`` (deduped), creating it with
         height ``t`` (its birth time / sweep distance) on first sight."""
         eps = self._node_eps
@@ -179,7 +213,7 @@ class Skeleton:
             self._nodes.append((float(pos[0]), float(pos[1]), float(t)))
         return idx
 
-    def _record_arc(self, u_idx, w_idx, edge_a, edge_b):
+    def _record_arc(self, u_idx: int, w_idx: int, edge_a: Edge, edge_b: Edge) -> None:
         """Record a skeleton arc bounded by ``edge_a`` and ``edge_b`` (the
         incident edges of the moving vertex whose trace this arc is)."""
         ai = len(self._arc_records)
@@ -188,15 +222,15 @@ class Skeleton:
         if edge_b is not edge_a:
             self._edge_arcs.setdefault(edge_b, []).append(ai)
 
-    def _push_event(self, event):
+    def _push_event(self, event: Optional[IntersectionEvent]) -> None:
         if event is not None and event.t >= self.current_time - self.tol_time:
             heapq.heappush(self.pq, event)
 
-    def _edge_event_valid(self, event):
+    def _edge_event_valid(self, event: IntersectionEvent) -> bool:
         a, b = event.v_a, event.v_b
         return not a.processed and not b.processed and a.next_node is b
 
-    def _split_event_valid(self, event):
+    def _split_event_valid(self, event: IntersectionEvent) -> bool:
         # Paper §2.2 step 2e: the opposite edge is searched in the SLAV *when the
         # split event is processed*, not when it is created. Between creation and
         # now the edge may have been split further (Fig. 5), so the live opposite
@@ -210,7 +244,9 @@ class Skeleton:
         event.opp_Y, event.opp_X = pair
         return True
 
-    def _find_split_pair(self, point, ej):
+    def _find_split_pair(
+        self, point: Point, ej: Edge
+    ) -> Optional[tuple[VertexNode, VertexNode]]:
         """Paper §2.2 step 2e / Fig. 5: locate the currently-active pair
         (Y, X = Y.next_node) bounding the live sub-segment of the original edge
         ``ej`` whose wedge contains the candidate point ``point``.
@@ -231,7 +267,9 @@ class Skeleton:
                 return Y, X
         return None
 
-    def _clean_ring(self, raw_coords):
+    def _clean_ring(
+        self, raw_coords: list[tuple[float, ...]]
+    ) -> list[tuple[float, ...]]:
         """Removes adjacent points that are virtually identical to avoid 0-length edge crashes."""
         clean = []
         for pt in raw_coords:
@@ -250,7 +288,7 @@ class Skeleton:
             clean.pop()
         return clean
 
-    def compute(self):
+    def compute(self) -> list[Arc]:
         polys = self.poly.geoms if hasattr(self.poly, "geoms") else [self.poly]
         for p in polys:
             p_ccw = orient(p, sign=1.0)
@@ -273,7 +311,7 @@ class Skeleton:
                 break
         return self.arcs
 
-    def _reset_run_state(self):
+    def _reset_run_state(self) -> None:
         self.current_time = 0.0
         self.active_nodes = set()
         self.edges = []
@@ -287,7 +325,7 @@ class Skeleton:
         self._edge_arcs = {}
         self.timed_out = False
 
-    def _run_once(self, jitter, seed):
+    def _run_once(self, jitter: float, seed: int) -> None:
         """One full skeleton pass in normalized coordinates (optionally jittered).
         Populates self.nodes, self.faces, self.arcs (de-normalized)."""
         self._reset_run_state()
@@ -296,7 +334,7 @@ class Skeleton:
         cx, cy = self._origin
         rng = np.random.default_rng(seed) if jitter else None
 
-        def _nrm(pt):
+        def _nrm(pt: tuple[float, ...]) -> Point:
             x = (pt[0] - cx) * self._scale
             y = (pt[1] - cy) * self._scale
             if rng is not None:
@@ -409,7 +447,7 @@ class Skeleton:
                 seen.add(e)
         return True
 
-    def _assemble(self):
+    def _assemble(self) -> None:
         """Group skeleton arcs (+ each edge's ground segment) into one CCW face
         per original polygon edge, populating ``self.nodes`` and ``self.faces``."""
         nodes = np.array(self._nodes, dtype=float) if self._nodes else np.empty((0, 3))
@@ -465,7 +503,7 @@ class Skeleton:
 
         self.faces = faces
 
-    def _resolve_remnant_loops(self):
+    def _resolve_remnant_loops(self) -> None:
         """Close any degenerate loops still active after the queue is drained."""
         changed = True
         while changed:
@@ -492,7 +530,9 @@ class Skeleton:
                     self.active_nodes.difference_update([n, m])
                     changed = True
 
-    def _compute_edge_event(self, A, B):
+    def _compute_edge_event(
+        self, A: VertexNode, B: VertexNode
+    ) -> Optional[IntersectionEvent]:
         """Step 1c: Computes the time and location where the edge shared
         by adjacent nodes A and B collapses to zero length.
 
@@ -537,10 +577,12 @@ class Skeleton:
         return IntersectionEvent(t, "edge", (x, y), A, v_b=B)
 
     @staticmethod
-    def _line_coeffs(e):
+    def _line_coeffs(e: Edge) -> tuple[float, float, float, float]:
         return (e.n_x, e.n_y, -1.0, e.n_x * e.p1[0] + e.n_y * e.p1[1])
 
-    def _concurrency(self, e1, e2, e3):
+    def _concurrency(
+        self, e1: Edge, e2: Edge, e3: Edge
+    ) -> Optional[tuple[float, float, float]]:
         """Solve the 3x3 line-concurrency system for (x, y, t); None if singular."""
         a1, b1, c1, d1 = self._line_coeffs(e1)
         a2, b2, c2, d2 = self._line_coeffs(e2)
@@ -572,7 +614,7 @@ class Skeleton:
         )
         return (dx / det, dy / det, dt / det)
 
-    def _in_wedge(self, point, Y, X, ej):
+    def _in_wedge(self, point: Point, Y: VertexNode, X: VertexNode, ej: Edge) -> bool:
         """Test whether the candidate point lays in the area limited by the edge and bisectors."""
 
         # 1. Point must be inside the polygon (behind the shrinking edge)
@@ -604,7 +646,7 @@ class Skeleton:
 
         return True
 
-    def _compute_events_for_node(self, V):
+    def _compute_events_for_node(self, V: VertexNode) -> None:
         if V.processed:
             return
 
@@ -663,7 +705,7 @@ class Skeleton:
         if best_split is not None:
             self._push_event(best_split)
 
-    def process_events(self):
+    def process_events(self) -> None:
         iters = 0
         while self.pq:
             # Safety net: degenerate inputs can re-inject near-simultaneous events
@@ -781,7 +823,9 @@ class Skeleton:
                 self._compute_events_for_node(X)
                 self._compute_events_for_node(Y)
 
-    def plot(self, save_path=None, dpi=200, show=True):
+    def plot(
+        self, save_path: Optional[str] = None, dpi: int = 200, show: bool = True
+    ) -> None:
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots(figsize=(40, 40))

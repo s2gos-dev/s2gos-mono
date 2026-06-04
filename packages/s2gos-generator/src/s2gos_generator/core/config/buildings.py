@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -33,7 +34,7 @@ class BuildingsConfig(BaseModel):
     )
     default_height_m: float = Field(3.0, gt=0.0)
     story_height_m: float = Field(3.0, gt=0.0)
-    material: str | dict[str, float] = Field(
+    material: Union[str, dict[str, float]] = Field(
         "concrete",
         description=(
             "Either a single material name applied to every building, or a "
@@ -42,7 +43,7 @@ class BuildingsConfig(BaseModel):
             "buildings are grouped into one mesh per material."
         ),
     )
-    material_seed: int | None = Field(
+    material_seed: Optional[int] = Field(
         None,
         description="Seed for reproducible per-building material assignment.",
     )
@@ -55,12 +56,12 @@ class BuildingsConfig(BaseModel):
             "0 disables pitched roofs entirely (flat-top everywhere)."
         ),
     )
-    pitched_roof_min_area_m2: float | None = Field(
+    pitched_roof_min_area_m2: Optional[float] = Field(
         None,
         gt=0.0,
         description="Footprint area below which a building stays flat-topped.",
     )
-    pitched_roof_min_height_m: float | None = Field(
+    pitched_roof_min_height_m: Optional[float] = Field(
         None, gt=0.0, description="Building height below which it stays flat-topped."
     )
     roof_pitch_deg: float = Field(
@@ -77,7 +78,7 @@ class BuildingsConfig(BaseModel):
     roof_material: str = Field(
         "baresoil", description="Material name applied to the roof mesh group."
     )
-    roof_seed: int | None = Field(
+    roof_seed: Optional[int] = Field(
         None,
         description="Seed for reproducible per-building pitched/flat selection.",
     )
@@ -92,7 +93,7 @@ class BuildingsConfig(BaseModel):
             "a gap between footprint and DEM."
         ),
     )
-    roof_workers: int | None = Field(
+    roof_workers: Optional[int] = Field(
         None,
         ge=1,
         description=(
