@@ -1,6 +1,7 @@
 """Building footprint resource — clips GPKG building footprints to the AOI,
-extrudes each one to a height parsed from a taxonomy column, places it on the
-DEM, and emits a YAML sidecar referenced by the scene description.
+extrudes each one to a height places it on the DEM, and emits a YAML sidecar
+referenced by the scene description. Footprints are merged into one mesh per material
+(plus one roof mesh, if hipped roof) rather than emitted as individual objects.
 """
 
 from __future__ import annotations
@@ -27,40 +28,53 @@ from ..assets.terrain_mesh import _make_elevation_fn, extract_dem
 from ..core.context import SceneResourceContext
 
 
-def _parse_taxonomy_height(taxonomy_str, story_height: float, default: float) -> float:
-    """Parse a string like 'HHT:35+H:10' into meters."""
-    if not isinstance(taxonomy_str, str) or not taxonomy_str or taxonomy_str == "nan":
-        return default
+def _parse_height(value, story_height: float, default: float) -> tuple[float, bool]:
+    """Resolve a building height in meters from a GPKG height-column value.
 
-    parts = taxonomy_str.split("+")
+    Accepts either a numeric height (used directly as meters) or  taxonomy string.
+    For more info see the Open Building Map dataset's paper.
+
+    Returns ``(height_m, parsed)`` where ``parsed`` is ``False`` when the value
+    carried no usable height and ``default`` was substituted, so the caller can
+    count and report silent fallbacks.
+    """
+    if isinstance(value, (int, float, np.number)) and not isinstance(value, bool):
+        if np.isfinite(value) and value > 0:
+            return float(value), True
+        return default, False
+
+    if not isinstance(value, str) or not value or value == "nan":
+        return default, False
+
+    parts = value.split("+")
 
     for part in parts:
         if part.startswith("HHT:"):
             try:
-                return float(part.split(":")[1])
+                return float(part.split(":")[1]), True
             except (ValueError, IndexError):
                 pass
     for part in parts:
         if part.startswith("H:"):
             try:
-                return float(part.split(":")[1]) * story_height
+                return float(part.split(":")[1]) * story_height, True
             except (ValueError, IndexError):
                 pass
     for part in parts:
         if part.startswith("HAPP:"):
             try:
-                return float(part.split(":")[1]) * story_height
+                return float(part.split(":")[1]) * story_height, True
             except (ValueError, IndexError):
                 pass
     for part in parts:
         if part.startswith("HBET:"):
             try:
                 s_min, s_max = part.split(":")[1].split("-")
-                return ((float(s_min) + float(s_max)) / 2.0) * story_height
+                return ((float(s_min) + float(s_max)) / 2.0) * story_height, True
             except (ValueError, IndexError):
                 pass
 
-    return default
+    return default, False
 
 
 def _load_and_clip(
@@ -214,10 +228,10 @@ def _process_chunk(tasks: list[_BuildingTask]) -> list[_BuildingResult]:
 
 def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
     """Clip GPKG footprints to the AOI, extrude each, and emit a YAML sidecar
-    of per-building scene objects placed on top of the DEM. When the building
-    material is given as a {name: weight} mapping, each building is assigned
-    one material by weighted random draw and buildings are grouped into one
-    mesh per material."""
+    placed on top of the DEM. Footprints are grouped into one mesh per material
+    (plus one roof mesh). When the building material is given as a {name: weight}
+    mapping, each building is assigned one material by weighted random draw before
+    grouping."""
     cfg = ctx.config.buildings
     if cfg is None or not cfg.enabled or not cfg.file_paths:
         return None
@@ -249,6 +263,17 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
     skipped = 0
     pitched_count = 0
     flat_fallback = 0
+    unparsed_height = 0
+
+    has_height_col = cfg.height_column in gdf.columns
+    if not has_height_col:
+        logging.warning(
+            "Buildings height_column %r not found in GPKG (columns: %s); "
+            "every building will use default_height_m=%.1f m",
+            cfg.height_column,
+            list(gdf.columns),
+            cfg.default_height_m,
+        )
 
     # Pass 1 (sequential, deterministic): parse heights, sample DEM elevation,
     # draw all RNG outcomes (material + pitched/flat), and build a list of
@@ -260,12 +285,12 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
         if geom is None or geom.is_empty:
             skipped += 1
             continue
-        taxonomy = (
-            row.get(cfg.height_column) if cfg.height_column in gdf.columns else None
+        raw_height = row.get(cfg.height_column) if has_height_col else None
+        height_m, parsed = _parse_height(
+            raw_height, cfg.story_height_m, cfg.default_height_m
         )
-        height_m = _parse_taxonomy_height(
-            taxonomy, cfg.story_height_m, cfg.default_height_m
-        )
+        if not parsed:
+            unparsed_height += 1
         cx, cy = float(geom.centroid.x), float(geom.centroid.y)
         base_z = float(elev_fn(np.array([[cx, cy]]))[0]) + cfg.elevation_offset_m
 
@@ -298,6 +323,16 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
                 pitch_deg=cfg.roof_pitch_deg,
                 target_roof_height=cfg.roof_height_m,
             )
+        )
+
+    if has_height_col and unparsed_height:
+        logging.info(
+            "Buildings height: %d/%d footprints had no usable value in %r and "
+            "fell back to default_height_m=%.1f m",
+            unparsed_height,
+            len(tasks),
+            cfg.height_column,
+            cfg.default_height_m,
         )
 
     # Pass 2: parallel mesh construction.

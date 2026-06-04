@@ -16,14 +16,20 @@ class BuildingsConfig(BaseModel):
     layer_name: str = Field("building", description="GPKG layer name to read.")
     height_column: str = Field(
         "height",
-        description="Column with height information",
-    )
-    id_column: str = Field(
-        "id", description="GPKG column used as per-building object id."
+        description=(
+            "Column with building height. Accepts either a numeric height in "
+            "meters or a building-taxonomy string (e.g. 'HHT:10.0', 'H:3', "
+            "'HAPP:3', 'HBET:1-3'). Buildings whose value is missing or "
+            "unparseable fall back to default_height_m."
+        ),
     )
     object_id_prefix: str = Field(
         "building",
-        description="Fallback id prefix when id_column is missing/null: '<prefix>_<row_idx>'.",
+        description=(
+            "Prefix for the generated scene-object ids. Buildings are merged "
+            "into one mesh per material, so ids are '<prefix>' (single "
+            "material), '<prefix>_<material>', and '<prefix>_roof_<material>'."
+        ),
     )
     default_height_m: float = Field(3.0, gt=0.0)
     story_height_m: float = Field(3.0, gt=0.0)
