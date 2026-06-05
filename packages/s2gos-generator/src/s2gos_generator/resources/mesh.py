@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 import xarray as xr
+from s2gos_utils.io.paths import expand_mapper
 
 from ..assets.mesh_generator import MeshGenerator
 from ..assets.terraforming import TerraformOperation
@@ -28,7 +29,7 @@ def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
     mesh_generator = MeshGenerator()
     mesh_path = ctx.meshes_dir / f"{ctx.scene_name}_terrain.ply"
 
-    dem_dataset = xr.open_zarr(dem_file_path)
+    dem_dataset = xr.open_zarr(expand_mapper(dem_file_path))
     dem_data = dem_dataset["elevation"]
 
     refinement_cfg = ctx.config.mesh_refinement

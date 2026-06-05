@@ -125,7 +125,7 @@ def _apply_roads_to_array(
     if not road_geoms:
         return texture_2d, None
 
-    with xr.open_zarr(landcover_path) as ds:
+    with xr.open_zarr(expand_mapper(landcover_path)) as ds:
         lc_data = ds[list(ds.data_vars)[0]]
         native_width_px = len(lc_data.coords["x"].values)
         native_height_px = len(lc_data.coords["y"].values)
