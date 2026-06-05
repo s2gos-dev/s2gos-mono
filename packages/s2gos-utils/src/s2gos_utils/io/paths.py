@@ -154,10 +154,7 @@ class PathRef(BaseModel):
 def to_upath(path: PathLike | PathRef) -> UPath:
     if isinstance(path, PathRef):
         return path.upath
-    elif isinstance(path, UPath):
-        return path  # preserve storage options / credentials
-    else:
-        return UPath(path)
+    return UPath(path)
 
 
 def open_file(
