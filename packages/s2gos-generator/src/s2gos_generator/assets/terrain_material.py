@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import xarray as xr
 from PIL import Image
-from s2gos_utils.io.paths import expand_mapper, open_dataset
+from s2gos_utils.io.paths import expand_mapper, open_dataset, write_image
 from upath import UPath
 
 PERMANENT_WATER_MATERIAL_INDEX = 7
@@ -256,12 +256,7 @@ class TerrainMaterialGenerator:
 
         mkdir(output_path.parent)
         image = Image.fromarray(texture, mode="L")
-        import io
-
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        with output_path.open("wb") as f:
-            f.write(buf.getvalue())
+        write_image(image, output_path)
 
     def _save_color_texture(self, texture: np.ndarray, output_path: UPath) -> None:
         """Save color texture as RGB PNG."""
@@ -280,12 +275,7 @@ class TerrainMaterialGenerator:
 
         mkdir(output_path.parent)
         image = Image.fromarray(texture, mode="RGB")
-        import io
-
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
-        with output_path.open("wb") as f:
-            f.write(buf.getvalue())
+        write_image(image, output_path)
 
     def get_material_info(self) -> Dict:
         """

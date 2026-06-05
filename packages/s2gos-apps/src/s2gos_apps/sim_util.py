@@ -193,7 +193,7 @@ def simulation_from_config(
 
             # Mitsuba can only load mesh/texture files from the local filesystem.
             # If the scene is on S3, download assets to a temp directory first.
-            s3_scene_dir = scene_description_path.parent
+            scene_dir = scene_description_path.parent
             tmp_dir = None
             if getattr(s3_scene_dir, "protocol", None) in ("s3", "s3a"):
                 tmp_dir = tempfile.mkdtemp(prefix="s2gos_scene_")

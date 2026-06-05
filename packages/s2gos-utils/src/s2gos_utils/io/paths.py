@@ -371,6 +371,20 @@ def copy(src: PathLike | PathRef, dst: PathLike | PathRef, **kwargs) -> None:
     to_upath(src).copy(to_upath(dst), **kwargs)
 
 
+def write_image(image, path: PathLike | PathRef, format: str = "PNG") -> None:
+    """Write a PIL Image to any backend supported by fsspec.
+
+    Uses an intermediate BytesIO buffer because PIL cannot write directly to
+    fsspec/UPath file objects.
+    """
+    import io
+
+    buf = io.BytesIO()
+    image.save(buf, format=format)
+    with open_file(path, "wb") as f:
+        f.write(buf.getvalue())
+
+
 def optional_str(path: Optional[PathLike]) -> Optional[str]:
     """Convert a path-like object to a string, handling None elegantly."""
     return str(path) if path is not None else None
