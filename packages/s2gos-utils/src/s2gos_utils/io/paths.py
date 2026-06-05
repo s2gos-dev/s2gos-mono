@@ -389,6 +389,7 @@ def normalize_path(path: PathLike) -> str:
     return str(to_upath(path))
 
 
-def expand_mapper(path: UPath):
-    """Expands a UPath to a FSMapper."""
-    return path.fs.get_mapper(path.path)
+def expand_mapper(path: PathLike | PathRef):
+    """Expands a path to a FSMapper."""
+    upath = to_upath(path)
+    return upath.fs.get_mapper(upath.path)
