@@ -7,7 +7,7 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 import yaml
-from s2gos_utils.io.paths import mkdir, open_dataset, open_file
+from s2gos_utils.io.paths import expand_mapper, mkdir, open_dataset, open_file
 from upath import UPath
 
 from ..core.context import SceneResourceContext
@@ -153,8 +153,6 @@ def process_hamster_data(ctx: SceneResourceContext) -> Optional[Path]:
 
 def _save_hamster_dataset(dataset: xr.Dataset, output_path: UPath) -> None:
     """Save HAMSTER dataset to zarr format."""
-    from s2gos_utils.io.paths import expand_mapper
-
     mkdir(output_path.parent)
     dataset.to_zarr(expand_mapper(output_path), mode="w")
 

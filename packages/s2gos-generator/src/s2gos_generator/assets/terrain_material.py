@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import xarray as xr
 from PIL import Image
-from s2gos_utils.io.paths import expand_mapper, open_dataset, write_image
+from s2gos_utils.io.paths import expand_mapper, mkdir, open_dataset, write_image
 from upath import UPath
 
 PERMANENT_WATER_MATERIAL_INDEX = 7
@@ -238,8 +238,6 @@ class TerrainMaterialGenerator:
 
     def _save_selection_texture(self, texture: np.ndarray, output_path: UPath) -> None:
         """Save selection texture as a grayscale PNG."""
-        from s2gos_utils.io.paths import mkdir
-
         if np.any(np.isnan(texture)) or np.any(np.isinf(texture)):
             logging.warning(
                 "Found NaN/inf values in selection texture before saving, cleaning..."
@@ -260,8 +258,6 @@ class TerrainMaterialGenerator:
 
     def _save_color_texture(self, texture: np.ndarray, output_path: UPath) -> None:
         """Save color texture as RGB PNG."""
-        from s2gos_utils.io.paths import mkdir
-
         if np.any(np.isnan(texture)) or np.any(np.isinf(texture)):
             logging.warning(
                 "Found NaN/inf values in color texture before saving, cleaning..."
