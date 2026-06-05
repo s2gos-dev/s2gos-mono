@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -164,12 +163,6 @@ class DAGExecutor:
                 result = resource(context)
                 results[resource_id] = result
             except Exception as e:
-                if self.registry._categorize_resource(resource_id) == "optional":
-                    logging.warning(
-                        "Optional resource '%s' failed (skipping): %s", resource_id, e
-                    )
-                    results[resource_id] = None
-                else:
-                    raise RuntimeError(f"Resource '{resource_id}' failed: {e}") from e
+                raise RuntimeError(f"Resource '{resource_id}' failed: {e}") from e
 
         return results
