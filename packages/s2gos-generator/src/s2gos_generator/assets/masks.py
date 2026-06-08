@@ -1,3 +1,5 @@
+import io
+
 import numpy as np
 from PIL import Image
 from s2gos_utils.io.paths import mkdir, write_image

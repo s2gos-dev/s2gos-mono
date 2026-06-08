@@ -117,10 +117,14 @@ class SceneGenerationPipeline:
 
         # Optional resources
         if self.config.user_assets or self.xml_assets:
-            self.registry.register("user_assets", ["target_dem"], process_user_assets)
+            self.registry.register(
+                "user_assets", ["target_dem"], process_user_assets, optional=True
+            )
 
         if self.config.hamster and self.config.hamster.enabled:
-            self.registry.register("hamster_data", [], process_hamster_data)
+            self.registry.register(
+                "hamster_data", [], process_hamster_data, optional=True
+            )
 
         if (
             self.config.vegetation_placement is not None
@@ -130,7 +134,8 @@ class SceneGenerationPipeline:
                 "target_vegetation",
                 ["target_landcover", "target_dem"],
                 process_target_vegetation,
-                optional=["user_assets", "target_roads"],
+                optional=True,
+                optional_deps=["user_assets", "target_roads"],
             )
 
         # Scene description (dependencies will be updated by update_scene_dependencies)

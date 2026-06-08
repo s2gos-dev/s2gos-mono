@@ -312,6 +312,8 @@ def _process_vegetation_with_shared_datasets(
         f"Processing vegetation with {len(vegetation_config.landcover_species_mapping)} landcover classes"
     )
 
+    from s2gos_utils.io.paths import expand_mapper
+
     with (
         xr.open_dataarray(
             expand_mapper(landcover_path), engine="zarr"

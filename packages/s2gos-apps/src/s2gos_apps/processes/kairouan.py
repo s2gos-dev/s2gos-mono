@@ -163,7 +163,7 @@ def simulation_configs(
     ] = None,
 ) -> PathRef | None:
     from s2gos_apps.sim_util import simulation_config
-
+    
     logger.debug("config_output_dir raw: %r", config_output_dir)
     input_ref = PathRef(config_output_dir) if config_output_dir is not None else None
     cid = input_ref.cid if input_ref is not None else None
@@ -183,5 +183,6 @@ def simulation_configs(
     if config_path is not None:
         result = PathRef(value=str(config_path), cid=cid)
         logger.debug("returning PathRef(value=%r, cid=%r)", result.value, result.cid)
+
         return result
     return None

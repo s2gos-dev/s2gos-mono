@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -12,12 +13,14 @@ class Resource:
         id: str,
         dependencies: List[str],
         func: Callable,
+        optional: bool = False,
         optional_deps: Optional[List[str]] = None,
     ):
         self.id = id
         self.dependencies = list(dependencies or [])
         self.optional_deps = list(optional_deps or [])
         self.func = func
+        self.optional = optional
 
     def __call__(self, ctx: SceneResourceContext) -> Optional[Path]:
         """Execute the resource function."""
@@ -36,7 +39,8 @@ class ResourceRegistry:
         dependencies: List[str],
         func: Callable,
         *,
-        optional: Optional[List[str]] = None,
+        optional: bool = False,
+        optional_deps: Optional[List[str]] = None,
     ):
         """Register a resource explicitly.
 
@@ -44,10 +48,11 @@ class ResourceRegistry:
             id: Unique resource identifier.
             dependencies: Required dependencies that must run before this resource.
             func: Resource function to execute.
-            optional: Optional dependencies — added to the required list only if
+            optional: If True, resource failures are skipped with a warning.
+            optional_deps: Optional dependencies — added to the required list only if
                 they are already registered when ``update_scene_dependencies`` runs.
         """
-        self.resources[id] = Resource(id, dependencies, func, optional_deps=optional)
+        self.resources[id] = Resource(id, dependencies, func, optional=optional, optional_deps=optional_deps)
 
     def get_resource(self, id: str) -> Resource:
         """Get a resource by ID."""
@@ -163,6 +168,12 @@ class DAGExecutor:
                 result = resource(context)
                 results[resource_id] = result
             except Exception as e:
-                raise RuntimeError(f"Resource '{resource_id}' failed: {e}") from e
+                if resource.optional:
+                    logging.warning(
+                        "Optional resource '%s' failed (skipping): %s", resource_id, e
+                    )
+                    results[resource_id] = None
+                else:
+                    raise RuntimeError(f"Resource '{resource_id}' failed: {e}") from e
 
         return results

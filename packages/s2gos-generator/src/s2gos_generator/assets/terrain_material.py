@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import xarray as xr
 from PIL import Image
+
 from s2gos_utils.io.paths import expand_mapper, mkdir, open_dataset, write_image
 from upath import UPath
 

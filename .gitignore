@@ -1,3 +1,7 @@
+# Local deployment configuration (machine-specific, not shared)
+appligator-config.yaml
+s2gos_settings.yaml
+
 # Pixi
 .pixi/
 

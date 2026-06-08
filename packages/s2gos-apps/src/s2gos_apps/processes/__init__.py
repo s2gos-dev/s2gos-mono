@@ -3,8 +3,10 @@ from s2gos_apps.registry import registry
 from .common import generation, simulation
 from .frascati import generation_configs as frascati_generation
 from .frascati import simulation_configs as frascati_simulation
+from .frascati_workflow import frascati_generation_simulation_workflow as frascati_gen_sim_workflow
 from .gobabeb import generation_configs as gobabeb_generation
 from .gobabeb import simulation_configs as gobabeb_simulation
+from .gobabeb_workflow import gobabeb_generation_simulation_workflow as gobabeb_gen_sim_workflow
 from .kairouan import generation_configs as kairouan_generation
 from .kairouan import simulation_configs as kairouan_simulation
 from .pisa import generation_configs as pisa_generation
@@ -19,8 +21,10 @@ __all__ = [
     "simulation",
     "frascati_generation",
     "frascati_simulation",
+    "frascati_gen_sim_workflow",
     "gobabeb_generation",
     "gobabeb_simulation",
+    "gobabeb_gen_sim_workflow",
     "kairouan_generation",
     "kairouan_simulation",
     "pisa_generation",

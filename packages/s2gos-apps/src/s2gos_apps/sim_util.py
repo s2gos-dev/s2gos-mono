@@ -121,6 +121,7 @@ def _download_scene_assets(s3_scene_dir: UPath, local_dir: Path) -> None:
     Uses fs.find() + fs.open() directly on the authenticated filesystem so
     child paths cannot silently lose credentials (unlike rglob).
     """
+
     logger.info(f"  Downloading scene assets from {s3_scene_dir} → {local_dir}")
     downloaded = 0
     fs = s3_scene_dir.fs
@@ -213,7 +214,6 @@ def simulation_from_config(
             finally:
                 if tmp_dir:
                     shutil.rmtree(tmp_dir, ignore_errors=True)
-
             logger.info("Simulation completed successfully!")
         else:
             logger.info("Skipping simulation - no valid scene description available")

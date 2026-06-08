@@ -15,10 +15,37 @@ from pydantic import (
     PrivateAttr,
     model_validator,
 )
+
+from pydantic import GetJsonSchemaHandler
+
 from pydantic_core import CoreSchema
 from upath import UPath
 
 from ..typing import PathLike
+
+
+def _drop_null_anyof(prop: dict[str, Any]) -> dict[str, Any]:
+    """Remove anyOf null-union patterns from a JSON Schema property dict.
+
+    Converts `anyOf: [{type: X}, {type: null}]` to just the non-null branch
+    without any type constraint, so null values pass Airflow's JSON Schema
+    validation (which doesn't understand OpenAPI's `nullable: true`).
+    """
+    any_of = prop.get("anyOf")
+    if not isinstance(any_of, list):
+        return prop
+    non_null = [s for s in any_of if s != {"type": "null"}]
+    if len(non_null) == len(any_of):
+        return prop  # no null branch — leave unchanged
+    prop = {k: v for k, v in prop.items() if k != "anyOf"}
+    if len(non_null) == 1:
+        # Merge the single non-null schema in but drop its type so null is valid
+        merged = {**non_null[0], **prop}
+        merged.pop("type", None)
+        return merged
+    if non_null:
+        prop["anyOf"] = non_null
+    return prop
 
 
 class PathRef(BaseModel):
@@ -149,6 +176,18 @@ class PathRef(BaseModel):
         schema = handler(core_schema)
         schema.pop("title", None)
         schema.pop("description", None)
+        # Pydantic encodes `str | None` as `anyOf: [{type: string}, {type: null}]`.
+        # procodile converts that to `{type: string, nullable: true}` (OpenAPI 3.0).
+        # Airflow validates Param properties with JSON Schema, which doesn't
+        # understand `nullable: true` and rejects null values for `type: string`.
+        # Fix: remove the anyOf null-union from nullable sub-properties so no
+        # type constraint remains, making null an accepted value.
+        if "properties" in schema:
+            schema["properties"] = {
+                k: _drop_null_anyof(v)
+                for k, v in schema["properties"].items()
+            }
+
         return schema
 
     model_config = {"frozen": True}
@@ -161,6 +200,7 @@ def to_upath(path: PathLike | PathRef) -> UPath:
     if isinstance(path, PathRef):
         return path.upath
     return UPath(path)
+
 
 
 def open_file(
