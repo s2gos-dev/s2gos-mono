@@ -111,8 +111,10 @@ class WavelengthGrid(BaseModel):
         elif self.mode == "from_file":
             import xarray as xr
 
+            from s2gos_utils.io.paths import open_dataset
+
             resolved_path = resolver.resolve(self.file_path, strict=True)
-            ds = xr.open_dataset(resolved_path)
+            ds = open_dataset(resolved_path)
             return ds[self.wavelength_variable].values
         else:
             raise ValueError(f"Unknown mode: {self.mode}")

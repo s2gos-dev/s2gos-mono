@@ -86,18 +86,23 @@ class TestGenerateTargetMesh:
     def test_success_workflow(self, mock_ctx, monkeypatch):
         from s2gos_generator.resources.mesh import generate_target_mesh
 
+        mock_ctx.config.mesh_refinement = None
+
         mock_generator = MagicMock()
         monkeypatch.setattr(
             "s2gos_generator.resources.mesh.MeshGenerator",
             MagicMock(return_value=mock_generator),
+        )
+        monkeypatch.setattr(
+            "s2gos_generator.resources.mesh.xr.open_zarr",
+            MagicMock(return_value=MagicMock()),
         )
 
         result = generate_target_mesh(mock_ctx)
         expected = mock_ctx.meshes_dir / "test_scene_terrain.ply"
 
         assert result == expected
-        assert (
-            mock_generator.generate_mesh_from_dem_file.call_args.kwargs["output_path"]
-            == expected
+        mock_generator.save_mesh.assert_called_once_with(
+            mock_generator.add_uv_coordinates.return_value, expected
         )
         assert mock_ctx.assets.mesh_file == expected

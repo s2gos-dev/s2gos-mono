@@ -263,7 +263,9 @@ class IrradianceProcessor:
             result_ds = xr.Dataset(dataset_vars)
 
             output_file = output_dir / f"{config.id}.zarr"
-            result_ds.to_zarr(output_file, mode="w")
+            from s2gos_utils.io.paths import expand_mapper
+
+            result_ds.to_zarr(expand_mapper(output_file), mode="w")
             logger.info(f"  ✓ Saved {output_file.name}")
 
             results[config.id] = result_ds

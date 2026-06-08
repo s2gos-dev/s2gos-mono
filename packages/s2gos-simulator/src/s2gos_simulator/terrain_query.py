@@ -112,7 +112,9 @@ class TerrainQuery:
 
         try:
             # Load DEM data
-            with xr.open_zarr(dem_path) as dem_ds:
+            from s2gos_utils.io.paths import expand_mapper
+
+            with xr.open_zarr(expand_mapper(dem_path)) as dem_ds:
                 dem_data = dem_ds["elevation"]
 
                 interpolator = RegularGridInterpolator(
@@ -245,7 +247,9 @@ class TerrainQuery:
             return None
 
         try:
-            with xr.open_zarr(dem_path) as dem_ds:
+            from s2gos_utils.io.paths import expand_mapper
+
+            with xr.open_zarr(expand_mapper(dem_path)) as dem_ds:
                 dem_data = dem_ds["elevation"]
                 return {
                     "x_min": float(dem_data.x.min()),

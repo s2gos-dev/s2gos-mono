@@ -1,7 +1,6 @@
 import fnmatch
 import logging
 import re
-import shutil
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -950,7 +949,9 @@ def create_tree_shapegroup(
             dest_path = tree_meshes_dir / dest_filename
 
             if not dest_path.exists():
-                shutil.copy2(source_file_path, dest_path)
+                with open(source_file_path, "rb") as f_in:
+                    with dest_path.open("wb") as f_out:
+                        f_out.write(f_in.read())
                 logging.info(f"Copied tree mesh: {dest_filename}")
 
             mesh_filename = f"meshes/tree/{dest_filename}"

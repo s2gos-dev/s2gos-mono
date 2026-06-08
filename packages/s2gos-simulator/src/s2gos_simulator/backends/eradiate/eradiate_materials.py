@@ -226,9 +226,9 @@ class EradiateMaterialAdapter:
         if not ERADIATE_AVAILABLE:
             raise ImportError("Eradiate is not available")
 
-        import xarray as xr
+        from s2gos_utils.io.paths import open_dataset
 
-        data = xr.open_dataset(file_path)
+        data = open_dataset(file_path)
         return InterpolatedSpectrum.from_dataarray(dataarray=data[variable])
 
     @staticmethod
