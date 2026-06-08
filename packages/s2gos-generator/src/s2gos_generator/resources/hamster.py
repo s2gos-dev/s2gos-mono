@@ -7,7 +7,8 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 import yaml
-from s2gos_utils.io.paths import mkdir, open_dataset, open_file
+from s2gos_utils.io.paths import expand_mapper, mkdir, open_dataset, open_file
+
 from upath import UPath
 
 from ..core.context import SceneResourceContext

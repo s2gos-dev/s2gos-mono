@@ -112,6 +112,7 @@ class WavelengthGrid(BaseModel):
             import xarray as xr
 
             from s2gos_utils.io.paths import open_dataset
+
             resolved_path = resolver.resolve(self.file_path, strict=True)
             ds = open_dataset(resolved_path)
             return ds[self.wavelength_variable].values

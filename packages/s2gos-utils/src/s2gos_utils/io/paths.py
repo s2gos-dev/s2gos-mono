@@ -11,10 +11,13 @@ import yaml
 from pydantic import (
     BaseModel,
     Field,
+    GetJsonSchemaHandler,
     PrivateAttr,
     model_validator,
 )
+
 from pydantic import GetJsonSchemaHandler
+
 from pydantic_core import CoreSchema
 from upath import UPath
 
@@ -184,6 +187,7 @@ class PathRef(BaseModel):
                 k: _drop_null_anyof(v)
                 for k, v in schema["properties"].items()
             }
+
         return schema
 
     model_config = {"frozen": True}
@@ -195,10 +199,8 @@ class PathRef(BaseModel):
 def to_upath(path: PathLike | PathRef) -> UPath:
     if isinstance(path, PathRef):
         return path.upath
-    elif isinstance(path, UPath):
-        return path  # preserve storage options / credentials
-    else:
-        return UPath(path)
+    return UPath(path)
+
 
 
 def open_file(
@@ -406,6 +408,20 @@ def copy(src: PathLike | PathRef, dst: PathLike | PathRef, **kwargs) -> None:
     to_upath(src).copy(to_upath(dst), **kwargs)
 
 
+def write_image(image, path: PathLike | PathRef, format: str = "PNG") -> None:
+    """Write a PIL Image to any backend supported by fsspec.
+
+    Uses an intermediate BytesIO buffer because PIL cannot write directly to
+    fsspec/UPath file objects.
+    """
+    import io
+
+    buf = io.BytesIO()
+    image.save(buf, format=format)
+    with open_file(path, "wb") as f:
+        f.write(buf.getvalue())
+
+
 def optional_str(path: Optional[PathLike]) -> Optional[str]:
     """Convert a path-like object to a string, handling None elegantly."""
     return str(path) if path is not None else None
@@ -419,6 +435,7 @@ def normalize_path(path: PathLike) -> str:
     return str(to_upath(path))
 
 
-def expand_mapper(path: UPath):
-    """Expands a UPath to a FSMapper."""
-    return path.fs.get_mapper(path.path)
+def expand_mapper(path: PathLike | PathRef):
+    """Expands a path to a FSMapper."""
+    upath = to_upath(path)
+    return upath.fs.get_mapper(upath.path)

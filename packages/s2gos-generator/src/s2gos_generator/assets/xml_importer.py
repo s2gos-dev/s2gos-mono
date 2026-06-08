@@ -1,7 +1,6 @@
 import fnmatch
 import logging
 import re
-import shutil
 import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional, Tuple
 

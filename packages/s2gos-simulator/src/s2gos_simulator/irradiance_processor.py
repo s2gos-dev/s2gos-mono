@@ -264,6 +264,7 @@ class IrradianceProcessor:
 
             output_file = output_dir / f"{config.id}.zarr"
             from s2gos_utils.io.paths import expand_mapper
+
             result_ds.to_zarr(expand_mapper(output_file), mode="w")
             logger.info(f"  ✓ Saved {output_file.name}")
 

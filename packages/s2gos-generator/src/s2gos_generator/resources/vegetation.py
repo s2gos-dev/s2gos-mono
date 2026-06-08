@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import xarray as xr
 import yaml
-from s2gos_utils.io.paths import open_file
+from s2gos_utils.io.paths import exists, expand_mapper, open_file
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import distance_transform_edt
 
@@ -163,8 +163,6 @@ def process_target_vegetation(
             "Ensure target_dem resource is enabled and processed."
         )
 
-    from s2gos_utils.io.paths import exists
-
     if not exists(landcover_path):
         raise DataNotFoundError(f"Landcover file not found: {landcover_path}")
     if not exists(dem_path):
@@ -317,7 +315,9 @@ def _process_vegetation_with_shared_datasets(
     from s2gos_utils.io.paths import expand_mapper
 
     with (
-        xr.open_dataarray(expand_mapper(landcover_path), engine="zarr") as landcover_data,
+        xr.open_dataarray(
+            expand_mapper(landcover_path), engine="zarr"
+        ) as landcover_data,
         xr.open_dataarray(expand_mapper(dem_path), engine="zarr") as dem_data,
     ):
         logging.info(

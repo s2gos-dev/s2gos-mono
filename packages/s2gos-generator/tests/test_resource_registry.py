@@ -221,7 +221,7 @@ class TestDAGExecutor:
             raise Exception("kaboom")
 
         r = ResourceRegistry()
-        r.register("bad_resource", [], failing_func)
+        r.register("target_dem", [], failing_func)
         executor = DAGExecutor(r)
-        with pytest.raises(RuntimeError, match="bad_resource"):
+        with pytest.raises(RuntimeError, match="target_dem"):
             executor.execute(_StubContext())

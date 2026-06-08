@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+import logging
 import os
 from typing import Annotated
+
+logger = logging.getLogger(__name__)
 
 from pydantic import Field
 from s2gos_generator.core.config import (
@@ -46,9 +49,7 @@ def generation_configs(
     )
     from upath import UPath
 
-    print("\n")
-    print("=" * 60)
-    print("Configuring generation...")
+    logger.info("Configuring generation...")
 
     # Create basic configuration using defaults
     config = create_scene_config(
@@ -144,9 +145,8 @@ def generation_configs(
     )
     config.random_seed = random_seed
 
-    print("Basic configuration created")
-
-    print("Configuration validation passed")
+    logger.info("Basic configuration created")
+    logger.info("Configuration validation passed")
 
     # Save generation config file
     config_filename = f"{config.scene_name}_gen_config.json"

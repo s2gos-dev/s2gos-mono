@@ -12,6 +12,7 @@ The demo showcases:
 """
 
 import enum
+import logging
 from datetime import datetime
 from typing import Annotated
 
@@ -19,6 +20,8 @@ from pydantic import Field
 from s2gos_utils.coordinates import CoordinateSystem
 
 from s2gos_apps.registry import registry
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Constants
@@ -178,13 +181,9 @@ def pnp_gui_generation(
 
     from s2gos_apps.gen_util import generation_from_config
 
-    print("\n")
-    print("=" * 60)
-    print("PNP GUI DEMO - SCENE GENERATION")
-    print("=" * 60)
-    print(f"Season: {month.value}")
-    print(f"Random seed: {random_seed}")
-    print()
+    logger.info("PNP GUI DEMO - SCENE GENERATION")
+    logger.info("Season: %s", month.value)
+    logger.info("Random seed: %s", random_seed)
 
     # Get seasonal configuration
     seasonal = _get_seasonal_config(month)
@@ -293,18 +292,12 @@ def pnp_gui_generation(
     config.to_json(config_path)
 
     # Run generation pipeline
-    print("\n" + "=" * 60)
-    print("Running scene generation pipeline...")
-    print("=" * 60)
+    logger.info("Running scene generation pipeline...")
 
     scene_path = generation_from_config(config)
 
     if scene_path:
-        print("\n" + "=" * 60)
-        print("SCENE GENERATION COMPLETE")
-        print("=" * 60)
-        print(f"Scene description: {scene_path}")
-        print()
+        logger.info("Scene generation complete: %s", scene_path)
 
     return scene_path
 
@@ -410,13 +403,8 @@ def pnp_gui_simulation(
 
     from s2gos_apps.sim_util import simulation_from_config
 
-    print("\n")
-    print("=" * 60)
-    print("PNP GUI DEMO - SIMULATION")
-    print("=" * 60)
-
-    print(f"Observation type: {observation}")
-    print()
+    logger.info("PNP GUI DEMO - SIMULATION")
+    logger.info("Observation type: %s", observation)
 
     # Determine observation date (fixed to 21st of month)
     seasonal = _get_seasonal_config(month)
@@ -602,9 +590,7 @@ def pnp_gui_simulation(
     simulation_config.to_json(config_path)
 
     # Run simulation
-    print("\n" + "=" * 60)
-    print("Running simulation...")
-    print("=" * 60)
+    logger.info("Running simulation...")
 
     output_path = simulation_from_config(
         UPath(f"./{scene_name}/gen_output/{scene_name}/{scene_name}.yml"),
@@ -613,10 +599,6 @@ def pnp_gui_simulation(
     )
 
     if output_path:
-        print("\n" + "=" * 60)
-        print("SIMULATION COMPLETE")
-        print("=" * 60)
-        print(f"Output directory: {output_path}")
-        print()
+        logger.info("Simulation complete: %s", output_path)
 
     return str(output_path)

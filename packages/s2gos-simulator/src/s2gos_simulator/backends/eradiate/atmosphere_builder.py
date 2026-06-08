@@ -94,6 +94,7 @@ class AtmosphereBuilder:
             from upath import UPath
 
             from s2gos_utils.io.paths import open_dataset
+
             thermoprops_file = UPath(mol_dict["thermoprops_file"])
             thermoprops = open_dataset(thermoprops_file).squeeze(drop=True)
         else:

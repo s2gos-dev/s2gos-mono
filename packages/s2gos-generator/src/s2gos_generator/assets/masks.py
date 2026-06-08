@@ -2,6 +2,7 @@ import io
 
 import numpy as np
 from PIL import Image
+from s2gos_utils.io.paths import mkdir, write_image
 from upath import UPath
 
 MAX_PIXEL_VALUE = 255
@@ -32,13 +33,8 @@ def generate_buffer_mask(mask_size: int, target_size: int, output_path: UPath) -
 
     mask[start_y:end_y, start_x:end_x] = 0
 
-    from s2gos_utils.io.paths import mkdir
-
     mkdir(output_path.parent)
     image = Image.fromarray(mask, mode="L")
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    with output_path.open("wb") as f:
-        f.write(buf.getvalue())
+    write_image(image, output_path)
 
     return output_path

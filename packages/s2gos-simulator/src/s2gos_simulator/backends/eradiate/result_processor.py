@@ -52,6 +52,7 @@ class ResultProcessor:
             dataset.attrs["result_type"] = result_type
 
             from s2gos_utils.io.paths import expand_mapper
+
             dataset.to_zarr(expand_mapper(sensor_output), mode="w")
             logger.info(f"Saved '{sensor_id}' → {sensor_output.name}")
 

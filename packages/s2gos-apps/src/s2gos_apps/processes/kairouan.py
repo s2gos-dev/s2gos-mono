@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+import logging
 import os
 from typing import Annotated
+
+logger = logging.getLogger(__name__)
 
 from pydantic import Field
 from s2gos_utils.io import PathRef
@@ -45,9 +48,7 @@ def generation_configs(
         PathRef(scene_output_dir) if scene_output_dir is not None else None
     )
 
-    print("\n")
-    print("=" * 60)
-    print("Configuring generation...")
+    logger.info("Configuring generation...")
 
     # Create basic configuration using defaults
     config = create_scene_config(
@@ -123,9 +124,8 @@ def generation_configs(
 
     config.set_atmosphere_molecular(molecular_config)
 
-    print("Basic configuration created")
-
-    print("Configuration validation passed")
+    logger.info("Basic configuration created")
+    logger.info("Configuration validation passed")
 
     # Save generation config file
     config_filename = f"{config.scene_name}_gen_config.json"
@@ -163,12 +163,12 @@ def simulation_configs(
     ] = None,
 ) -> PathRef | None:
     from s2gos_apps.sim_util import simulation_config
-
-    print(f"[kairouan simulation_config] config_output_dir raw: {config_output_dir!r}")
+    
+    logger.debug("config_output_dir raw: %r", config_output_dir)
     input_ref = PathRef(config_output_dir) if config_output_dir is not None else None
     cid = input_ref.cid if input_ref is not None else None
     config_output_upath = input_ref.upath if input_ref is not None else None
-    print(f"[kairouan simulation_config] config_output_upath={config_output_upath!r}  cid={cid!r}")
+    logger.debug("config_output_upath=%r  cid=%r", config_output_upath, cid)
 
     config_path = simulation_config(
         scene_name,
@@ -179,9 +179,10 @@ def simulation_configs(
         spp,
         config_output_upath,
     )
-    print(f"[kairouan simulation_config] config_path={config_path!r}")
+    logger.debug("config_path=%r", config_path)
     if config_path is not None:
         result = PathRef(value=str(config_path), cid=cid)
-        print(f"[kairouan simulation_config] returning PathRef(value={result.value!r}, cid={result.cid!r})")
+        logger.debug("returning PathRef(value=%r, cid=%r)", result.value, result.cid)
+
         return result
     return None
