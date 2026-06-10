@@ -5,9 +5,8 @@ from typing import Annotated
 
 from procodile import FromMain, FromStep
 from pydantic import BaseModel, Field
-from upath import UPath
-
 from s2gos_utils.io import PathRef
+from upath import UPath
 
 from s2gos_apps.registry import registry
 
@@ -34,9 +33,7 @@ class TargetInfo(BaseModel):
                 "observation time, sample count) as an inline JSON document."
             ),
         ),
-        "config_path": Field(
-            title="PathRef class with generated config as output"
-        ),
+        "config_path": Field(title="PathRef class with generated config as output"),
         "scene_output_dir": Field(),
         "config_output_dir_simulation": Field(),
         "output_dir_simulation": Field(),
@@ -44,11 +41,18 @@ class TargetInfo(BaseModel):
 )
 def frascati_generation_simulation_workflow(
     scene_name: Annotated[str, Field(default="frascati", description="Scene id name.")],
-    target_lat: Annotated[float, Field(default=41.808, description="Target's center latitude.")],
-    target_lon: Annotated[float, Field(default=12.681, description="Target's center longitude.")],
-    target_size: Annotated[float, Field(default=10.0, description="Target's size in [km].")],
+    target_lat: Annotated[
+        float, Field(default=41.808, description="Target's center latitude.")
+    ],
+    target_lon: Annotated[
+        float, Field(default=12.681, description="Target's center longitude.")
+    ],
+    target_size: Annotated[
+        float, Field(default=10.0, description="Target's size in [km].")
+    ],
     gmt_hour: Annotated[
-        float, Field(default=11.0, description="Hour of observation at target in GMT time.")
+        float,
+        Field(default=11.0, description="Hour of observation at target in GMT time."),
     ],
     spp: Annotated[int, Field(..., description="Number of Monte Carlo samples.")] = 8,
     config_output_dir_generation: Annotated[
@@ -90,10 +94,14 @@ def frascati_generation_simulation_workflow(
 
     # Enforce PathRef type
     config_output_dir = (
-        PathRef(config_output_dir_generation) if config_output_dir_generation is not None else None
+        PathRef(config_output_dir_generation)
+        if config_output_dir_generation is not None
+        else None
     )
     scene_output_dir = (
-        PathRef(scene_output_dir_generation) if scene_output_dir_generation is not None else None
+        PathRef(scene_output_dir_generation)
+        if scene_output_dir_generation is not None
+        else None
     )
 
     logger.info("Configuring generation...")
@@ -214,9 +222,7 @@ def frascati_generation_simulation_workflow(
     inputs={
         "config_path": FromMain(output="config_path"),
     },
-    outputs={
-        "scene_description_path": Field()
-    }
+    outputs={"scene_description_path": Field()},
 )
 def frascati_generation(config_path: PathRef) -> PathRef:
     from s2gos_apps.processes.common.generation import generation
@@ -237,7 +243,6 @@ def frascati_generation(config_path: PathRef) -> PathRef:
     return None
 
 
-
 @frascati_generation_simulation_workflow.step(
     id="frascati-simulation-config",
     title="Frascati Simulation Config",
@@ -249,7 +254,7 @@ def frascati_generation(config_path: PathRef) -> PathRef:
         "config_path": Field(
             title="PathRef class with simulated config as output",
         )
-    }
+    },
 )
 def simulation_configs(
     target_info: TargetInfo,
@@ -283,18 +288,21 @@ def simulation_configs(
 @frascati_generation_simulation_workflow.step(
     id="frascati-simulation",
     inputs={
-        "scene_description_path": FromStep(step_id="frascati-generation",
-                                          output="scene_description_path"),
-        "config_path": FromStep(step_id="frascati-simulation-config",
-                                output="config_path"),
+        "scene_description_path": FromStep(
+            step_id="frascati-generation", output="scene_description_path"
+        ),
+        "config_path": FromStep(
+            step_id="frascati-simulation-config", output="config_path"
+        ),
         "simulation_output_dir": FromMain(output="output_dir_simulation"),
     },
-    outputs={
-        "simulation_path": Field()
-    }
+    outputs={"simulation_path": Field()},
 )
-def frascati_simulation(scene_description_path: PathRef, config_path:
-PathRef, simulation_output_dir: PathRef | None) -> PathRef:
+def frascati_simulation(
+    scene_description_path: PathRef,
+    config_path: PathRef,
+    simulation_output_dir: PathRef | None,
+) -> PathRef:
     from s2gos_apps.processes.common.simulation import simulation
 
     logger.debug("scene_description_path raw: %r", scene_description_path)
