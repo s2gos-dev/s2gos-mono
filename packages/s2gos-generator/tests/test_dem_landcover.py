@@ -98,11 +98,23 @@ class TestGenerateTargetMesh:
             MagicMock(return_value=MagicMock()),
         )
 
+        dem_dataset = MagicMock()
+        elevation = object()
+        dem_dataset.__getitem__.return_value = elevation
+        mock_open_zarr = MagicMock(return_value=dem_dataset)
+        monkeypatch.setattr(
+            "s2gos_generator.resources.mesh.xr.open_zarr", mock_open_zarr
+        )
+
         result = generate_target_mesh(mock_ctx)
         expected = mock_ctx.meshes_dir / "test_scene_terrain.ply"
 
         assert result == expected
-        mock_generator.save_mesh.assert_called_once_with(
-            mock_generator.add_uv_coordinates.return_value, expected
+        mock_open_zarr.assert_called_once_with(
+            mock_ctx.dependency_outputs["target_dem"]
         )
+        dem_dataset.__getitem__.assert_called_once_with("elevation")
+        assert mock_generator.dem_to_mesh.call_args.args[0] is elevation
+        mock_generator.add_uv_coordinates.assert_called_once()
+        assert mock_generator.save_mesh.call_args.args[1] == expected
         assert mock_ctx.assets.mesh_file == expected

@@ -7,6 +7,7 @@ from s2gos_generator.core.config import (
     AbsorptionDatabase,
     AerosolDataset,
     AtmosphereConfig,
+    BuildingsConfig,
     ExponentialDistribution,
     GaussianDistribution,
     HeterogeneousAtmosphereConfig,
@@ -138,6 +139,15 @@ def sample_vegetation_placement():
     )
 
 
+@pytest.fixture
+def sample_buildings():
+    return BuildingsConfig(
+        file_paths=[],
+        material={"brick": 2.0, "glass": 1.0},
+        pitched_roof_proportion=0.5,
+    )
+
+
 @pytest.mark.parametrize(
     "model_class,fixture_name,type_value",
     [
@@ -158,6 +168,7 @@ def sample_vegetation_placement():
         (ParticleLayerConfig, "sample_particle_layer", None),
         (UserAssets, "sample_user_asset", None),
         (VegetationPlacementConfig, "sample_vegetation_placement", None),
+        (BuildingsConfig, "sample_buildings", None),
     ],
 )
 def test_model_serialization(model_class, fixture_name, type_value, request):

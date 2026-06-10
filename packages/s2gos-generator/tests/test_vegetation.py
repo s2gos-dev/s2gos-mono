@@ -4,6 +4,7 @@ import types
 
 from s2gos_generator.resources.vegetation import (
     _apply_spacing_filter_optimized,
+    _batch_elevation_lookup,
     _calculate_max_instances_per_pixel,
     _filter_by_exclusion_zones,
     _generate_pixel_vegetation_positions,
@@ -189,3 +190,34 @@ class TestFilterByExclusionZones:
         result = _filter_by_exclusion_zones([inside, outside], zones)
         assert len(result) == 1
         assert result[0] is outside
+
+
+class TestBatchElevationLookup:
+    def _make_dem(self):
+        import numpy as np
+        import xarray as xr
+
+        z = np.array([[10.0, 11.0, 12.0], [13.0, 14.0, 15.0], [16.0, 17.0, 18.0]])
+        return xr.DataArray(
+            z,
+            dims=("y", "x"),
+            coords={"y": [0.0, 1.0, 2.0], "x": [0.0, 1.0, 2.0]},
+        )
+
+    def test_drops_out_of_bounds(self):
+        import math
+
+        dem = self._make_dem()
+        positions = [
+            {"x": 1.0, "y": 1.0},
+            {"x": 2.0, "y": 2.0},
+            {"x": 5.0, "y": 5.0},
+        ]
+        result = _batch_elevation_lookup(positions, dem)
+        assert len(result) == 2
+        for pos in result:
+            assert math.isfinite(pos["elevation"])
+
+    def test_empty_input(self):
+        dem = self._make_dem()
+        assert _batch_elevation_lookup([], dem) == []
