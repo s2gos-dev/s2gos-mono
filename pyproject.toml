@@ -81,6 +81,8 @@ ipykernel  = "*"
 [tool.pixi.feature.dev-tools.pypi-dependencies]
 memray   = "*"
 snakeviz = "*"
+stackstac = "*"
+pystac_client = "*"
 
 # ── environments ──────────────────────────────────────────────
 [tool.pixi.environments]
