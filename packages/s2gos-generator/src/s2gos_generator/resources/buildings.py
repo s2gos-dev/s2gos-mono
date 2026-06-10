@@ -23,7 +23,7 @@ import yaml
 from s2gos_utils.io.paths import open_file
 from shapely.geometry import MultiPolygon, Polygon
 
-from ._building_roof import build_hip_roof, compute_pitched_geometry
+from ..assets.building_roof import build_hip_roof, compute_pitched_geometry
 from ..assets.terrain_mesh import _make_elevation_fn, extract_dem
 from ..core.context import SceneResourceContext
 

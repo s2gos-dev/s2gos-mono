@@ -1,7 +1,7 @@
 """Hip-roof construction on top of a 2D straight skeleton.
 
 Pitched roofs reuse a single straight skeleton of the wall footprint
-(see `_straight_skeleton.py`). Every face is lifted
+(see `straight_skeleton.py`). Every face is lifted
 to 3D as
 
     z = clamp(eaves_z + t * tan(pitch), apex_z)
@@ -23,7 +23,7 @@ import numpy as np
 import trimesh
 from shapely.geometry import Polygon
 
-from ._straight_skeleton import Skeleton
+from ..utils.straight_skeleton import Skeleton
 
 
 @dataclass
@@ -41,7 +41,7 @@ def _skeleton_faces(poly: Polygon) -> Optional[_SkelFaces]:
     """Build the straight skeleton and return its native per-edge roof faces.
 
     The skeleton emits ``nodes`` (x, y, t) and one CCW face per polygon edge
-    directly (see ``_straight_skeleton.Skeleton``); the node height ``t`` is the
+    directly (see ``straight_skeleton.Skeleton``); the node height ``t`` is the
     sweep distance, exactly what the roof lift needs.
     """
     if poly is None or poly.is_empty:
