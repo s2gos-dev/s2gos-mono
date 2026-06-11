@@ -1,24 +1,29 @@
-"""Unit tests for the building pipeline helpers in ``resources/buildings.py``.
+"""Unit tests for the building mesh primitives in ``assets/buildings.py``.
 
 These cover the pure, deterministic pieces (height parsing, material
-distribution, name sanitization) plus the flat-roof fallback that the pipeline
-relies on when hip-roof construction fails or produces unusable geometry.
+distribution, name sanitization), the flat-roof fallback that the pipeline
+relies on when hip-roof construction fails or produces unusable geometry, and
+the ``build_meshes`` entry point that groups footprints into one mesh
+per material.
 """
 
 from __future__ import annotations
 
+import geopandas as gpd
 import numpy as np
 import pytest
 import trimesh
 from shapely.geometry import MultiPolygon, Polygon
 
-from s2gos_generator.resources.buildings import (
+from s2gos_generator.assets.buildings import (
     _BuildingTask,
     _parse_height,
     _process_one_building,
     _resolve_material_distribution,
     _safe_name,
+    build_meshes,
 )
+from s2gos_generator.core.config import BuildingsConfig
 
 
 class TestParseHeight:
@@ -124,7 +129,7 @@ class TestProcessOneBuildingFallback:
         # Force build_hip_roof to fail; the pipeline must still emit a
         # full-height flat building rather than dropping it.
         monkeypatch.setattr(
-            "s2gos_generator.resources.buildings.build_hip_roof",
+            "s2gos_generator.assets.buildings.build_hip_roof",
             lambda *a, **k: None,
         )
         result = _process_one_building(self._task(pitched=True))
@@ -149,3 +154,73 @@ class TestProcessOneBuildingFallback:
         geom = MultiPolygon([_square(4.0), Polygon([(10, 10), (14, 10), (14, 14)])])
         result = _process_one_building(self._task(geom=geom, pitched=False))
         assert isinstance(result.wall_mesh, trimesh.Trimesh)
+
+
+def _footprints_gdf(n: int = 3, size: float = 8.0, gap: float = 20.0):
+    """A few square footprints in scene-local meters, laid out in a row."""
+    geoms = [
+        Polygon(
+            [
+                (i * gap, 0),
+                (i * gap + size, 0),
+                (i * gap + size, size),
+                (i * gap, size),
+            ]
+        )
+        for i in range(n)
+    ]
+    return gpd.GeoDataFrame({"height": [10.0] * n}, geometry=geoms)
+
+
+def _flat_elev_fn(z: float = 100.0):
+    return lambda xy: np.full(len(xy), z)
+
+
+class TestBuildMeshes:
+    def test_single_material_groups_into_one_mesh(self):
+        gdf = _footprints_gdf(n=3)
+        cfg = BuildingsConfig(file_paths=[], material="concrete")
+        result = build_meshes(gdf, _flat_elev_fn(), cfg)
+
+        assert result.single_material is True
+        assert list(result.material_meshes) == ["concrete"]
+        assert isinstance(result.material_meshes["concrete"], trimesh.Trimesh)
+        assert result.roof_mesh is None
+        assert result.stats.total == 3
+        assert result.stats.per_material_counts == {"concrete": 3}
+
+    def test_weighted_materials_are_deterministic_with_seed(self):
+        gdf = _footprints_gdf(n=20)
+        cfg = BuildingsConfig(
+            file_paths=[],
+            material={"brick": 1.0, "glass": 1.0},
+            material_seed=42,
+        )
+        a = build_meshes(gdf, _flat_elev_fn(), cfg).stats.per_material_counts
+        b = build_meshes(gdf, _flat_elev_fn(), cfg).stats.per_material_counts
+
+        assert a == b  # fixed seed -> reproducible assignment
+        assert sum(a.values()) == 20
+        assert set(a).issubset({"brick", "glass"})
+
+    def test_pitched_roof_produces_roof_mesh(self):
+        gdf = _footprints_gdf(n=2)
+        cfg = BuildingsConfig(
+            file_paths=[],
+            material="concrete",
+            pitched_roof_proportion=1.0,
+            roof_seed=0,
+        )
+        result = build_meshes(gdf, _flat_elev_fn(), cfg)
+
+        assert isinstance(result.roof_mesh, trimesh.Trimesh)
+        assert result.stats.pitched == 2
+
+    def test_empty_input_yields_no_meshes(self):
+        gdf = gpd.GeoDataFrame({"height": []}, geometry=[])
+        cfg = BuildingsConfig(file_paths=[], material="concrete")
+        result = build_meshes(gdf, _flat_elev_fn(), cfg)
+
+        assert result.stats.total == 0
+        assert result.material_meshes == {}
+        assert result.roof_mesh is None
