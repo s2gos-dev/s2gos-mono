@@ -21,7 +21,9 @@ class SensorProcessor:
         """
         self.simulation_config = simulation_config
 
-    def process_sensor_result(self, dataset: xr.Dataset, sensor) -> xr.Dataset:
+    def process_sensor_result(
+        self, dataset: xr.Dataset, sensor, output_dir=None
+    ) -> xr.Dataset:
         """Apply sensor-specific post-processing to a single dataset.
 
         This is the main entry point for all sensor post-processing.
@@ -29,18 +31,24 @@ class SensorProcessor:
         Args:
             dataset: Raw simulation result dataset
             sensor: Sensor configuration object
+            output_dir: Output directory (UPath with credentials). When provided,
+                used directly for RGB image generation instead of reading from
+                dataset attributes (which strips credentials).
 
         Returns:
             Post-processed dataset with SRF convolution, averaging, etc.
         """
-        return self._apply_post_processing(dataset, sensor)
+        return self._apply_post_processing(dataset, sensor, output_dir=output_dir)
 
-    def _apply_post_processing(self, dataset: xr.Dataset, sensor) -> xr.Dataset:
+    def _apply_post_processing(
+        self, dataset: xr.Dataset, sensor, output_dir=None
+    ) -> xr.Dataset:
         """Apply post-processing
 
         Args:
             dataset: Raw simulation result
             sensor: Sensor that produced the result
+            output_dir: Output directory with credentials (avoids re-constructing from attrs)
 
         Returns:
             Post-processed dataset
@@ -63,7 +71,8 @@ class SensorProcessor:
             if getattr(pp, "generate_rgb_image", False):
                 from upath import UPath
 
-                output_dir = UPath(dataset.attrs.get("output_dir", "./output"))
+                if output_dir is None:
+                    output_dir = UPath(dataset.attrs.get("output_dir", "./output"))
                 self._generate_rgb_image(radiance, sensor.id, output_dir, pp)
 
             if getattr(pp, "spatial_averaging", True):

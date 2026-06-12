@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import xarray as xr
 from PIL import Image
-from s2gos_utils.io.paths import open_dataset
+from s2gos_utils.io.paths import expand_mapper, mkdir, open_dataset, write_image
 from upath import UPath
 
 PERMANENT_WATER_MATERIAL_INDEX = 7
@@ -238,8 +238,6 @@ class TerrainMaterialGenerator:
 
     def _save_selection_texture(self, texture: np.ndarray, output_path: UPath) -> None:
         """Save selection texture as a grayscale PNG."""
-        from s2gos_utils.io.paths import mkdir
-
         if np.any(np.isnan(texture)) or np.any(np.isinf(texture)):
             logging.warning(
                 "Found NaN/inf values in selection texture before saving, cleaning..."
@@ -256,12 +254,10 @@ class TerrainMaterialGenerator:
 
         mkdir(output_path.parent)
         image = Image.fromarray(texture, mode="L")
-        image.save(output_path)
+        write_image(image, output_path)
 
     def _save_color_texture(self, texture: np.ndarray, output_path: UPath) -> None:
         """Save color texture as RGB PNG."""
-        from s2gos_utils.io.paths import mkdir
-
         if np.any(np.isnan(texture)) or np.any(np.isinf(texture)):
             logging.warning(
                 "Found NaN/inf values in color texture before saving, cleaning..."
@@ -275,7 +271,7 @@ class TerrainMaterialGenerator:
 
         mkdir(output_path.parent)
         image = Image.fromarray(texture, mode="RGB")
-        image.save(output_path)
+        write_image(image, output_path)
 
     def get_material_info(self) -> Dict:
         """
@@ -418,7 +414,7 @@ class TerrainMaterialGenerator:
             Tuple of (selection_texture_path, preview_texture_path).
         """
 
-        landcover_dataset = xr.open_zarr(landcover_file_path)
+        landcover_dataset = xr.open_zarr(expand_mapper(landcover_file_path))
         landcover_data = landcover_dataset["landcover"]
 
         if isinstance(landcover_data, xr.Dataset):
@@ -432,7 +428,7 @@ class TerrainMaterialGenerator:
         # Load DEM if provided for seasonal snow adjustment
         dem_data = None
         if dem_file_path is not None:
-            dem_dataset = xr.open_zarr(dem_file_path)
+            dem_dataset = xr.open_zarr(expand_mapper(dem_file_path))
             dem_data = dem_dataset["elevation"]
 
         selection_path = output_dir / f"{base_name}_selection.png"

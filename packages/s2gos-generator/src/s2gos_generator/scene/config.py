@@ -284,7 +284,9 @@ def create_s2gos_scene(
                 from s2gos_utils.io.paths import exists
 
                 if exists(dem_path):
-                    dem_data = xr.open_zarr(dem_path)
+                    from s2gos_utils.io.paths import expand_mapper
+
+                    dem_data = xr.open_zarr(expand_mapper(dem_path))
                     if "elevation" in dem_data.data_vars:
                         bg_elevation = float(dem_data["elevation"].mean().values)
                     else:

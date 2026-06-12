@@ -11,9 +11,11 @@ import yaml
 from pydantic import (
     BaseModel,
     Field,
+    GetJsonSchemaHandler,
     PrivateAttr,
     model_validator,
 )
+from pydantic_core import CoreSchema
 from upath import UPath
 
 from ..typing import PathLike
@@ -136,6 +138,19 @@ class PathRef(BaseModel):
         """Return the path value as a string."""
         return self.value
 
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> dict[str, Any]:
+        # Strip title and description so that when PathRef is inlined into a
+        # field's anyOf schema, the field-level title and description (from
+        # Field() annotations) are not overwritten by PathRef's class name and
+        # docstring.
+        schema = handler(core_schema)
+        schema.pop("title", None)
+        schema.pop("description", None)
+        return schema
+
     model_config = {"frozen": True}
 
 
@@ -145,8 +160,7 @@ class PathRef(BaseModel):
 def to_upath(path: PathLike | PathRef) -> UPath:
     if isinstance(path, PathRef):
         return path.upath
-    else:
-        return UPath(path)
+    return UPath(path)
 
 
 def open_file(
@@ -342,12 +356,30 @@ def mkdir(
     path: PathLike, parents: bool = True, exist_ok: bool = True, **kwargs
 ) -> None:
     """Create directory using UPath (supports local and some remote protocols)."""
-    to_upath(path).mkdir(parents=parents, exist_ok=exist_ok, **kwargs)
+    p = to_upath(path)
+    protocol = getattr(p, "protocol", None)
+    if protocol in ("s3", "s3a"):
+        return  # S3 has no real directories; objects are created on write
+    p.mkdir(parents=parents, exist_ok=exist_ok, **kwargs)
 
 
 def copy(src: PathLike | PathRef, dst: PathLike | PathRef, **kwargs) -> None:
     """Create directory using UPath (supports local and some remote protocols)."""
     to_upath(src).copy(to_upath(dst), **kwargs)
+
+
+def write_image(image, path: PathLike | PathRef, format: str = "PNG") -> None:
+    """Write a PIL Image to any backend supported by fsspec.
+
+    Uses an intermediate BytesIO buffer because PIL cannot write directly to
+    fsspec/UPath file objects.
+    """
+    import io
+
+    buf = io.BytesIO()
+    image.save(buf, format=format)
+    with open_file(path, "wb") as f:
+        f.write(buf.getvalue())
 
 
 def optional_str(path: Optional[PathLike]) -> Optional[str]:
@@ -363,6 +395,7 @@ def normalize_path(path: PathLike) -> str:
     return str(to_upath(path))
 
 
-def expand_mapper(path: UPath):
-    """Expands a UPath to a FSMapper."""
-    return path.fs.get_mapper(path.path)
+def expand_mapper(path: PathLike | PathRef):
+    """Expands a path to a FSMapper."""
+    upath = to_upath(path)
+    return upath.fs.get_mapper(upath.path)

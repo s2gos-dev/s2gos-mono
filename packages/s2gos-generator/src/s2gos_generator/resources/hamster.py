@@ -7,7 +7,7 @@ from typing import Optional
 import numpy as np
 import xarray as xr
 import yaml
-from s2gos_utils.io.paths import mkdir, open_file
+from s2gos_utils.io.paths import expand_mapper, mkdir, open_dataset, open_file
 from upath import UPath
 
 from ..core.context import SceneResourceContext
@@ -34,7 +34,7 @@ def process_hamster_data(ctx: SceneResourceContext) -> Optional[Path]:
             else:
                 raise FileNotFoundError(f"HAMSTER data file not found: {hamster_path}")
 
-        ds = xr.open_dataset(hamster_path)
+        ds = open_dataset(hamster_path)
 
         if "lat" in ds.dims:
             ds = ds.sel(lat=slice(None, None, -1))
@@ -154,7 +154,7 @@ def process_hamster_data(ctx: SceneResourceContext) -> Optional[Path]:
 def _save_hamster_dataset(dataset: xr.Dataset, output_path: UPath) -> None:
     """Save HAMSTER dataset to zarr format."""
     mkdir(output_path.parent)
-    dataset.to_zarr(output_path, mode="w")
+    dataset.to_zarr(expand_mapper(output_path), mode="w")
 
 
 def _crop_and_save_area(

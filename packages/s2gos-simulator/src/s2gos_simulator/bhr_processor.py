@@ -289,7 +289,9 @@ class BHRProcessor:
                         radiosity_dir
                         / f"{self.simulation_config.name}_{bhr_config.id}_surface.zarr"
                     )
-                    surface_result.to_zarr(str(surface_file), mode="w")
+                    from s2gos_utils.io.paths import expand_mapper
+
+                    surface_result.to_zarr(expand_mapper(surface_file), mode="w")
                     logger.info(f"  Saved surface radiosity → {surface_file.name}")
 
                 # Step 2: White reference simulation
@@ -322,7 +324,9 @@ class BHRProcessor:
                         radiosity_dir
                         / f"{self.simulation_config.name}_{bhr_config.id}_reference.zarr"
                     )
-                    ref_result.to_zarr(str(reference_file), mode="w")
+                    from s2gos_utils.io.paths import expand_mapper
+
+                    ref_result.to_zarr(expand_mapper(reference_file), mode="w")
                     logger.info(f"  Saved reference radiosity → {reference_file.name}")
 
                 # Step 3: Compute BHR
@@ -342,7 +346,9 @@ class BHRProcessor:
                     / f"{self.simulation_config.name}_{bhr_config.id}_bhr.zarr"
                 )
                 bhr_ds.attrs["id"] = bhr_config.id
-                bhr_ds.to_zarr(str(output_file), mode="w")
+                from s2gos_utils.io.paths import expand_mapper
+
+                bhr_ds.to_zarr(expand_mapper(output_file), mode="w")
 
                 results[bhr_config.id] = bhr_ds
 

@@ -484,5 +484,5 @@ class TestDatasetFactory:
             "type": "invalid-type",
         }
 
-        with pytest.raises(KeyError):
+        with pytest.raises(ValueError):
             dataset_factory(settings, "test_dataset")
