@@ -59,43 +59,43 @@ class TestToPathRef:
         result = to_pathref("/tmp/test_path")
 
         assert isinstance(result, PathRef)
-        assert result.value == "/tmp/test_path"
+        assert result.href == "/tmp/test_path"
         assert result.cid is None
 
     def test_to_pathref_from_dict(self):
         """Test converting a dict with and without credential ID to PathRef."""
-        path_dict = {"value": "/tmp/test_path"}
+        path_dict = {"href": "/tmp/test_path"}
         result = to_pathref(path_dict)
 
         assert isinstance(result, PathRef)
-        assert result.value == "/tmp/test_path"
+        assert result.href == "/tmp/test_path"
         assert result.cid is None
 
-        path_dict = {"value": "s3://bucket/path", "cid": "my_credential"}
+        path_dict = {"href": "s3://bucket/path", "x-cid": "my_credential"}
         result = to_pathref(path_dict)
 
         assert isinstance(result, PathRef)
-        assert result.value == "s3://bucket/path"
+        assert result.href == "s3://bucket/path"
         assert result.cid == "my_credential"
 
     def test_to_pathref_from_dynabox(self):
         """Test converting a DynaBox (dynaconf object) to PathRef."""
         dynabox = DynaBox(
-            {"value": "https://example.com/data.zarr", "cid": "example_cred"}
+            {"href": "https://example.com/data.zarr", "x-cid": "example_cred"}
         )
         result = to_pathref(dynabox)
 
         assert isinstance(result, PathRef)
-        assert result.value == "https://example.com/data.zarr"
+        assert result.href == "https://example.com/data.zarr"
         assert result.cid == "example_cred"
 
     def test_to_pathref_preserves_pathref_input(self):
         """Test that passing a PathRef returns an equivalent PathRef."""
-        original = PathRef(value="/tmp/path", cid="test")
-        result = to_pathref({"value": original.value, "cid": original.cid})
+        original = PathRef(href="/tmp/path", cid="test")
+        result = to_pathref({"href": original.href, "x-cid": original.cid})
 
         assert isinstance(result, PathRef)
-        assert result.value == original.value
+        assert result.href == original.href
         assert result.cid == original.cid
 
 

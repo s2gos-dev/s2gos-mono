@@ -5,7 +5,7 @@ from typing import Dict, List, Literal, Optional, Tuple, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 from s2gos_utils.io.paths import PathRef
 
-from ._utils import _resolve_asset_path
+from ._utils import resolve_asset_path
 
 
 class CircleGeometry(BaseModel):
@@ -187,14 +187,14 @@ class VegetationSpecies(BaseModel):
         if isinstance(self.asset_xml_paths, list):
             resolved_paths = []
             for path in self.asset_xml_paths:
-                resolved = _resolve_asset_path(path, asset_type="vegetation XML")
+                resolved = resolve_asset_path(path, asset_type="vegetation XML")
                 resolved_paths.append(resolved)
             # Use object.__setattr__ to avoid triggering validate_assignment recursion
             object.__setattr__(self, "asset_xml_paths", resolved_paths)
         elif isinstance(self.asset_xml_paths, dict):
             resolved_dict = {}
             for path, weight in self.asset_xml_paths.items():
-                resolved = _resolve_asset_path(path, asset_type="vegetation XML")
+                resolved = resolve_asset_path(path, asset_type="vegetation XML")
                 resolved_dict[resolved] = weight
             # Use object.__setattr__ to avoid triggering validate_assignment recursion
             object.__setattr__(self, "asset_xml_paths", resolved_dict)

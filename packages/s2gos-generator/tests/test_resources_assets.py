@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from s2gos_generator.core.config.assets import UserAssets, XmlSceneConfig
 
-_PATCH_RESOLVE = "s2gos_generator.core.config.assets._resolve_asset_path"
+_PATCH_RESOLVE = "s2gos_generator.core.config.assets.resolve_asset_path"
 _PATCH_MKDIR = "s2gos_utils.io.paths.mkdir"
 _PATCH_COPY = "s2gos_utils.io.paths.copy"
 _PATCH_OPEN_FILE = "s2gos_generator.resources.assets.open_file"

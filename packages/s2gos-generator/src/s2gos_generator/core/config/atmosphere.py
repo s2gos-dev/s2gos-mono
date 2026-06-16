@@ -6,7 +6,7 @@ from typing import Annotated, Literal, Optional, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 from s2gos_utils.io.paths import PathRef
 
-from ._utils import _resolve_asset_path
+from ._utils import resolve_asset_path
 
 
 class AerosolDataset(str, Enum):
@@ -78,7 +78,7 @@ class ThermophysicalConfig(BaseModel):
     def validate_thermaproprs_path(cls, v):
         """Validate and resolve thermaproprs file path using configured search paths."""
         if v is not None:
-            resolved = _resolve_asset_path(v, asset_type="NetCDF")
+            resolved = resolve_asset_path(v, asset_type="NetCDF")
             return resolved
 
     @model_validator(mode="after")

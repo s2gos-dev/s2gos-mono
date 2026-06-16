@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, BinaryIO, Dict, Optional, TextIO, Union
+from typing import Annotated, Any, BinaryIO, Dict, Optional, TextIO, Union
 
 import geopandas as gpd
 import pandas as pd
@@ -10,9 +10,12 @@ import xarray as xr
 import yaml
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     GetJsonSchemaHandler,
     PrivateAttr,
+    WithJsonSchema,
+    model_serializer,
     model_validator,
 )
 from pydantic_core import CoreSchema
@@ -24,13 +27,21 @@ class PathRef(BaseModel):
     Path configuration that preserves credential reference through serialization.
 
     This model allows paths to reference credentials by ID rather than embedding
-    actual credentials. When serialized to JSON, only the path value and credential_id
-    are stored (no actual credentials). When deserialized, credentials are resolved
-    from the credential provider (environment variables or .secrets.yaml).
+    actual credentials. When serialized to JSON it is structurally an OGC ``Link``:
+    ``{"href": <path/URI>, "x-cid": <credential id>}`` (only the path and the
+    credential reference are stored, never actual credentials). When deserialized,
+    credentials are resolved from the credential provider (environment variables or
+    .secrets.yaml).
 
     Attributes:
-        value: The actual path/URI
-        cid: Optional reference to a Credential ID in the credential provider
+        href: The actual path/URI (the OGC Link ``href``).
+        rel: Optional Link relation type.
+        type: Optional Link media (MIME) type.
+        hreflang: Optional language of the linked resource.
+        title: Optional human-readable title.
+        options: Optional extra client options (serialized as ``x-options``).
+        cid: Optional reference to a Credential ID in the credential provider.
+            Serialized as the ``x-cid`` Link extension.
 
     Example:
         # With credentials
@@ -46,31 +57,54 @@ class PathRef(BaseModel):
         upath = path.upath
     """
 
-    value: str = Field(description="Full path URI")
-    # TODO : rename to credential id
-    cid: str | None = Field(default=None, description="Credential ID")
+    href: str = Field(description="Full path URI")
+    rel: str | None = Field(default=None, description="Relation type")
+    type: str | None = Field(default=None, description="Media (MIME) type")
+    hreflang: str | None = Field(
+        default=None, description="Language of the linked resource"
+    )
+    title: str | None = Field(default=None, description="Human-readable title")
+    options: Annotated[dict[str, Any] | None, WithJsonSchema({"type": "object"})] = (
+        Field(
+            default=None,
+            alias="x-options",
+            description="Extra client options for accessing href in its storage",
+        )
+    )
+    cid: str | None = Field(default=None, alias="x-cid", description="Credential ID")
     _upath: UPath | None = PrivateAttr(default=None)
 
-    def __init__(self, value, cid=None, **kwargs):
-        super().__init__(value=value, cid=cid, **kwargs)
+    model_config = ConfigDict(
+        frozen=True, populate_by_name=True, serialize_by_alias=True
+    )
+
+    def __init__(self, href, cid=None, **kwargs):
+        super().__init__(href=href, cid=cid, **kwargs)
+
+    @model_serializer(mode="wrap")
+    def _omit_unset(self, handler) -> dict[str, Any]:
+        """Serialize like an OGC Link: drop optional fields that are unset."""
+        return {k: v for k, v in handler(self).items() if v is not None}
 
     @model_validator(mode="before")
     @classmethod
     def _coerce(cls, data: Any) -> Any:
-        """Normalize str / PathLike / PathRef / dict into ``{"value": str, "cid": str | None}``."""
+        """Normalize str / PathLike / PathRef / dict input, preserving Link fields."""
         if isinstance(data, PathRef):
-            return {"value": data.value, "cid": data.cid}
+            return data.model_dump()
         if isinstance(data, dict):
-            v = data["value"]
-            if isinstance(v, PathRef):
-                return {"value": v.value, "cid": data.get("cid") or v.cid}
-            if isinstance(v, dict):
-                return {
-                    "value": str(v["value"]),
-                    "cid": data.get("cid") or v.get("cid"),
-                }
-            return {"value": str(v), "cid": data.get("cid")}
-        return {"value": str(data)}
+            d = dict(data)
+            href = d.get("href")
+            if isinstance(href, PathRef):
+                base = href.model_dump()
+                base.update(
+                    {k: v for k, v in d.items() if k != "href" and v is not None}
+                )
+                return base
+            if href is not None:
+                d["href"] = str(href)
+            return d
+        return {"href": str(data)}
 
     @property
     def upath(self) -> UPath:
@@ -96,14 +130,14 @@ class PathRef(BaseModel):
 
             cred = get_credential(self.cid)
             kwargs = cred.upath_kwargs
-            self._upath = UPath(self.value, **kwargs)
+            self._upath = UPath(self.href, **kwargs)
         else:
             # No credentials needed (local path or public URL)
-            self._upath = UPath(self.value)
+            self._upath = UPath(self.href)
 
         return self._upath
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
         """Alias to `model_dump`."""
         return self.model_dump()
 
@@ -115,7 +149,7 @@ class PathRef(BaseModel):
         never resolve credentials — path math should not require secrets. Use
         ``.upath`` instead whenever you actually touch storage.
         """
-        return UPath(self.value)
+        return UPath(self.href)
 
     def __truediv__(self, other) -> PathRef:
         """Returns the joined path, preserving the credential id."""
@@ -126,7 +160,7 @@ class PathRef(BaseModel):
                     f"Joining paths with different credential ids! "
                     f"Left: {self.cid}, Right: {other.cid}."
                 )
-            other = other.value
+            other = other.href
 
         return PathRef(self._lexical / other, self.cid)
 
@@ -148,7 +182,7 @@ class PathRef(BaseModel):
 
     def __str__(self) -> str:
         """Return the path value as a string."""
-        return self.value
+        return self.href
 
     @classmethod
     def __get_pydantic_json_schema__(
@@ -162,8 +196,6 @@ class PathRef(BaseModel):
         schema.pop("title", None)
         schema.pop("description", None)
         return schema
-
-    model_config = {"frozen": True}
 
 
 PathLike = PathRef | str | os.PathLike
