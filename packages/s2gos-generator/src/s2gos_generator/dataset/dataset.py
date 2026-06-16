@@ -2,15 +2,15 @@ from abc import ABC
 from typing import Any
 
 from pydantic import BaseModel, Field
-from s2gos_utils.typing import PathLike
 from shapely import Polygon
+from upath import UPath
 
 
 class Dataset(ABC, BaseModel):
     name: str = Field(description="Name of the dataset, used for logging.")
     crs: str = Field(default="EPSG:4326", description="Coordinate reference system.")
 
-    def query(self, polygon: Polygon, ctx: dict | None = None) -> list[PathLike]:
+    def query(self, polygon: Polygon, ctx: dict | None = None) -> list[UPath]:
         """
         Use this function to query whether data is present within a polygon shape.
 

@@ -1,4 +1,5 @@
 from .paths import (
+    PathLike,
     PathRef,
     copy,
     exists,
@@ -14,11 +15,15 @@ from .paths import (
     read_geofeather,
     read_json,
     read_yaml,
+    to_upath,
+    write_image,
 )
 from .resolver import FileResolver, resolver
 
 __all__ = [
     "PathRef",
+    "PathLike",
+    "to_upath",
     "copy",
     "open_file",
     "exists",
@@ -33,6 +38,7 @@ __all__ = [
     "is_remote_path",
     "mkdir",
     "optional_str",
+    "write_image",
     "FileResolver",
     "resolver",
 ]

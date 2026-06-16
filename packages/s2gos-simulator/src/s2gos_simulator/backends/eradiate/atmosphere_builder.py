@@ -3,6 +3,7 @@
 import logging
 
 import numpy as np
+from s2gos_utils.io.paths import open_dataset, to_upath
 from s2gos_utils.scene import SceneDescription
 
 logger = logging.getLogger(__name__)
@@ -90,12 +91,7 @@ class AtmosphereBuilder:
             MolecularAtmosphere object
         """
         if "thermoprops_file" in mol_dict:
-            import xarray as xr
-            from upath import UPath
-
-            from s2gos_utils.io.paths import open_dataset
-
-            thermoprops_file = UPath(mol_dict["thermoprops_file"])
+            thermoprops_file = to_upath(mol_dict["thermoprops_file"])
             thermoprops = open_dataset(thermoprops_file).squeeze(drop=True)
         else:
             thermoprops_id = mol_dict.get(

@@ -16,7 +16,6 @@ from s2gos_utils import validate_config_version
 from s2gos_utils.io.paths import PathRef, open_file
 from s2gos_utils.io.resolver import resolver
 from s2gos_utils.setting.paths import to_pathref
-from upath import UPath
 
 from .assets import HamsterConfig, MaterialRegion, UserAssets, XmlSceneConfig
 from .atmosphere import (
@@ -321,9 +320,6 @@ class SceneGenConfig(BaseModel):
         """Load from JSON file."""
         with open_file(path, "r") as f:
             data = json.load(f)
-
-        if "output_dir" in data and isinstance(data["output_dir"], str):
-            data["output_dir"] = UPath(data["output_dir"])
 
         validate_config_version(
             "scene_config", data, get_version(), "scene generation configuration"

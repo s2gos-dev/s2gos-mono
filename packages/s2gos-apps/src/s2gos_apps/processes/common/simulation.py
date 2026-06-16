@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from pydantic import Field
-from s2gos_utils.typing import PathLike
+from s2gos_utils.io.paths import PathRef
 
 from s2gos_apps.registry import registry
 
@@ -9,17 +9,17 @@ from s2gos_apps.registry import registry
 @registry.process(id="common-simulation", title="Scene Simulation")
 def simulation(
     scene_description_path: Annotated[
-        str, Field(..., description="Path to scene description yaml file.")
+        PathRef, Field(..., description="Path to scene description yaml file.")
     ],
     config_path: Annotated[
-        str,
+        PathRef,
         Field(..., description="Path to the simulation configuration JSON file."),
     ],
     simulation_output_dir: Annotated[
-        str | None,
+        PathRef | None,
         Field(..., description="Path to the simulation output directory."),
     ] = None,
-) -> PathLike | None:
+) -> PathRef:
     """
     General process to simulate observations from 3D scene descriptions and
     simulation configurations.

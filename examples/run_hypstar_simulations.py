@@ -52,7 +52,7 @@ from upath import UPath
 # ==============================================================================
 
 # Input / Output Paths (resolved via s2gos_settings.toml -> ./hypstar_data/)
-HYPSTAR_L2A_PATH = "/home/s2gos-mono/extra_data/HYPERNETS_L_GHNA_L2A_REF_20220517T0743_20230424T0625_v1.0.nc"
+HYPSTAR_L2A_PATH = "HYPERNETS_L_GHNA_L2A_REF_20220517T0743_20230424T0625_v1.0.nc"
 OUTPUT_DIR = Path("./hypstar_simulation_output")
 SIM_DIR = OUTPUT_DIR / "simulations"
 SCENE_NAME = "hypstar_gobabeb"

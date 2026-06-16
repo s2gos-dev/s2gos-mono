@@ -3,9 +3,8 @@ from typing import Any, Dict, Optional
 from upath import UPath
 
 from .definitions import Material
-from ...io.paths import exists, read_json
+from ...io.paths import PathLike, exists, read_json
 from ...io.resolver import resolver
-from ...typing import PathLike
 from ...versioning import validate_config_version
 
 
@@ -22,7 +21,7 @@ class MaterialConfigLoader:
             # Use proper importlib.resources to access package data
             config_path = resolver.resolve("./materials.json")
 
-        self.config_path = resolver.resolve(UPath(config_path))
+        self.config_path = resolver.resolve(config_path)
         self._config_cache: Optional[Dict[str, Any]] = None
 
     def _load_config(self) -> Dict[str, Any]:
@@ -175,7 +174,7 @@ def _get_default_loader() -> MaterialConfigLoader:
     return _default_loader
 
 
-def load_materials(config_path: Optional[UPath] = None) -> Dict[str, Material]:
+def load_materials(config_path: Optional[PathLike] = None) -> Dict[str, Material]:
     """Load materials from configuration file.
 
     Args:
@@ -191,7 +190,7 @@ def load_materials(config_path: Optional[UPath] = None) -> Dict[str, Material]:
         return loader.load_materials()
 
 
-def get_landcover_mapping(config_path: Optional[UPath] = None) -> Dict[str, str]:
+def get_landcover_mapping(config_path: Optional[PathLike] = None) -> Dict[str, str]:
     """Get landcover to material mapping from configuration file.
 
     Args:

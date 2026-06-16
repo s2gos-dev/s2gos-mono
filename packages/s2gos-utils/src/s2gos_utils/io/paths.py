@@ -18,8 +18,6 @@ from pydantic import (
 from pydantic_core import CoreSchema
 from upath import UPath
 
-from ..typing import PathLike
-
 
 class PathRef(BaseModel):
     """
@@ -37,7 +35,7 @@ class PathRef(BaseModel):
     Example:
         # With credentials
         path = PathRef(
-            path="https://data.earthdatahub.destine.eu/data.zarr",
+            "https://data.earthdatahub.destine.eu/data.zarr",
             cid="earthdatahub"
         )
 
@@ -54,30 +52,20 @@ class PathRef(BaseModel):
     _upath: UPath | None = PrivateAttr(default=None)
 
     def __init__(self, value, cid=None, **kwargs):
-        if isinstance(value, (UPath, os.PathLike)):
-            path = str(value)
-        elif isinstance(value, PathRef):
-            path = value.value
-            cid = value.cid
-        elif isinstance(value, dict):
-            path = value["value"]
-            cid = value["cid"]
-        else:
-            path = value
-
-        super(PathRef, self).__init__(value=path, cid=cid, **kwargs)
+        super().__init__(value=value, cid=cid, **kwargs)
 
     @model_validator(mode="before")
     @classmethod
-    def convert_to_pathref(cls, value):
-        if isinstance(value, str):
-            return {"value": value}
-
-        elif isinstance(value, UPath):
-            cid = value.storage_options.get("cid")
-            return {"value": str(value), "cid": cid}
-
-        return value
+    def _coerce(cls, data: Any) -> Any:
+        """Normalize str / PathLike / PathRef / dict into ``{"value": str, "cid": str | None}``."""
+        if isinstance(data, PathRef):
+            return {"value": data.value, "cid": data.cid}
+        if isinstance(data, dict):
+            v = data["value"]
+            if isinstance(v, PathRef):
+                return {"value": v.value, "cid": data.get("cid") or v.cid}
+            return {"value": str(v), "cid": data.get("cid")}
+        return {"value": str(data)}
 
     @property
     def upath(self) -> UPath:
@@ -92,7 +80,8 @@ class PathRef(BaseModel):
             UPath object with authentication if `cid` is set
 
         Raises:
-            ValueError: If `cid` is set but credential is not found
+            CredentialNotFoundError: If `cid` is set but the credential is not
+                found in the active provider.
         """
         if self._upath is not None:
             return self._upath
@@ -101,12 +90,6 @@ class PathRef(BaseModel):
             from s2gos_utils.setting.credentials import get_credential
 
             cred = get_credential(self.cid)
-            if not cred:
-                raise ValueError(
-                    f"Credential '{self.cid}' not found. "
-                    f"Set S2GOS_CRED_{self.cid}_* environment variables "
-                    f"or add to .secrets.yaml"
-                )
             kwargs = cred.upath_kwargs
             self._upath = UPath(self.value, **kwargs)
         else:
@@ -119,8 +102,18 @@ class PathRef(BaseModel):
         """Alias to `model_dump`."""
         return self.model_dump()
 
+    @property
+    def _lexical(self) -> UPath:
+        """A credential-free ``UPath`` for pure path manipulation.
+
+        Used by the lexical operations (``/``, ``parent``, ``name``, ...) so they
+        never resolve credentials — path math should not require secrets. Use
+        ``.upath`` instead whenever you actually touch storage.
+        """
+        return UPath(self.value)
+
     def __truediv__(self, other) -> PathRef:
-        """Returns the joined UPath."""
+        """Returns the joined path, preserving the credential id."""
 
         if isinstance(other, PathRef):
             if other.cid != self.cid:
@@ -128,11 +121,25 @@ class PathRef(BaseModel):
                     f"Joining paths with different credential ids! "
                     f"Left: {self.cid}, Right: {other.cid}."
                 )
-            other_path = other.upath
-        else:
-            other_path = other
+            other = other.value
 
-        return PathRef(self.upath / other_path, self.cid)
+        return PathRef(self._lexical / other, self.cid)
+
+    @property
+    def parent(self) -> PathRef:
+        return PathRef(self._lexical.parent, self.cid)
+
+    @property
+    def name(self) -> str:
+        return self._lexical.name
+
+    @property
+    def stem(self) -> str:
+        return self._lexical.stem
+
+    @property
+    def suffix(self) -> str:
+        return self._lexical.suffix
 
     def __str__(self) -> str:
         """Return the path value as a string."""
@@ -154,18 +161,22 @@ class PathRef(BaseModel):
     model_config = {"frozen": True}
 
 
+PathLike = PathRef | str | os.PathLike
+
+
 # PATH UTILITY FUNCTIONS
 
 
-def to_upath(path: PathLike | PathRef) -> UPath:
+def to_upath(path: PathLike) -> UPath:
+    """Resolve a path to an authenticated ``UPath`` (the fsspec handle)."""
     if isinstance(path, PathRef):
         return path.upath
+    if isinstance(path, UPath):
+        return path
     return UPath(path)
 
 
-def open_file(
-    path: PathLike | PathRef, mode: str = "r", **kwargs
-) -> Union[TextIO, BinaryIO]:
+def open_file(path: PathLike, mode: str = "r", **kwargs) -> Union[TextIO, BinaryIO]:
     """Open a file using UPath for unified access across storage backends.
 
     Args:
@@ -236,7 +247,7 @@ def read_yaml(path: PathLike, **kwargs) -> Dict[str, Any]:
 
 
 def open_dataarray(
-    path: UPath | PathRef,
+    path: PathLike,
     engine: str | None = None,
     fsspec_caching: dict | None = None,
     **kwargs,
@@ -280,7 +291,7 @@ def open_dataarray(
 
 
 def open_dataset(
-    path: UPath | PathRef,
+    path: PathLike,
     engine: str | None = None,
     fsspec_caching: dict | None = None,
     **kwargs,
@@ -363,12 +374,12 @@ def mkdir(
     p.mkdir(parents=parents, exist_ok=exist_ok, **kwargs)
 
 
-def copy(src: PathLike | PathRef, dst: PathLike | PathRef, **kwargs) -> None:
+def copy(src: PathLike, dst: PathLike, **kwargs) -> None:
     """Create directory using UPath (supports local and some remote protocols)."""
     to_upath(src).copy(to_upath(dst), **kwargs)
 
 
-def write_image(image, path: PathLike | PathRef, format: str = "PNG") -> None:
+def write_image(image, path: PathLike, format: str = "PNG") -> None:
     """Write a PIL Image to any backend supported by fsspec.
 
     Uses an intermediate BytesIO buffer because PIL cannot write directly to
@@ -395,7 +406,7 @@ def normalize_path(path: PathLike) -> str:
     return str(to_upath(path))
 
 
-def expand_mapper(path: PathLike | PathRef):
+def expand_mapper(path: PathLike):
     """Expands a path to a FSMapper."""
     upath = to_upath(path)
     return upath.fs.get_mapper(upath.path)

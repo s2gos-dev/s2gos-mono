@@ -5,8 +5,7 @@ import os
 import attrs
 from upath import UPath
 
-from ..io import PathRef
-from ..typing import PathLike
+from .paths import PathLike, to_upath
 
 
 def _validator_path_exists(instance, attribute, value: UPath):
@@ -15,16 +14,26 @@ def _validator_path_exists(instance, attribute, value: UPath):
         raise FileNotFoundError(f"Path does not exist: {value}")
 
 
+def _to_search_path(path: PathLike) -> UPath:
+    """Normalize a search-path entry to a ``UPath``, resolving local paths.
+
+    Routes through ``to_upath`` so ``PathRef`` credentials are applied, then
+    resolves only local (``file``) paths — remote paths have no meaningful
+    ``resolve()``.
+    """
+    upath = to_upath(path)
+    if upath.protocol == "file":
+        upath = upath.resolve()
+    return upath
+
+
 @attrs.define
 class FileResolver:
     """File resolver with UPath support for local and remote paths."""
 
     paths: list[UPath] = attrs.field(
         factory=list,
-        converter=lambda value: [
-            UPath(x).resolve() if hasattr(UPath(x), "resolve") else UPath(x)
-            for x in value
-        ],
+        converter=lambda value: [_to_search_path(x) for x in value],
         validator=attrs.validators.deep_iterable(_validator_path_exists),
     )
 
@@ -35,10 +44,7 @@ class FileResolver:
             path: Path to add to search paths (local or remote)
             avoid_duplicates: If True, avoid adding duplicate paths
         """
-        upath = UPath(path)
-        # Resolve for local paths only
-        if upath.protocol == "file":
-            upath = upath.resolve()
+        upath = _to_search_path(path)
 
         if not upath.exists():
             raise FileNotFoundError(f"Path does not exist: {upath}")
@@ -56,10 +62,7 @@ class FileResolver:
             path: Path to add to search paths (local or remote)
             avoid_duplicates: If True, avoid adding duplicate paths
         """
-        upath = UPath(path)
-        # Resolve for local paths only
-        if upath.protocol == "file":
-            upath = upath.resolve()
+        upath = _to_search_path(path)
 
         if not upath.exists():
             raise FileNotFoundError(f"Path does not exist: {upath}")
@@ -74,7 +77,7 @@ class FileResolver:
         """Clear the list of search paths."""
         self.paths.clear()
 
-    def resolve(self, path: PathLike | PathRef, strict: bool = True) -> UPath:
+    def resolve(self, path: PathLike, strict: bool = True) -> UPath:
         """Resolve a path by searching registered locations in order.
 
         Args:
@@ -88,10 +91,7 @@ class FileResolver:
         Raises:
             FileNotFoundError: If strict=True and path not found in any search location
         """
-        if isinstance(path, PathRef):
-            upath = path.upath
-        else:
-            upath = UPath(path)
+        upath = to_upath(path)
 
         # NOTE: The "https" protocol returns False on calls to `exists`. This is
         # a hack to go around the issue. We need to understand which protocols

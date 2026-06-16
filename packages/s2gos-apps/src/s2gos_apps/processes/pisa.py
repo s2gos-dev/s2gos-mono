@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 import logging
-import os
 from typing import Annotated
 
-logger = logging.getLogger(__name__)
-
 from pydantic import Field
-from s2gos_utils.io import PathRef
+from s2gos_utils.io import PathRef, mkdir
 
 from s2gos_apps.registry import registry
+
+logger = logging.getLogger(__name__)
 
 
 @registry.process(id="pisa-generation-config", title="Pisa Generation Config")
@@ -18,14 +17,14 @@ def generation_configs(
     target_lon: Annotated[float, Field(..., description="Target's center longitude.")],
     target_size: Annotated[float, Field(..., description="Target's size in [km].")],
     config_output_dir: Annotated[
-        PathRef | None,
-        Field(..., description="Generation configuration output directory."),
-    ] = None,
+        PathRef,
+        Field(description="Generation configuration output directory."),
+    ] = PathRef("./gen_config"),
     scene_output_dir: Annotated[
-        PathRef | None,
-        Field(..., description="Scene description output directiory."),
-    ] = None,
-) -> PathRef | None:
+        PathRef,
+        Field(description="Scene description output directiory."),
+    ] = PathRef("./gen_output"),
+) -> PathRef:
     """
     Create the scene confifuration corresponding the Pisa scene.
     """
@@ -40,14 +39,6 @@ def generation_configs(
         VegetationSpecies,
     )
 
-    # Enforce PathRef type
-    config_output_dir = (
-        PathRef(config_output_dir) if config_output_dir is not None else None
-    )
-    scene_output_dir = (
-        PathRef(scene_output_dir) if scene_output_dir is not None else None
-    )
-
     logger.info("Configuring generation...")
 
     # Create basic configuration using defaults
@@ -56,9 +47,7 @@ def generation_configs(
         center_lat=target_lat,
         center_lon=target_lon,
         aoi_size_km=target_size,
-        output_dir=PathRef("./gen_output")
-        if scene_output_dir is None
-        else scene_output_dir,
+        output_dir=scene_output_dir,
         target_resolution_m=10.0,
         description="San Rossore cite and PISA city",
     )
@@ -130,17 +119,8 @@ def generation_configs(
     # Save generation config file
     config_filename = f"{config.scene_name}_gen_config.json"
 
-    if config_output_dir is None:
-        if not os.path.exists("./gen_config"):
-            os.mkdir("./gen_config")
-
-        config_path = PathRef(f"./gen_config/{config_filename}")
-    else:
-        config_output_dir = PathRef(config_output_dir)
-        if not config_output_dir.upath.exists():
-            config_output_dir.upath.mkdir(parents=True, exist_ok=True)
-
-        config_path = config_output_dir / config_filename
+    mkdir(config_output_dir)
+    config_path = config_output_dir / config_filename
 
     config.to_json(config_path)
 
@@ -158,30 +138,18 @@ def simulation_configs(
     ],
     spp: Annotated[int, Field(..., description="Number of Monte Carlo samples.")] = 8,
     config_output_dir: Annotated[
-        PathRef | None,
-        Field(..., description="Simulation configuration output directiory."),
-    ] = None,
-) -> PathRef | None:
+        PathRef,
+        Field(description="Simulation configuration output directiory."),
+    ] = PathRef("./sim_config"),
+) -> PathRef:
     from s2gos_apps.sim_util import simulation_config
 
-    logger.debug("config_output_dir raw: %r", config_output_dir)
-    input_ref = PathRef(config_output_dir) if config_output_dir is not None else None
-    cid = input_ref.cid if input_ref is not None else None
-    config_output_upath = input_ref.upath if input_ref is not None else None
-    logger.debug("config_output_upath=%r  cid=%r", config_output_upath, cid)
-
-    config_path = simulation_config(
+    return simulation_config(
         scene_name,
         target_lat,
         target_lon,
         target_size,
         gmt_hour,
         spp,
-        config_output_upath,
+        config_output_dir,
     )
-    logger.debug("config_path=%r", config_path)
-    if config_path is not None:
-        result = PathRef(value=str(config_path), cid=cid)
-        logger.debug("returning PathRef(value=%r, cid=%r)", result.value, result.cid)
-        return result
-    return None

@@ -1,7 +1,8 @@
 from s2gos_generator import SceneGenConfig, SceneGenerationPipeline
+from s2gos_utils.io.paths import PathRef
 
 
-def generation_from_config(config: SceneGenConfig):
+def generation_from_config(config: SceneGenConfig) -> PathRef:
     """3D scene generation from a scene configuration."""
 
     print("\n")
@@ -63,4 +64,4 @@ def generation_from_config(config: SceneGenConfig):
     print("\n" + "=" * 60)
     print(f"Output directory: {config.scene_output_dir}")
 
-    return config.scene_output_dir.upath / f"{config.scene_name}.yml"
+    return config.scene_output_dir / f"{config.scene_name}.yml"

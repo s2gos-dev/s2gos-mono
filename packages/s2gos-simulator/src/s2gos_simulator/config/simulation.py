@@ -12,8 +12,7 @@ from pydantic import (
     model_validator,
 )
 from s2gos_utils import validate_config_version
-from s2gos_utils.io.paths import open_file, read_json
-from s2gos_utils.typing import PathLike
+from s2gos_utils.io.paths import PathLike, open_file, read_json
 
 from .illumination import ConstantIllumination, DirectionalIllumination
 from .measurements import (

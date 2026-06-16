@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 import logging
-import os
 from typing import Annotated
-
-logger = logging.getLogger(__name__)
 
 from pydantic import Field
 from s2gos_generator.core.config import (
@@ -14,10 +11,11 @@ from s2gos_generator.core.config import (
     VegetationSpecies,
     XmlSceneConfig,
 )
-from s2gos_utils.io import PathRef
-from s2gos_utils.typing import PathLike
+from s2gos_utils.io import PathRef, mkdir
 
 from s2gos_apps.registry import registry
+
+logger = logging.getLogger(__name__)
 
 
 @registry.process(id="pnp-generation-config", title="PNP Generation Config")
@@ -30,14 +28,14 @@ def generation_configs(
         int, Field(..., description="RNG seed, mostly for vegetation")
     ],
     config_output_dir: Annotated[
-        PathLike | None,
-        Field(..., description="Generation configuration output directory."),
-    ] = None,
+        PathRef,
+        Field(description="Generation configuration output directory."),
+    ] = PathRef("./gen_config"),
     scene_output_dir: Annotated[
-        PathLike | None,
-        Field(..., description="Scene description output directiory."),
-    ] = None,
-) -> PathLike | None:
+        PathRef,
+        Field(description="Scene description output directiory."),
+    ] = PathRef("./gen_output"),
+) -> PathRef:
     """
     Create the scene confifuration corresponding the PNP scene.
     """
@@ -47,7 +45,6 @@ def generation_configs(
         MolecularAtmosphereConfig,
         ThermophysicalConfig,
     )
-    from upath import UPath
 
     logger.info("Configuring generation...")
 
@@ -57,9 +54,7 @@ def generation_configs(
         center_lat=target_lat,
         center_lon=target_lon,
         aoi_size_km=target_size,
-        output_dir=UPath("./gen_output")
-        if scene_output_dir is None
-        else scene_output_dir,
+        output_dir=scene_output_dir,
         target_resolution_m=10.0,
         description="PNP cite and surroundings",
     )
@@ -151,16 +146,8 @@ def generation_configs(
     # Save generation config file
     config_filename = f"{config.scene_name}_gen_config.json"
 
-    if config_output_dir is None:
-        if not os.path.exists("./gen_config"):
-            os.mkdir("./gen_config")
-
-        config_path = UPath(f"./gen_config/{config_filename}")
-    else:
-        if not os.path.exists(UPath(config_output_dir)):
-            os.mkdir(UPath(config_output_dir))
-
-        config_path = UPath(config_output_dir) / config_filename
+    mkdir(config_output_dir)
+    config_path = config_output_dir / config_filename
 
     config.to_json(config_path)
 
@@ -178,13 +165,13 @@ def simulation_configs(
     ],
     spp: Annotated[int, Field(..., description="Number of Monte Carlo samples.")] = 8,
     config_output_dir: Annotated[
-        PathLike | None,
-        Field(..., description="Simulation configuration output directiory."),
-    ] = None,
-) -> PathLike | None:
+        PathRef,
+        Field(description="Simulation configuration output directiory."),
+    ] = PathRef("./sim_config"),
+) -> PathRef:
     from s2gos_apps.sim_util import simulation_config
 
-    config_path = simulation_config(
+    return simulation_config(
         scene_name,
         target_lat,
         target_lon,
@@ -193,4 +180,3 @@ def simulation_configs(
         spp,
         config_output_dir,
     )
-    return config_path

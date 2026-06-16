@@ -18,6 +18,7 @@ from typing import Annotated
 
 from pydantic import Field
 from s2gos_utils.coordinates import CoordinateSystem
+from s2gos_utils.io import PathRef, mkdir
 
 from s2gos_apps.registry import registry
 
@@ -177,7 +178,6 @@ def pnp_gui_generation(
         XmlSceneConfig,
         create_scene_config,
     )
-    from upath import UPath
 
     from s2gos_apps.gen_util import generation_from_config
 
@@ -187,8 +187,8 @@ def pnp_gui_generation(
 
     # Get seasonal configuration
     seasonal = _get_seasonal_config(month)
-    gen_path = UPath(f"./{scene_name}/gen_output")
-    gen_path.mkdir(parents=True, exist_ok=True)
+    gen_path = PathRef(f"./{scene_name}/gen_output")
+    mkdir(gen_path)
     # Create basic configuration
     config = create_scene_config(
         scene_name=scene_name,
@@ -245,7 +245,7 @@ def pnp_gui_generation(
     # Configure atmosphere
     thermoprops = ThermophysicalConfig(
         identifier=None,
-        thermoprops_file=UPath(
+        thermoprops_file=PathRef(
             f"PNP/timeseries_ms_{seasonal['thermoprops_date']}_v1.nc"
         ),
     )
@@ -399,7 +399,6 @@ def pnp_gui_simulation(
         SpectralResponse,
         create_chime_sensor,
     )
-    from upath import UPath
 
     from s2gos_apps.sim_util import simulation_from_config
 
@@ -583,8 +582,8 @@ def pnp_gui_simulation(
     # Save simulation configuration
     config_filename = f"pnp_gui_{observation}_sim_config.json"
 
-    sim_output_dir = UPath(f"./{scene_name}/sim_output")
-    sim_output_dir.mkdir(parents=True, exist_ok=True)
+    sim_output_dir = PathRef(f"./{scene_name}/sim_output")
+    mkdir(sim_output_dir)
     config_path = sim_output_dir / config_filename
 
     simulation_config.to_json(config_path)
@@ -593,9 +592,9 @@ def pnp_gui_simulation(
     logger.info("Running simulation...")
 
     output_path = simulation_from_config(
-        UPath(f"./{scene_name}/gen_output/{scene_name}/{scene_name}.yml"),
+        PathRef(f"./{scene_name}/gen_output/{scene_name}/{scene_name}.yml"),
         simulation_config,
-        UPath(f"./{scene_name}/sim_output"),
+        PathRef(f"./{scene_name}/sim_output"),
     )
 
     if output_path:

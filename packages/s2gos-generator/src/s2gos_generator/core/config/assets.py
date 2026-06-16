@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from s2gos_utils.io.paths import PathRef
-from upath import UPath
 
 from ._utils import _resolve_asset_path
 
@@ -445,7 +444,7 @@ def load_assets_from_xml(
     for asset_data in asset_data_list:
         asset_kwargs = {
             "object_id": asset_data["object_id"],
-            "ply_path": UPath(asset_data["ply_path"]),
+            "ply_path": PathRef(asset_data["ply_path"]),
             "material": asset_data["material"],
             "elevation_offset": asset_data["elevation_offset"],
             "scale": asset_data["scale"],

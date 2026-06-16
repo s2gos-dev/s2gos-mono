@@ -129,14 +129,14 @@ def upscaling(
     ],
     # Output Config
     config_output_dir: Annotated[
-        PathRef | None,
-        Field(..., description="Generation configuration output directory."),
-    ] = None,
+        PathRef,
+        Field(description="Generation configuration output directory."),
+    ] = PathRef("./gen_config"),
     scene_output_dir: Annotated[
-        PathRef | None,
-        Field(..., description="Scene description output directiory."),
-    ] = None,
-) -> PathRef | None:
+        PathRef,
+        Field(description="Scene description output directiory."),
+    ] = PathRef("./gen_output"),
+) -> PathRef:
     """
     Create the scene confifuration corresponding the PNP scene.
     """

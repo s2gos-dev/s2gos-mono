@@ -2,8 +2,8 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 
 import xarray as xr
+from s2gos_utils.io.paths import PathLike
 from s2gos_utils.scene import SceneDescription
-from s2gos_utils.typing import PathLike
 
 
 class SimulationBackend(ABC):

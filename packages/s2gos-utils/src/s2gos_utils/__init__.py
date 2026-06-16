@@ -1,4 +1,5 @@
 from .io.paths import (
+    PathLike,
     PathRef,
     exists,
     is_remote_path,
@@ -8,6 +9,7 @@ from .io.paths import (
     optional_str,
     read_json,
     read_yaml,
+    to_upath,
 )
 from .io.resolver import FileResolver, resolver
 from .scene.description import SceneDescription
@@ -18,7 +20,6 @@ from .scene.materials import (
     load_materials,
 )
 from .setting import load_config, settings
-from .typing import PathLike
 from .versioning import (
     check_version_compatibility,
     get_package_version,
@@ -32,6 +33,8 @@ load_config()
 
 __all__ = [
     "PathRef",
+    "PathLike",
+    "to_upath",
     "SceneDescription",
     "settings",
     "Material",
@@ -48,7 +51,6 @@ __all__ = [
     "optional_str",
     "FileResolver",
     "resolver",
-    "PathLike",
     "check_version_compatibility",
     "get_version_info",
     "parse_version",

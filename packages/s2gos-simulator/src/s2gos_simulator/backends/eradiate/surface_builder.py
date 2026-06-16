@@ -588,7 +588,9 @@ class SurfaceBuilder:
         data_file = vegetation_collection_obj["data_file"]
         binary_path = scene_dir / data_file
         try:
-            vegetation_data = np.load(binary_path.upath)
+            with open_file(binary_path, "rb") as f:
+                vegetation_data = np.load(f)
+
             count = len(vegetation_data)
             shapegroup_ref = vegetation_collection_obj["shapegroup_ref"]
             collection_name = vegetation_collection_obj.get(

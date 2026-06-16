@@ -1,11 +1,8 @@
 import logging
-import os
 import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
 
 import numpy as np
 from s2gos_simulator.backends.eradiate.backend import (
@@ -22,7 +19,10 @@ from s2gos_simulator.config import (
     SpectralResponse,
 )
 from s2gos_utils import SceneDescription
+from s2gos_utils.io.paths import PathLike, PathRef, mkdir, to_upath
 from upath import UPath
+
+logger = logging.getLogger(__name__)
 
 
 def top_down_perspective_sensor(target_size, fov, spp, resolution=[512, 512]):
@@ -49,14 +49,10 @@ def simulation_config(
     target_size: float,
     gmt_hour: float,
     spp: int = 8,
-    config_output_dir: UPath | None = None,
-) -> UPath | None:
+    config_output_dir: PathLike = PathRef("./sim_config"),
+) -> PathRef:
     """Expand core parameters to a full simulation config."""
     # Step 3: Configure simulation with enhanced sensors
-
-    config_output_dir = (
-        UPath(config_output_dir) if config_output_dir is not None else None
-    )
 
     logger.info("=" * 60)
     logger.info("Configuring simulation...")
@@ -93,16 +89,9 @@ def simulation_config(
     config_filename = f"{scene_name}_sim_config.json"
 
     logger.info(f"  config_output_dir: {config_output_dir!r}")
-    if config_output_dir is None:
-        if not os.path.exists("./sim_config"):
-            os.mkdir("./sim_config")
-
-        config_path = UPath(f"./sim_config/{config_filename}")
-    else:
-        if not config_output_dir.exists():
-            config_output_dir.mkdir(parents=True, exist_ok=True)
-
-        config_path = config_output_dir / config_filename
+    out_dir = PathRef(config_output_dir)
+    mkdir(out_dir)
+    config_path = out_dir / config_filename
 
     simulation_config.to_json(config_path)
     logger.info(f"  Saved: {config_path}")
@@ -139,18 +128,20 @@ def _download_scene_assets(s3_scene_dir: UPath, local_dir: Path) -> None:
 
 
 def simulation_from_config(
-    scene_description_path: UPath,
+    scene_description_path: PathLike,
     config: SimulationConfig,
-    simulation_output_dir: UPath | None = None,
-) -> UPath | None:
+    simulation_output_dir: PathLike | None = None,
+) -> PathRef:
     logger.info("=" * 60)
     logger.info("Simulating observation...")
 
+    scene_description_path = to_upath(scene_description_path)
     scene_description = SceneDescription.load_yaml(scene_description_path)
 
-    # Generate schema for reference
     if simulation_output_dir is None:
-        simulation_output_dir = UPath(f"./sim_output/{scene_description.name}")
+        output_dir = PathRef(f"./sim_output/{scene_description.name}")
+    else:
+        output_dir = PathRef(simulation_output_dir)
 
     # Step 4: Run simulation (if available)
     if ERADIATE_AVAILABLE and scene_description:
@@ -184,7 +175,9 @@ def simulation_from_config(
                     f"OK: All {len(objects_to_check)} object material references are valid"
                 )
         else:
-            logger.info("Skipping detailed material validation - using scene file as-is")
+            logger.info(
+                "Skipping detailed material validation - using scene file as-is"
+            )
 
         scene_input = scene_description
 
@@ -195,19 +188,19 @@ def simulation_from_config(
             # If the scene is on S3, download assets to a temp directory first.
             scene_dir = scene_description_path.parent
             tmp_dir = None
-            if getattr(s3_scene_dir, "protocol", None) in ("s3", "s3a"):
+            if getattr(scene_dir, "protocol", None) in ("s3", "s3a"):
                 tmp_dir = tempfile.mkdtemp(prefix="s2gos_scene_")
                 local_scene_dir = Path(tmp_dir)
-                _download_scene_assets(s3_scene_dir, local_scene_dir)
+                _download_scene_assets(scene_dir, local_scene_dir)
                 effective_scene_dir = UPath(tmp_dir)
             else:
-                effective_scene_dir = s3_scene_dir
+                effective_scene_dir = scene_dir
 
             try:
                 simulator.run_simulation(
                     scene_input,
                     scene_dir=effective_scene_dir,
-                    output_dir=simulation_output_dir,
+                    output_dir=to_upath(output_dir),
                     plot_image=True,
                 )
             finally:
@@ -226,6 +219,6 @@ def simulation_from_config(
 
     # Summary
     logger.info("=" * 60)
-    logger.info(f"Output directory: {simulation_output_dir}")
+    logger.info(f"Output directory: {output_dir}")
 
-    return simulation_output_dir
+    return output_dir

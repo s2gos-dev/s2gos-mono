@@ -109,8 +109,6 @@ class WavelengthGrid(BaseModel):
         elif self.mode == "explicit":
             return np.array(sorted(self.wavelengths_nm), dtype=np.float64)
         elif self.mode == "from_file":
-            import xarray as xr
-
             from s2gos_utils.io.paths import open_dataset
 
             resolved_path = resolver.resolve(self.file_path, strict=True)

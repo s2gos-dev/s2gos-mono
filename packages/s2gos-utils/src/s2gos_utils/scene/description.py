@@ -7,7 +7,7 @@ from upath import UPath
 
 from .materials import Material
 from .._version import get_version
-from ..io.paths import open_file
+from ..io.paths import PathLike, open_file, to_upath
 from ..versioning import validate_config_version
 
 
@@ -76,19 +76,20 @@ class SceneDescription:
 
         return result
 
-    def save_yaml(self, output_path: UPath) -> None:
+    def save_yaml(self, output_path: PathLike) -> None:
         """Save scene description as YAML file."""
         with open_file(output_path, "w") as f:
             yaml.dump(self.to_dict(), f, default_flow_style=False, indent=2)
 
-    def save_json(self, output_path: UPath) -> None:
+    def save_json(self, output_path: PathLike) -> None:
         """Save scene description as JSON file."""
         with open_file(output_path, "w") as f:
             json.dump(self.to_dict(), f, indent=2)
 
     @classmethod
-    def load_yaml(cls, file_path: UPath) -> "SceneDescription":
+    def load_yaml(cls, file_path: PathLike) -> "SceneDescription":
         """Load scene description from YAML file with version validation."""
+        file_path = to_upath(file_path)
         with open_file(file_path, "r") as f:
             data = yaml.safe_load(f)
 
@@ -96,11 +97,12 @@ class SceneDescription:
             "scene_description", data, get_version(), "scene description"
         )
 
-        return cls.from_dict(validated_data, base_dir=UPath(file_path).parent)
+        return cls.from_dict(validated_data, base_dir=file_path.parent)
 
     @classmethod
-    def load_json(cls, file_path: UPath) -> "SceneDescription":
+    def load_json(cls, file_path: PathLike) -> "SceneDescription":
         """Load scene description from JSON file with version validation."""
+        file_path = to_upath(file_path)
         with open_file(file_path, "r") as f:
             data = json.load(f)
 
@@ -108,7 +110,7 @@ class SceneDescription:
             "scene_description", data, get_version(), "scene description"
         )
 
-        return cls.from_dict(validated_data, base_dir=UPath(file_path).parent)
+        return cls.from_dict(validated_data, base_dir=file_path.parent)
 
     @staticmethod
     def _deep_merge(target: dict, source: dict) -> None:
