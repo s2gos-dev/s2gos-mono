@@ -10,7 +10,9 @@ per material.
 from __future__ import annotations
 
 import geopandas as gpd
+import mercantile
 import numpy as np
+import pandas as pd
 import pytest
 import trimesh
 from shapely.geometry import MultiPolygon, Polygon
@@ -22,6 +24,8 @@ from s2gos_generator.assets.buildings import (
     _resolve_material_distribution,
     _safe_name,
     build_meshes,
+    quadkeys_for_bbox,
+    select_tile_files,
 )
 from s2gos_generator.core.config import BuildingsConfig
 
@@ -179,7 +183,7 @@ def _flat_elev_fn(z: float = 100.0):
 class TestBuildMeshes:
     def test_single_material_groups_into_one_mesh(self):
         gdf = _footprints_gdf(n=3)
-        cfg = BuildingsConfig(file_paths=[], material="concrete")
+        cfg = BuildingsConfig(material="concrete")
         result = build_meshes(gdf, _flat_elev_fn(), cfg)
 
         assert result.single_material is True
@@ -192,7 +196,6 @@ class TestBuildMeshes:
     def test_weighted_materials_are_deterministic_with_seed(self):
         gdf = _footprints_gdf(n=20)
         cfg = BuildingsConfig(
-            file_paths=[],
             material={"brick": 1.0, "glass": 1.0},
             material_seed=42,
         )
@@ -206,7 +209,6 @@ class TestBuildMeshes:
     def test_pitched_roof_produces_roof_mesh(self):
         gdf = _footprints_gdf(n=2)
         cfg = BuildingsConfig(
-            file_paths=[],
             material="concrete",
             pitched_roof_proportion=1.0,
             roof_seed=0,
@@ -218,9 +220,37 @@ class TestBuildMeshes:
 
     def test_empty_input_yields_no_meshes(self):
         gdf = gpd.GeoDataFrame({"height": []}, geometry=[])
-        cfg = BuildingsConfig(file_paths=[], material="concrete")
+        cfg = BuildingsConfig(material="concrete")
         result = build_meshes(gdf, _flat_elev_fn(), cfg)
 
         assert result.stats.total == 0
         assert result.material_meshes == {}
         assert result.roof_mesh is None
+
+
+def test_quadkeys_for_bbox_round_trips_to_containing_tile():
+    """A point bbox selects exactly the one tile whose bounds contain it."""
+    lon, lat, zoom = 10.40, 43.70, 6
+    (qk,) = quadkeys_for_bbox((lon, lat, lon, lat), zoom)
+    b = mercantile.bounds(mercantile.quadkey_to_tile(qk))
+    assert b.west <= lon <= b.east and b.south <= lat <= b.north
+
+
+def test_select_tile_files_returns_overlapping_present_tile(tmp_path):
+    """Only the tile overlapping the AOI and present on disk is returned."""
+    bbox = (10.40, 43.70, 10.41, 43.71)
+    (inside,) = quadkeys_for_bbox(bbox, zoom=6)
+    (outside,) = quadkeys_for_bbox((-120.0, 35.0, -120.0, 35.0), zoom=6)
+
+    pd.DataFrame(
+        {
+            "quadkey": [inside, outside],
+            "filename": [f"{inside}.gpkg", f"{outside}.gpkg"],
+        }
+    ).to_csv(tmp_path / "index.csv", index=False)
+    (tmp_path / f"{inside}.gpkg").touch()
+    (tmp_path / f"{outside}.gpkg").touch()
+
+    assert select_tile_files(tmp_path, bbox, "index.csv") == [
+        tmp_path / f"{inside}.gpkg"
+    ]

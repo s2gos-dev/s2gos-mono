@@ -142,7 +142,6 @@ def sample_vegetation_placement():
 @pytest.fixture
 def sample_buildings():
     return BuildingsConfig(
-        file_paths=[],
         material={"brick": 2.0, "glass": 1.0},
         pitched_roof_proportion=0.5,
     )

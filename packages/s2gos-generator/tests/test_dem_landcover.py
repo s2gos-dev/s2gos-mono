@@ -105,6 +105,7 @@ class TestGenerateTargetMesh:
         monkeypatch.setattr(
             "s2gos_generator.resources.mesh.xr.open_zarr", mock_open_zarr
         )
+        monkeypatch.setattr("s2gos_generator.resources.mesh.expand_mapper", lambda p: p)
 
         result = generate_target_mesh(mock_ctx)
         expected = mock_ctx.meshes_dir / "test_scene_terrain.ply"

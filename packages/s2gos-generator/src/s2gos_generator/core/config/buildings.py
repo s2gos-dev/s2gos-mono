@@ -4,15 +4,24 @@ from pathlib import Path
 from typing import Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
+from s2gos_utils.io.resolver import resolver
 
 
 class BuildingsConfig(BaseModel):
     """Configuration for building generation."""
 
     enabled: bool = True
-    file_paths: list[Path] = Field(
-        default_factory=list,
-        description="One or more GPKG files containing building footprints.",
+    tile_dir: Optional[Path] = Field(
+        None,
+        description=(
+            "Directory of quadkey-indexed GPKG tiles (building.{quadkey}.gpkg) plus "
+            "the index CSV. Tiles overlapping the AOI are auto-selected from the "
+            "index, then clipped and stitched."
+        ),
+    )
+    index_csv: str = Field(
+        "openbuildingmap.csv",
+        description="Index CSV filename (quadkey -> filename), relative to tile_dir.",
     )
     layer_name: str = Field("building", description="GPKG layer name to read.")
     height_column: str = Field(
@@ -105,10 +114,19 @@ class BuildingsConfig(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _check_files(self):
-        for p in self.file_paths:
-            if not Path(p).exists():
-                raise ValueError(f"GPKG not found: {p}")
+    def _resolve_tile_dir(self):
+        """Resolve ``tile_dir`` against the global search paths (like other assets)
+        and verify it holds the index, storing the resolved absolute path."""
+        if self.tile_dir is not None:
+            try:
+                resolved = Path(str(resolver.resolve(self.tile_dir, strict=True)))
+            except FileNotFoundError as e:
+                raise ValueError(f"Building tile_dir not found: {self.tile_dir}") from e
+            if not resolved.is_dir():
+                raise ValueError(f"Building tile_dir is not a directory: {resolved}")
+            if not (resolved / self.index_csv).exists():
+                raise ValueError(f"Index file not found: {resolved / self.index_csv}")
+            object.__setattr__(self, "tile_dir", resolved)
         return self
 
     @model_validator(mode="after")

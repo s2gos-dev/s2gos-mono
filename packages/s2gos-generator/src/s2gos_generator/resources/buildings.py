@@ -18,6 +18,7 @@ from ..assets.buildings import (
     build_meshes,
     load_building_footprints,
     make_dem_elevation_sampler,
+    select_tile_files,
 )
 from ..core.context import SceneResourceContext
 
@@ -29,7 +30,7 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
     mapping, each building is assigned one material by weighted random draw before
     grouping."""
     cfg = ctx.config.buildings
-    if cfg is None or not cfg.enabled or not cfg.file_paths:
+    if cfg is None or not cfg.enabled or cfg.tile_dir is None:
         return None
 
     target_dem_path = ctx.dependency_outputs.get("target_dem")
@@ -38,7 +39,12 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
 
     bbox = ctx.target_aoi_polygon.bounds
 
-    gdf = load_building_footprints(cfg.file_paths, cfg.layer_name, bbox)
+    file_paths = select_tile_files(cfg.tile_dir, bbox, cfg.index_csv)
+    if not file_paths:
+        logging.info("No building tiles overlap AOI — skipping")
+        return None
+
+    gdf = load_building_footprints(file_paths, cfg.layer_name, bbox)
     if gdf.empty:
         logging.info("No buildings found in AOI — skipping")
         return None

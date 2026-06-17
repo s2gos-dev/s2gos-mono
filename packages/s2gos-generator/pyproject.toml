@@ -31,7 +31,8 @@ dependencies = [
     "psutil",
     "graphviz",
     "scipy",
-    "mapbox-earcut"
+    "mapbox-earcut",
+    "mercantile"
 ]
 
 [dependency-groups]

@@ -64,6 +64,11 @@ class PathRef(BaseModel):
             v = data["value"]
             if isinstance(v, PathRef):
                 return {"value": v.value, "cid": data.get("cid") or v.cid}
+            if isinstance(v, dict):
+                return {
+                    "value": str(v["value"]),
+                    "cid": data.get("cid") or v.get("cid"),
+                }
             return {"value": str(v), "cid": data.get("cid")}
         return {"value": str(data)}
 

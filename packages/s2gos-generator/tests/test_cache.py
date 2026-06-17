@@ -121,7 +121,6 @@ def minimal_config() -> Any:
         vegetation_exclusion_zones=[],
         vegetation_placement=None,
         hamster=None,
-        roads=None,
     )
 
 

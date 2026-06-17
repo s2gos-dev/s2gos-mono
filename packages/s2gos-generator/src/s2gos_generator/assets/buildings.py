@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Callable, Optional, Union
 
 import geopandas as gpd
+import mercantile
 import numpy as np
 import pandas as pd
 import trimesh
@@ -75,17 +76,66 @@ def _parse_height(value, story_height: float, default: float) -> tuple[float, bo
     return default, False
 
 
+def quadkeys_for_bbox(bbox: tuple[float, float, float, float], zoom: int) -> set[str]:
+    """Quadkeys of every tile at ``zoom`` overlapping a WGS84 lon/lat bbox."""
+    return {mercantile.quadkey(t) for t in mercantile.tiles(*bbox, zoom)}
+
+
+def select_tile_files(
+    tile_dir: Path,
+    bbox: tuple[float, float, float, float],
+    index_csv: str,
+) -> list[Path]:
+    """Pick the building tiles overlapping ``bbox`` from a quadkey-indexed dir.
+
+    Reads the index CSV (quadkey -> filename), figures out which tiles the AOI
+    touches via :func:`quadkeys_for_bbox`, and returns the matching files that are
+    actually present in ``tile_dir``. Index-listed tiles that are missing
+    are warned about and skipped.
+    """
+    index = pd.read_csv(tile_dir / index_csv, dtype={"quadkey": str})
+
+    zoom = len(index["quadkey"].iloc[0])
+
+    want = quadkeys_for_bbox(bbox, zoom)
+    selected = index[index["quadkey"].isin(want)]
+
+    present, missing = [], []
+    for filename in selected["filename"]:
+        path = tile_dir / filename
+        (present if path.exists() else missing).append(path)
+
+    if missing:
+        logging.warning(
+            "%d building tile(s) overlap the AOI but are not present in %s: %s",
+            len(missing),
+            tile_dir,
+            ", ".join(p.name for p in missing),
+        )
+    logging.info(
+        "buildings: %d tiles overlap AOI, %d present locally",
+        len(selected),
+        len(present),
+    )
+    return sorted(present)
+
+
 def load_building_footprints(
     file_paths: list[Path], layer: str, bbox: tuple[float, float, float, float]
 ) -> gpd.GeoDataFrame:
     """Read each GPKG with a bbox prefilter and concat into a single frame."""
     frames = []
     for p in file_paths:
-        gdf = gpd.read_file(str(p), layer=layer, engine="pyogrio", bbox=bbox)
+        gdf = gpd.read_file(str(p), layer=layer, bbox=bbox)
         if not gdf.empty:
             frames.append(gdf)
     if not frames:
         return gpd.GeoDataFrame(geometry=[])
+    if not frames[0].crs.is_geographic:
+        raise ValueError(
+            f"Building tiles must be in a geographic CRS for the WGS84 bbox "
+            f"prefilter to be valid; got {frames[0].crs}."
+        )
     return gpd.GeoDataFrame(pd.concat(frames, ignore_index=True), crs=frames[0].crs)
 
 
