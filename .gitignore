@@ -9,6 +9,20 @@ dist/
 build/
 .eggs/
 
+# Test / lint / type-check caches and coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.cache/
+
+# Secrets and local settings (never commit)
+.secrets.yaml
+.env
+.env.*
+s2gos_settings.yaml
+s2gos_settings.local.yaml
 
 # Large binary / data files
 *.tar.gz
@@ -17,8 +31,27 @@ build/
 *.bsp
 de421.bsp
 
-# NetCDF data files (large scientific data; use S3/external storage instead)
+# NetCDF / Zarr data files (large scientific data; use S3/external storage instead)
 *.nc
+*.zarr/
+
+# Generated images / 3D meshes (committed doc figures are kept via the negation below)
+*.png
+*.jpg
+*.jpeg
+*.ply
+!**/docs/**
+
+# Generated output directories
+*_out/
+*_output/
+experimenting/
+extra_data/
+
+# Scratch / temp files
+*.tmp
+_tmp_*
+tmp/
 
 # Jupyter
 .ipynb_checkpoints/
