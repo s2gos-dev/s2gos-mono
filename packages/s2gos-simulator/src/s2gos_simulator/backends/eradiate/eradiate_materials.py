@@ -105,7 +105,7 @@ def _create_spectral_callable(
             )
 
             def interpolated_func(ctx: "KernelContext") -> float:
-                return spectrum.eval(ctx.si).m_as("dimensionless")
+                return float(spectrum.eval(ctx.si).m_as("dimensionless"))
 
             logging.info(
                 f"Created interpolated spectrum: {len(wavelengths)} wavelength points "
@@ -155,7 +155,7 @@ def _create_spectral_callable(
         spectrum = InterpolatedSpectrum.from_dataarray(dataarray=da)
 
         def spectral_func(ctx: "KernelContext") -> float:
-            return spectrum.eval(ctx.si).m_as("dimensionless")
+            return float(spectrum.eval(ctx.si).m_as("dimensionless"))
 
         logging.info(
             f"Successfully loaded spectral data: {full_path} (variable: {variable})"
@@ -717,7 +717,7 @@ class EradiateMaterialAdapter:
                 "id": texture_id,
                 "filter_type": "bilinear",
                 "wrap_mode": "clamp",
-                "data": texture_data,
+                "data": mi.TensorXf(texture_data),
                 "raw": True,
             },
             material_id: {

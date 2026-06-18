@@ -119,7 +119,7 @@ class SurfaceBuilder:
                     "raw": True,
                     "filter_type": "nearest",
                     "wrap_mode": "clamp",
-                    "data": mask_data,
+                    "data": mi.TensorXf(mask_data),
                 },
                 "material": {"type": "ref", "id": "buffer_material"},
             }
@@ -241,7 +241,7 @@ class SurfaceBuilder:
                 "raw": True,
                 "filter_type": "nearest",
                 "wrap_mode": "clamp",
-                "data": selection_texture_data,
+                "data": mi.TensorXf(selection_texture_data),
             },
             **{
                 f"{bsdf_prefix}_bsdf_{i:02d}": {"type": "ref", "id": f"_mat_{mat_id}"}

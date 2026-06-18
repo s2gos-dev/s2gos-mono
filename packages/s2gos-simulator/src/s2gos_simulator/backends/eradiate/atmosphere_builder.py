@@ -9,7 +9,7 @@ from s2gos_utils.scene import SceneDescription
 logger = logging.getLogger(__name__)
 
 try:
-    from eradiate.radprops import AbsorptionDatabase
+    from eradiate.radprops import get_default_absdb
     from eradiate.scenes.atmosphere import (
         ExponentialParticleDistribution,
         GaussianParticleDistribution,
@@ -107,9 +107,7 @@ class AtmosphereBuilder:
                 "z": np.linspace(altitude_min, altitude_max, num_steps) * ureg.m,
             }
 
-        absorption_data = (
-            mol_dict.get("absorption_database") or AbsorptionDatabase.default()
-        )
+        absorption_data = mol_dict.get("absorption_database") or get_default_absdb()
 
         atmosphere = MolecularAtmosphere(
             thermoprops=thermoprops,
