@@ -1,5 +1,6 @@
 """Scene-specific resource context for pipeline execution."""
 
+import json
 import logging
 from typing import Dict, List, Optional
 
@@ -68,6 +69,7 @@ class SceneResourceContext:
         self._exclusion_zone_geometries: Optional[list] = None
         self._roads: Optional[list] = None
         self._road_polygons_by_material: Optional[dict] = None
+        self._matched_materials: Optional[dict] = None
 
     @property
     def user_assets(self):
@@ -140,8 +142,6 @@ class SceneResourceContext:
         return self._background_aoi_polygon
 
     def _load_roads_from_sidecar(self) -> list:
-        import json
-
         from shapely.geometry import shape
 
         if self.assets.roads_file is None:
@@ -199,6 +199,33 @@ class SceneResourceContext:
                 mat: unary_union(polys) for mat, polys in by_mat.items()
             }
         return self._road_polygons_by_material
+
+    def _load_matched_materials_sidecar(self) -> dict:
+        if self.assets.matched_materials_file is None:
+            return {}
+        try:
+            with open(str(self.assets.matched_materials_file), "r") as f:
+                data = json.load(f)
+            version = data.get("version", 1)
+            if version != 1:
+                logging.warning(
+                    "Unknown matched materials sidecar version %s; skipping", version
+                )
+                return {}
+            return {
+                "materials": data.get("materials", {}),
+                "material_indices": data.get("material_indices", {}),
+            }
+        except (json.JSONDecodeError, OSError) as exc:
+            logging.warning("Failed to load matched materials sidecar: %s", exc)
+            return {}
+
+    @property
+    def matched_materials(self) -> dict:
+        """Spectral-matching result, lazily loaded."""
+        if self._matched_materials is None:
+            self._matched_materials = self._load_matched_materials_sidecar()
+        return self._matched_materials
 
     @property
     def exclusion_zone_geometries(self) -> list:

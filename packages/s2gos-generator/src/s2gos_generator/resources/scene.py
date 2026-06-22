@@ -97,8 +97,17 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
             ctx.config.data_sources.material_config_path.upath
         ).keys()
     )
-    overlay_only = {k: v for k, v in full_index_map.items() if k not in landcover_names}
-    region_material_indices = overlay_only or None
+    region_material_indices = {
+        k: v for k, v in full_index_map.items() if k not in landcover_names
+    }
+
+    matched = ctx.matched_materials
+    if matched:
+        if matched.get("materials"):
+            additional_material_libraries.append(matched["materials"])
+        region_material_indices.update(matched.get("material_indices", {}))
+
+    region_material_indices = region_material_indices or None
 
     # Build include_files from available sidecars
     include_files = []

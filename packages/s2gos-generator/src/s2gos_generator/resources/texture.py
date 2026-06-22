@@ -1,5 +1,6 @@
 """Texture generation resources."""
 
+import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -215,6 +216,64 @@ def _apply_roads_to_preview(
     Image.fromarray(arr, mode="RGB").save(preview_path)
 
 
+def _apply_spectral_matching(
+    ctx: SceneResourceContext,
+    texture_2d: np.ndarray,
+    landcover_path: Path,
+    base_index_map: dict[str, int],
+) -> tuple[np.ndarray, bool]:
+    """Re-texture landcover classes from Sentinel-2 + a material library.
+
+    Clusters the reflectance of each configured landcover class and paints
+    SAM-matched materials into ``texture_2d``. Writes a sidecar describing the new
+    materials and their indices (read later by the scene step). Returns
+    ``(texture_2d, changed)``.
+    """
+    from ..spectral.diversify import diversify_selection_texture
+    from ..spectral.library import load_candidate_library
+
+    cfg = ctx.config.spectral_matching
+    s2_path = ctx.dependency_outputs.get("target_sentinel2")
+    if s2_path is None:
+        logging.warning("Spectral matching enabled but Sentinel-2 data missing")
+        return texture_2d, False
+
+    refl = (
+        xr.open_zarr(expand_mapper(s2_path))["reflectance"]
+        .sel(band=list(cfg.bands))
+        .values
+    )
+    with xr.open_zarr(expand_mapper(landcover_path)) as ds:
+        landcover_2d = ds[list(ds.data_vars)[0]].values
+
+    library = load_candidate_library(cfg.material_library.upath, list(cfg.bands))
+    texture_2d, material_defs, material_indices = diversify_selection_texture(
+        texture_2d, landcover_2d, refl, cfg, base_index_map, library
+    )
+
+    if not material_indices:
+        logging.info("Spectral matching: no clusters matched, texture unchanged")
+        return texture_2d, False
+
+    sidecar = {
+        "version": 1,
+        "materials": material_defs,
+        "material_indices": material_indices,
+        "source_landcover_classes": list(cfg.landcover_classes),
+    }
+    sidecar_path = ctx.data_dir / "matched_materials.json"
+    with open(str(sidecar_path), "w") as f:
+        json.dump(sidecar, f)
+    ctx.assets.matched_materials_file = sidecar_path
+    logging.info(
+        "Spectral matching: %d material(s), %d new, sidecar %s",
+        len(material_indices),
+        len(material_defs),
+        sidecar_path,
+    )
+    return texture_2d, True
+
+
 def _generate_texture(
     ctx: SceneResourceContext,
     landcover_path: Path,
@@ -262,6 +321,12 @@ def _generate_texture(
                 f"{area_name} texture",
             )
             dirty |= changed
+
+    if ctx.config.spectral_matching is not None and area_name == "target":
+        texture_2d, changed = _apply_spectral_matching(
+            ctx, texture_2d, landcover_path, material_index_map
+        )
+        dirty |= changed
 
     road_mask: Optional[np.ndarray] = None
     if ctx.dependency_outputs.get("target_roads") is not None and area_name == "target":

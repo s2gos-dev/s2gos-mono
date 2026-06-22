@@ -34,6 +34,9 @@ class SceneAssets:
     roads_file: Optional[UPath] = None
     buildings_objects_file: Optional[UPath] = None
 
+    sentinel2_file: Optional[UPath] = None
+    matched_materials_file: Optional[UPath] = None
+
     def to_dict(self) -> Dict:
         """Convert assets to dictionary."""
         return {k: optional_str(v) for k, v in dataclasses.asdict(self).items()}

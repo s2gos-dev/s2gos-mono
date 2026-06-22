@@ -122,6 +122,20 @@ class ResourceFingerprints:
         }
 
     @staticmethod
+    def _target_sentinel2(config) -> dict:
+        return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "aoi_size_km": config.location.aoi_size_km,
+            "landcover_resolution_m": config.landcover_resolution_m,
+            "spectral_matching": (
+                getattr(config, "spectral_matching", None).model_dump()
+                if getattr(config, "spectral_matching", None)
+                else None
+            ),
+        }
+
+    @staticmethod
     def _target_texture(config) -> dict:
         target_regions = [
             r.model_dump() for r in config.material_regions if "target" in r.applies_to
@@ -132,6 +146,11 @@ class ResourceFingerprints:
             "roads_enabled": config.roads.enabled if config.roads is not None else None,
             "texture_resolution_m": config.texture_resolution_m,
             "generate_texture_preview": config.processing.generate_texture_preview,
+            "spectral_matching": (
+                getattr(config, "spectral_matching", None).model_dump()
+                if getattr(config, "spectral_matching", None)
+                else None
+            ),
         }
 
     @staticmethod

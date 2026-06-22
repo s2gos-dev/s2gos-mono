@@ -24,6 +24,7 @@ from .atmosphere import (
     _default_atmosphere_config,
 )
 from .buildings import BuildingsConfig
+from .material_match import SpectralMatchingConfig
 from .mesh_refinement import MeshRefinementConfig
 from .roads import RoadsConfig
 from .vegetation import VegetationExclusionZone, VegetationPlacementConfig
@@ -244,6 +245,13 @@ class SceneGenConfig(BaseModel):
     roads: Optional[RoadsConfig] = Field(
         None,
         description="Road infrastructure configuration (None disables roads). See [RoadsConfig][s2gos_generator.core.config.roads.RoadsConfig].",
+    )
+    spectral_matching: Optional[SpectralMatchingConfig] = Field(
+        None,
+        description=(
+            "Spectral matching configuration (None disables). See "
+            "[SpectralMatchingConfig][s2gos_generator.core.config.material_matching.SpectralMatchingConfig]."
+        ),
     )
     buildings: Optional[BuildingsConfig] = Field(
         None,

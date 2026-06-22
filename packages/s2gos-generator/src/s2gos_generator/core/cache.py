@@ -188,10 +188,12 @@ _RESOURCE_CACHE_SPECS: Dict[str, ResourceCacheSpec] = {
     "background_landcover": ResourceCacheSpec(["background_landcover_file"]),
     "target_mesh": ResourceCacheSpec(["mesh_file"]),
     "buffer_mesh": ResourceCacheSpec(["buffer_mesh_file"]),
+    "target_sentinel2": ResourceCacheSpec(["sentinel2_file"]),
     "target_texture": ResourceCacheSpec(
         [
             "selection_texture_file",
             "preview_texture_file",
+            "matched_materials_file",
         ],
     ),
     "buffer_texture": ResourceCacheSpec(

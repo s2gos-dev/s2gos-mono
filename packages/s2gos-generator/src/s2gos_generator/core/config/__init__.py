@@ -27,6 +27,7 @@ from .atmosphere import (
     create_molecular_atmosphere_config,
 )
 from .buildings import BuildingsConfig
+from .material_match import SpectralMatchingConfig
 from .mesh_refinement import MeshRefinementConfig
 from .roads import HighwayOverride, RoadsConfig
 from .scene import (
@@ -103,4 +104,6 @@ __all__ = [
     "BufferConfig",
     "BackgroundConfig",
     "create_scene_config",
+    # material matching
+    "SpectralMatchingConfig",
 ]

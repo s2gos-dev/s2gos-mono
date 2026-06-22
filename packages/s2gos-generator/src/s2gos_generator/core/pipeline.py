@@ -92,9 +92,18 @@ class SceneGenerationPipeline:
             optional=["target_roads"],
         )
 
+        if self.config.spectral_matching is not None:
+            from ..resources.sentinel2 import process_target_sentinel2
+
+            self.registry.register(
+                "target_sentinel2", ["target_landcover"], process_target_sentinel2
+            )
+
         target_texture_deps = ["target_landcover"]
         if self.config.snow is not None:
             target_texture_deps.append("target_dem")
+        if self.config.spectral_matching is not None:
+            target_texture_deps.append("target_sentinel2")
         self.registry.register(
             "target_texture",
             target_texture_deps,
