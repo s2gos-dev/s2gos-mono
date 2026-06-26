@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Annotated, Any, BinaryIO, Dict, Optional, TextIO, Union
+from typing import Any, BinaryIO, Dict, Optional, TextIO, Union
 
 import geopandas as gpd
 import pandas as pd
@@ -14,7 +14,6 @@ from pydantic import (
     Field,
     GetJsonSchemaHandler,
     PrivateAttr,
-    WithJsonSchema,
     model_serializer,
     model_validator,
 )
@@ -35,11 +34,9 @@ class PathRef(BaseModel):
 
     Attributes:
         href: The actual path/URI (the OGC Link ``href``).
-        rel: Optional Link relation type.
         type: Optional Link media (MIME) type.
-        hreflang: Optional language of the linked resource.
-        title: Optional human-readable title.
-        options: Optional extra client options (serialized as ``x-options``).
+        options: Optional extra client options (serialized as ``x-options``),
+            for opener/storage config beyond credentials.
         cid: Optional reference to a Credential ID in the credential provider.
             Serialized as the ``x-cid`` Link extension.
 
@@ -58,18 +55,11 @@ class PathRef(BaseModel):
     """
 
     href: str = Field(description="Full path URI")
-    rel: str | None = Field(default=None, description="Relation type")
     type: str | None = Field(default=None, description="Media (MIME) type")
-    hreflang: str | None = Field(
-        default=None, description="Language of the linked resource"
-    )
-    title: str | None = Field(default=None, description="Human-readable title")
-    options: Annotated[dict[str, Any] | None, WithJsonSchema({"type": "object"})] = (
-        Field(
-            default=None,
-            alias="x-options",
-            description="Extra client options for accessing href in its storage",
-        )
+    options: dict[str, Any] | None = Field(
+        default=None,
+        alias="x-options",
+        description="Extra client options for accessing href in its storage",
     )
     cid: str | None = Field(default=None, alias="x-cid", description="Credential ID")
     _upath: UPath | None = PrivateAttr(default=None)
@@ -78,8 +68,16 @@ class PathRef(BaseModel):
         frozen=True, populate_by_name=True, serialize_by_alias=True
     )
 
-    def __init__(self, href, cid=None, **kwargs):
-        super().__init__(href=href, cid=cid, **kwargs)
+    def __init__(self, href=None, cid=None, **kwargs):
+        # Allow positional ``PathRef("/path", "cid")`` while still routing every
+        # input through pydantic validation. Keeping ``href`` non-required here
+        # means an href-less payload raises a clear ``ValidationError`` instead
+        # of an opaque ``TypeError`` about a missing positional argument.
+        if href is not None:
+            kwargs["href"] = href
+        if cid is not None:
+            kwargs["cid"] = cid
+        super().__init__(**kwargs)
 
     @model_serializer(mode="wrap")
     def _omit_unset(self, handler) -> dict[str, Any]:

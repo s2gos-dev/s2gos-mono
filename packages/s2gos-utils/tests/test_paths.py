@@ -190,32 +190,23 @@ class TestPathRefMethods:
         """A bare PathRef serializes to just {href} — no null optional fields."""
         assert PathRef("/p").model_dump() == {"href": "/p"}
 
-    def test_full_link_fields_round_trip(self):
-        """All OGC Link fields are accepted, serialized, and round-trip."""
+    def test_link_fields_round_trip(self):
+        """All supported Link fields are accepted, serialized, and round-trip."""
         pr = PathRef(
             "s3://bucket/data.zarr",
             cid="edh",
             type="application/x-zarr",
-            title="DEM",
-            rel="data",
-            hreflang="en",
             options={"anon": True},
         )
         dumped = pr.model_dump()
         assert dumped == {
             "href": "s3://bucket/data.zarr",
-            "rel": "data",
             "type": "application/x-zarr",
-            "hreflang": "en",
-            "title": "DEM",
             "x-options": {"anon": True},
             "x-cid": "edh",
         }
         rt = PathRef.model_validate(dumped)
         assert rt.type == "application/x-zarr"
-        assert rt.title == "DEM"
-        assert rt.rel == "data"
-        assert rt.hreflang == "en"
         assert rt.options == {"anon": True}
         assert rt.cid == "edh"
 
