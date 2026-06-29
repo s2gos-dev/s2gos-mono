@@ -6,8 +6,6 @@ import numpy as np
 class DemErrorPyramid:
     """Precomputed per-level max plane-residual errors for adaptive-quadtree decimation.
 
-    Built once from the DEM in O(N) time; queries are O(1) per cell.
-
     Each level L stores, for every cell of size K×K DEM pixels (K = 2^(D-L)),
     the maximum absolute deviation of the DEM from the least-squares plane
     fitted to that cell. Errors are saturated top-down (parent ≥ max of
