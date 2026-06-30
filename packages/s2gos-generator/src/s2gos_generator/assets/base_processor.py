@@ -243,7 +243,8 @@ class BaseTileProcessor(ABC):
         target_resolution_m: float,
         center_lat: float,
         center_lon: float,
-        aoi_size_km: float,
+        width_km: float,
+        height_km: float,
         fillna_value: Optional[float] = None,
     ) -> xr.Dataset:
         """Regrid dataset to target resolution using oblique mercator projection."""
@@ -252,7 +253,8 @@ class BaseTileProcessor(ABC):
             target_resolution_m=target_resolution_m,
             center_lat=center_lat,
             center_lon=center_lon,
-            aoi_size_km=aoi_size_km,
+            width_km=width_km,
+            height_km=height_km,
             interpolation_method=self.default_interpolation_method,
             fillna_value=fillna_value,
             data_variable=self.data_variable_name,

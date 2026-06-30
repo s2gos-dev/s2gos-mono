@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Union
 
 import xarray as xr
@@ -5,7 +6,7 @@ from shapely.geometry import Polygon
 from upath import UPath
 
 from .base_processor import BaseTileProcessor
-from ..dataset import Dataset, IndexedGeoTiff, Zarr
+from ..dataset import Dataset, GeoTiffDEM, IndexedGeoTiff, Zarr
 
 
 class DEMProcessor(BaseTileProcessor):
@@ -49,19 +50,19 @@ class DEMProcessor(BaseTileProcessor):
         target_resolution_m: Optional[float] = None,
         center_lat: Optional[float] = None,
         center_lon: Optional[float] = None,
-        aoi_size_km: Optional[float] = None,
+        width_km: Optional[float] = None,
+        height_km: Optional[float] = None,
         flatten_dem: bool = False,
     ) -> xr.Dataset:
         """Generate DEM data for the AOI."""
 
-        tile_paths = self.dataset.query(aoi_polygon)
-
         if isinstance(self.dataset, IndexedGeoTiff):
             # Pass AOI to merge for early spatial filtering
+            tile_paths = self.dataset.query(aoi_polygon)
             merged_dem = self._merge_tiles(
                 tile_paths, aoi_polygon, fillna_value=fillna_value
             )
-        elif isinstance(self.dataset, Zarr):
+        elif isinstance(self.dataset, (Zarr, GeoTiffDEM)):
             merged_dem = self.dataset.open()
         else:
             raise NotImplementedError("This type of dataset is not supported for DEMs.")
@@ -73,16 +74,27 @@ class DEMProcessor(BaseTileProcessor):
             target_resolution_m is not None
             and center_lat is not None
             and center_lon is not None
-            and aoi_size_km is not None
+            and width_km is not None
+            and height_km is not None
         ):
+            # For a single GeoTIFF the file may not cover the whole (axis-aligned)
+            # scene rectangle, so regrid without filling first to measure where
+            # valid data actually lands on the scene grid, log it, then fill.
+            is_geotiff = isinstance(self.dataset, GeoTiffDEM)
             clipped_dem = self._regrid_data(
                 clipped_dem,
                 target_resolution_m,
                 center_lat,
                 center_lon,
-                aoi_size_km,
-                fillna_value,
+                width_km,
+                height_km,
+                None if is_geotiff else fillna_value,
             )
+            if is_geotiff:
+                self._log_regridded_coverage(clipped_dem, width_km, height_km)
+                if fillna_value is not None:
+                    var = self.data_variable_name
+                    clipped_dem[var] = clipped_dem[var].fillna(fillna_value)
 
         if flatten_dem:
             clipped_dem[self.data_variable_name] = xr.zeros_like(
@@ -95,3 +107,52 @@ class DEMProcessor(BaseTileProcessor):
         self._save_dataset(clipped_dem, output_path)
 
         return clipped_dem
+
+    def _log_regridded_coverage(
+        self, regridded: xr.Dataset, width_km: float, height_km: float
+    ) -> None:
+        """Report where valid (non-NaN) data lands on the regridded scene grid.
+
+        Called for a single GeoTIFF before NaN-filling, so the user can see how
+        much of the axis-aligned scene rectangle the file actually covers and
+        the extent of the NaN padding introduced by the reprojection.
+        """
+        da = regridded[self.data_variable_name]
+        valid = da.notnull()
+        total = int(valid.size)
+        n_valid = int(valid.sum())
+        if total == 0:
+            return
+        pct = 100.0 * n_valid / total
+
+        if n_valid == 0:
+            logging.warning(
+                "GeoTIFF DEM covers none of the %.2f×%.2f km scene grid after "
+                "reprojection; the whole scene will be NaN-filled.",
+                width_km,
+                height_km,
+            )
+            return
+
+        xs = regridded["x"].values
+        ys = regridded["y"].values
+        cols = valid.any("y").values
+        rows = valid.any("x").values
+        xmin, xmax = float(xs[cols].min()), float(xs[cols].max())
+        ymin, ymax = float(ys[rows].min()), float(ys[rows].max())
+        logging.info(
+            "GeoTIFF DEM on the %.2f×%.2f km scene grid: valid data covers "
+            "%.2f×%.2f km (%.1f%% of cells), bbox x∈[%.0f, %.0f] m / "
+            "y∈[%.0f, %.0f] m about centre; the remaining %.1f%% is NaN-filled "
+            "(clip to the bbox to drop the padding).",
+            width_km,
+            height_km,
+            (xmax - xmin) / 1000.0,
+            (ymax - ymin) / 1000.0,
+            pct,
+            xmin,
+            xmax,
+            ymin,
+            ymax,
+            100.0 - pct,
+        )

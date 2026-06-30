@@ -272,8 +272,8 @@ class SceneGenerationPipeline:
             poly = ctx.target_aoi_polygon
             logging.info(
                 "AOI polygon: %.1fkm × %.1fkm at (%.6f, %.6f)",
-                ctx.aoi_size_km,
-                ctx.aoi_size_km,
+                ctx.extent_km[0],
+                ctx.extent_km[1],
                 ctx.center_lat,
                 ctx.center_lon,
             )

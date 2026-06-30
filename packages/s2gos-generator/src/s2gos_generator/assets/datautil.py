@@ -7,12 +7,22 @@ from pyproj import Proj
 from ..core.exceptions import RegridError
 
 
+def _axis_coords(extent_m: float, target_resolution_m: float) -> np.ndarray:
+    """Build pixel-center coordinates along one axis of a centered extent."""
+    half = extent_m / 2.0
+    num_points = int(round(extent_m / target_resolution_m))
+    start = -half + (target_resolution_m / 2.0)
+    end = half - (target_resolution_m / 2.0)
+    return np.linspace(start, end, num_points)
+
+
 def regrid_to_projection(
     dataset: xr.Dataset,
     target_resolution_m: float,
     center_lat: float,
     center_lon: float,
-    aoi_size_km: float,
+    width_km: float,
+    height_km: float,
     interpolation_method: str = "linear",
     fillna_value: Optional[float] = None,
     data_variable: Optional[str] = None,
@@ -24,7 +34,8 @@ def regrid_to_projection(
         target_resolution_m: Target resolution in meters
         center_lat: Center latitude for projection
         center_lon: Center longitude for projection
-        aoi_size_km: Area of interest size in kilometers
+        width_km: Area of interest width (x extent) in kilometers
+        height_km: Area of interest height (y extent) in kilometers
         interpolation_method: Interpolation method ("linear", "nearest", etc.)
         fillna_value: Value to fill NaN values with (optional)
         data_variable: Specific data variable to process for fillna (optional)
@@ -36,14 +47,8 @@ def regrid_to_projection(
         RegridError: If regridding operation fails
     """
     try:
-        domain_width_m = aoi_size_km * 1000.0
-
-        half_width = domain_width_m / 2.0
-        num_points = int(round(domain_width_m / target_resolution_m))
-        start_coord = -half_width + (target_resolution_m / 2.0)
-        end_coord = half_width - (target_resolution_m / 2.0)
-        target_x = np.linspace(start_coord, end_coord, num_points)
-        target_y = target_x.copy()
+        target_x = _axis_coords(width_km * 1000.0, target_resolution_m)
+        target_y = _axis_coords(height_km * 1000.0, target_resolution_m)
 
         proj = Proj(
             f"+proj=omerc +lat_0={center_lat} +lonc={center_lon} +alpha=0 +gamma=0 +k=1 +x_0=0 +y_0=0 +ellps=WGS84 +units=m"

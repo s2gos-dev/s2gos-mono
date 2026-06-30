@@ -129,7 +129,7 @@ def make_minimal_config(tmp_path, mock_path_validation):
 
         return SceneGenConfig(
             scene_name="test_scene",
-            location=SceneLocation(center_lat=45.0, center_lon=15.0, aoi_size_km=10.0),
+            location=SceneLocation(center_lat=45.0, center_lon=15.0, aoi_width_km=10.0),
             data_sources={
                 "dem": dem_dataset,
                 "landcover": landcover_dataset,

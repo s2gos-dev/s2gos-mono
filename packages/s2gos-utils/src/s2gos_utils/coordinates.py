@@ -130,23 +130,31 @@ class CoordinateSystem:
             "ymax": center_y + half_height_m,
         }
 
-    def create_scene_polygon(self, size_km: float) -> Polygon:
+    def create_scene_polygon(
+        self, width_km: float, height_km: Optional[float] = None
+    ) -> Polygon:
         """
-        Create square polygon in WGS84 coordinates centered on scene.
+        Create a rectangular polygon in WGS84 coordinates centered on scene.
 
         Args:
-            size_km: Side length of square in kilometers
+            width_km: Width (x extent) of the rectangle in kilometers.
+            height_km: Height (y extent) in kilometers. Defaults to ``width_km``,
+                which yields a square (the historical behaviour).
 
         Returns:
-            Square polygon in WGS84 coordinates
+            Rectangular polygon in WGS84 coordinates
         """
-        half_size_m = (size_km * 1000) / 2
+        if height_km is None:
+            height_km = width_km
+
+        half_width_m = (width_km * 1000) / 2
+        half_height_m = (height_km * 1000) / 2
 
         corners_scene = [
-            (-half_size_m, -half_size_m),
-            (half_size_m, -half_size_m),
-            (half_size_m, half_size_m),
-            (-half_size_m, half_size_m),
+            (-half_width_m, -half_height_m),
+            (half_width_m, -half_height_m),
+            (half_width_m, half_height_m),
+            (-half_width_m, half_height_m),
         ]
 
         corners_latlon = []

@@ -48,7 +48,8 @@ class LandCoverProcessor(BaseTileProcessor):
         target_resolution_m: float = 10.0,
         center_lat: Optional[float] = None,
         center_lon: Optional[float] = None,
-        aoi_size_km: Optional[float] = None,
+        width_km: Optional[float] = None,
+        height_km: Optional[float] = None,
     ) -> xr.Dataset:
         """Generate landcover data for the AOI with configurable resolution.
 
@@ -58,7 +59,8 @@ class LandCoverProcessor(BaseTileProcessor):
             target_resolution_m: Target resolution in meters (default: 10.0 for native WorldCover)
             center_lat: Center latitude for projection (required for non-native resolution)
             center_lon: Center longitude for projection (required for non-native resolution)
-            aoi_size_km: Size of the AOI in kilometers (required for non-native resolution)
+            width_km: AOI width (x extent) in kilometers (required for non-native resolution)
+            height_km: AOI height (y extent) in kilometers (required for non-native resolution)
 
         Returns:
             Processed landcover dataset
@@ -84,11 +86,18 @@ class LandCoverProcessor(BaseTileProcessor):
         if target_resolution_m != 10.0 or (
             center_lat is not None
             and center_lon is not None
-            and aoi_size_km is not None
+            and width_km is not None
+            and height_km is not None
         ):
-            if center_lat is None or center_lon is None or aoi_size_km is None:
+            if (
+                center_lat is None
+                or center_lon is None
+                or width_km is None
+                or height_km is None
+            ):
                 raise ValueError(
-                    "center_lat, center_lon, and aoi_size_km are required for regridding operations"
+                    "center_lat, center_lon, width_km, and height_km are required "
+                    "for regridding operations"
                 )
 
             clipped_landcover = self._regrid_data(
@@ -96,7 +105,8 @@ class LandCoverProcessor(BaseTileProcessor):
                 target_resolution_m,
                 center_lat,
                 center_lon,
-                aoi_size_km,
+                width_km,
+                height_km,
                 fillna_value=self.default_fill_value,
             )
 

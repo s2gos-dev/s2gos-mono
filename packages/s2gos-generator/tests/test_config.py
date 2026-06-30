@@ -30,7 +30,7 @@ pytestmark = pytest.mark.usefixtures("mock_path_validation")
 
 @pytest.fixture
 def sample_scene_location():
-    return SceneLocation(center_lat=45.0, center_lon=15.0, aoi_size_km=10.0)
+    return SceneLocation(center_lat=45.0, center_lon=15.0, aoi_width_km=10.0)
 
 
 @pytest.fixture
@@ -213,7 +213,7 @@ def test_minimal_scene_config_serialization(tmp_path):
 
     config = SceneGenConfig(
         scene_name="test_scene",
-        location=SceneLocation(center_lat=45.0, center_lon=15.0, aoi_size_km=10.0),
+        location=SceneLocation(center_lat=45.0, center_lon=15.0, aoi_width_km=10.0),
         data_sources={
             "dem": dem_dataset,
             "landcover": landcover_dataset,
@@ -263,7 +263,7 @@ def test_scene_config_round_trip(tmp_path):
 
     original = SceneGenConfig(
         scene_name="test_scene",
-        location=SceneLocation(center_lat=45.0, center_lon=15.0, aoi_size_km=10.0),
+        location=SceneLocation(center_lat=45.0, center_lon=15.0, aoi_width_km=10.0),
         data_sources={
             "dem": dem_dataset,
             "landcover": landcover_dataset,

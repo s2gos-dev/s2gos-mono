@@ -90,11 +90,12 @@ def minimal_config() -> Any:
         location=SimpleNamespace(
             center_lat=45.0,
             center_lon=15.0,
-            aoi_size_km=10.0,
+            aoi_width_km=10.0,
+            extent_km=(10.0, 10.0),
             model_dump=lambda: {
                 "center_lat": 45.0,
                 "center_lon": 15.0,
-                "aoi_size_km": 10.0,
+                "aoi_width_km": 10.0,
             },
         ),
         data_sources=SimpleNamespace(

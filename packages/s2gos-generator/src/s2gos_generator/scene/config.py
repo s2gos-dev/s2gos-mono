@@ -133,7 +133,8 @@ def create_s2gos_scene(
     texture_path: str,
     center_lat: float,
     center_lon: float,
-    aoi_size_km: float,
+    aoi_width_km: float,
+    aoi_height_km: Optional[float] = None,
     resolution_m: float = 30.0,
     buffer_mesh_path: Optional[str] = None,
     buffer_texture_path: Optional[str] = None,
@@ -158,7 +159,9 @@ def create_s2gos_scene(
         texture_path: UPath to the selection texture file
         center_lat: Center latitude of the scene
         center_lon: Center longitude of the scene
-        aoi_size_km: Size of the area of interest in kilometers
+        aoi_width_km: Width (x extent) of the area of interest in kilometers
+        aoi_height_km: Optional height (y extent) of the AOI in kilometers.
+            When omitted the AOI is square (height == aoi_width_km).
         resolution_m: Target resolution in meters
         buffer_mesh_path: Optional path to buffer mesh file
         buffer_texture_path: Optional path to buffer texture file
@@ -213,10 +216,19 @@ def create_s2gos_scene(
                     f"Added region material '{material_name}' with texture index {texture_index}"
                 )
 
+    # A square AOI keeps the scalar size_km form (backwards compatible); a
+    # rectangular AOI emits [width_km, height_km], which the simulator consumes
+    # directly via target_size_km: Union[float, Tuple[float, float]].
+    target_size = (
+        aoi_width_km
+        if aoi_height_km is None or aoi_height_km == aoi_width_km
+        else [aoi_width_km, aoi_height_km]
+    )
+
     target = {
         "mesh": mesh_path,
         "selection_texture": texture_path,
-        "size_km": aoi_size_km,
+        "size_km": target_size,
     }
 
     if hamster_data_paths and "target" in hamster_data_paths:
@@ -237,14 +249,14 @@ def create_s2gos_scene(
             output_dir = UPath(".")
 
         buffer_resolution = int(buffer_size_km * 10)
-        target_resolution = int(aoi_size_km * 10)
+        target_resolution = int(aoi_width_km * 10)
 
         from ..assets.masks import generate_buffer_mask
 
         mask_path = (
             output_dir
             / "textures"
-            / f"mask_{scene_name}_{int(buffer_size_km)}km_buffer_{int(aoi_size_km)}km_target.bmp"
+            / f"mask_{scene_name}_{int(buffer_size_km)}km_buffer_{int(aoi_width_km)}km_target.bmp"
         )
         generate_buffer_mask(
             mask_size=buffer_resolution,
@@ -256,7 +268,7 @@ def create_s2gos_scene(
             "mesh": buffer_mesh_path,
             "selection_texture": buffer_texture_path,
             "size_km": buffer_size_km,
-            "target_size_km": aoi_size_km,
+            "target_size_km": aoi_width_km,
             "mask_texture": str(mask_path.relative_to(output_dir)),
         }
 
@@ -347,7 +359,12 @@ def create_s2gos_scene(
         location={
             "center_lat": center_lat,
             "center_lon": center_lon,
-            "aoi_size_km": aoi_size_km,
+            "aoi_width_km": aoi_width_km,
+            **(
+                {"aoi_height_km": aoi_height_km}
+                if aoi_height_km is not None and aoi_height_km != aoi_width_km
+                else {}
+            ),
         },
         resolution_m=resolution_m,
         materials=materials,

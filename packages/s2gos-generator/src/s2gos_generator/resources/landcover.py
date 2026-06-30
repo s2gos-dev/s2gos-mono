@@ -13,19 +13,21 @@ def _process_landcover(
     aoi_polygon,
     resolution_m: float,
     filename_prefix: str,  # "landcover" | "landcover_buffer" | "landcover_background"
-    aoi_size_km: float,
+    extent_km: tuple[float, float],
 ) -> Path:
     processor = LandCoverProcessor(dataset=ctx.config.data_sources.landcover)
     output_path = (
         ctx.data_dir / f"{filename_prefix}_{ctx.scene_name}_{resolution_m}m.zarr"
     )
+    width_km, height_km = extent_km
     processor.generate_landcover(
         aoi_polygon=aoi_polygon,
         output_path=output_path,
         target_resolution_m=resolution_m,
         center_lat=ctx.center_lat,
         center_lon=ctx.center_lon,
-        aoi_size_km=aoi_size_km,
+        width_km=width_km,
+        height_km=height_km,
     )
     return output_path
 
@@ -45,7 +47,7 @@ def process_target_landcover(ctx: SceneResourceContext) -> Optional[Path]:
         raise ValueError("Target AOI polygon not found in context")
 
     output_path = _process_landcover(
-        ctx, aoi_polygon, ctx.landcover_resolution_m, "landcover", ctx.aoi_size_km
+        ctx, aoi_polygon, ctx.landcover_resolution_m, "landcover", ctx.extent_km
     )
     ctx.assets.landcover_file = output_path
 
@@ -76,7 +78,7 @@ def process_buffer_landcover(ctx: SceneResourceContext) -> Optional[Path]:
         buffer_aoi_polygon,
         buffer_resolution_m,
         "landcover_buffer",
-        ctx.config.buffer.size_km,
+        (ctx.config.buffer.size_km, ctx.config.buffer.size_km),
     )
     ctx.assets.buffer_landcover_file = output_path
 
@@ -107,7 +109,7 @@ def process_background_landcover(ctx: SceneResourceContext) -> Optional[Path]:
         background_aoi_polygon,
         background_resolution_m,
         "landcover_background",
-        ctx.config.background.size_km,
+        (ctx.config.background.size_km, ctx.config.background.size_km),
     )
     ctx.assets.background_landcover_file = output_path
 

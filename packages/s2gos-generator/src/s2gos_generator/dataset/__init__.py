@@ -1,12 +1,14 @@
 from dynaconf.utils.boxing import DynaBox
 
 from .dataset import Dataset
+from .geotiff_dem import GeoTiffDEM
 from .indexed_geotiff import IndexedGeoTiff
 from .zarr import Zarr
 
 __all__ = [
     "dataset_factory",
     "Dataset",
+    "GeoTiffDEM",
     "IndexedGeoTiff",
     "Zarr",
 ]
@@ -18,6 +20,7 @@ __all__ = [
 _id_to_class = {
     "indexed-geotiff": IndexedGeoTiff,
     "zarr": Zarr,
+    "geotiff-dem": GeoTiffDEM,
 }
 
 

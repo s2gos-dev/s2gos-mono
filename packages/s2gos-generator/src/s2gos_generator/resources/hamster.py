@@ -85,7 +85,7 @@ def process_hamster_data(ctx: SceneResourceContext) -> Optional[Path]:
             path = _crop_and_save_area(
                 albedo_data,
                 "target",
-                ctx.aoi_size_km,
+                ctx.aoi_width_km,
                 f"hamster_{ctx.scene_name}_target_{ctx.landcover_resolution_m}m.zarr",
                 ctx.data_dir,
                 var_name,

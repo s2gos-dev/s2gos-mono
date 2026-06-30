@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 def _make_context(
     center_lat: float = 45.0,
     center_lon: float = 15.0,
-    aoi_size_km: float = 10.0,
+    aoi_width_km: float = 10.0,
     buffer_size_km: float = None,
     background_size_km: float = None,
 ):
@@ -16,8 +16,10 @@ def _make_context(
     ctx = object.__new__(SceneResourceContext)
     ctx.center_lat = center_lat
     ctx.center_lon = center_lon
-    ctx.aoi_size_km = aoi_size_km
+    ctx.aoi_width_km = aoi_width_km
+    ctx.extent_km = (aoi_width_km, aoi_width_km)
     ctx._target_aoi_polygon = None
+    ctx._target_scene_bounds = None
     ctx._buffer_aoi_polygon = None
     ctx._background_aoi_polygon = None
     ctx._coord_system = None
@@ -62,7 +64,7 @@ class TestBufferAOIPolygon:
         assert polygon.is_valid
 
     def test_buffer_larger_than_target(self):
-        ctx = _make_context(aoi_size_km=10.0, buffer_size_km=20.0)
+        ctx = _make_context(aoi_width_km=10.0, buffer_size_km=20.0)
         assert ctx.buffer_aoi_polygon.area > ctx.target_aoi_polygon.area
 
     def test_returns_same_object_on_second_access(self):

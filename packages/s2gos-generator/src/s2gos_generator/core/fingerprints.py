@@ -34,7 +34,8 @@ class ResourceFingerprints:
         return {
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
-            "aoi_size_km": config.location.aoi_size_km,
+            "aoi_width_km": config.location.aoi_width_km,
+            "aoi_height_km": config.location.extent_km[1],
             "dem_resolution_m": config.dem_resolution_m,
             "dem": config.data_sources.dem.model_dump(),
             "dem_fillna_value": config.processing.dem_fillna_value,
@@ -60,7 +61,8 @@ class ResourceFingerprints:
         return {
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
-            "aoi_size_km": config.location.aoi_size_km,
+            "aoi_width_km": config.location.aoi_width_km,
+            "aoi_height_km": config.location.extent_km[1],
             "landcover_resolution_m": config.landcover_resolution_m,
             "landcover": config.data_sources.landcover.model_dump(),
         }
@@ -108,7 +110,8 @@ class ResourceFingerprints:
         return {
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
-            "aoi_size_km": config.location.aoi_size_km,
+            "aoi_width_km": config.location.aoi_width_km,
+            "aoi_height_km": config.location.extent_km[1],
             "roads": config.roads.model_dump() if config.roads else None,
         }
 
@@ -117,7 +120,8 @@ class ResourceFingerprints:
         return {
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
-            "aoi_size_km": config.location.aoi_size_km,
+            "aoi_width_km": config.location.aoi_width_km,
+            "aoi_height_km": config.location.extent_km[1],
             "buildings": config.buildings.model_dump() if config.buildings else None,
         }
 
@@ -126,7 +130,8 @@ class ResourceFingerprints:
         return {
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
-            "aoi_size_km": config.location.aoi_size_km,
+            "aoi_width_km": config.location.aoi_width_km,
+            "aoi_height_km": config.location.extent_km[1],
             "landcover_resolution_m": config.landcover_resolution_m,
             "spectral_matching": (
                 getattr(config, "spectral_matching", None).model_dump()
@@ -223,7 +228,8 @@ class ResourceFingerprints:
         return {
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
-            "aoi_size_km": config.location.aoi_size_km,
+            "aoi_width_km": config.location.aoi_width_km,
+            "aoi_height_km": config.location.extent_km[1],
             "buffer_size_km": config.buffer.size_km if config.buffer else None,
             "background_size_km": (
                 config.background.size_km if config.background else None

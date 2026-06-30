@@ -50,7 +50,11 @@ class SceneResourceContext:
         self.scene_name = config.scene_name
         self.center_lat = config.location.center_lat
         self.center_lon = config.location.center_lon
-        self.aoi_size_km = config.location.aoi_size_km
+        # Canonical rectangular extent (width_km, height_km). For a square scene
+        # width == height. aoi_width_km is kept as a scalar width for any
+        # square-only callers.
+        self.extent_km = config.location.extent_km
+        self.aoi_width_km = config.location.aoi_width_km
         self.dem_resolution_m = config.dem_resolution_m
         self.landcover_resolution_m = config.landcover_resolution_m
 
@@ -111,7 +115,7 @@ class SceneResourceContext:
         """Lazy AOI polygon for the target area."""
         if self._target_aoi_polygon is None:
             self._target_aoi_polygon = self.coordinate_system.create_scene_polygon(
-                self.aoi_size_km
+                *self.extent_km
             )
         return self._target_aoi_polygon
 
@@ -119,8 +123,10 @@ class SceneResourceContext:
     def target_scene_bounds(self):
         """Lazy axis-aligned scene-coord clip bounds for the target AOI."""
         if self._target_scene_bounds is None:
-            half = (self.aoi_size_km * 1000) / 2
-            self._target_scene_bounds = box(-half, -half, half, half)
+            width_km, height_km = self.extent_km
+            half_w = (width_km * 1000) / 2
+            half_h = (height_km * 1000) / 2
+            self._target_scene_bounds = box(-half_w, -half_h, half_w, half_h)
         return self._target_scene_bounds
 
     @property

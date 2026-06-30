@@ -40,6 +40,7 @@ from .scene import (
     SceneLocation,
     SnowConfig,
     create_scene_config,
+    create_scene_config_from_geotiff,
 )
 from .vegetation import (
     BoxGeometry,
@@ -104,6 +105,7 @@ __all__ = [
     "BufferConfig",
     "BackgroundConfig",
     "create_scene_config",
+    "create_scene_config_from_geotiff",
     # material matching
     "SpectralMatchingConfig",
 ]

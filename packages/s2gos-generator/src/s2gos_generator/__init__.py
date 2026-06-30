@@ -3,7 +3,13 @@ import logging
 from s2gos_utils.scene import SceneDescription
 
 from .core import SceneGenConfig, SceneGenerationPipeline, SceneResourceContext
-from .core.config import BackgroundConfig, BufferConfig, SnowConfig, create_scene_config
+from .core.config import (
+    BackgroundConfig,
+    BufferConfig,
+    SnowConfig,
+    create_scene_config,
+    create_scene_config_from_geotiff,
+)
 from .core.exceptions import (
     ConfigurationError,
     DataNotFoundError,
@@ -40,6 +46,7 @@ __all__ = [
     "SceneAssets",
     "SceneDescription",
     "create_scene_config",
+    "create_scene_config_from_geotiff",
     "create_s2gos_scene",
     "SnowConfig",
     "BufferConfig",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -29,7 +30,7 @@ from .mesh_refinement import MeshRefinementConfig
 from .roads import RoadsConfig
 from .vegetation import VegetationExclusionZone, VegetationPlacementConfig
 from ..._version import get_version
-from ...dataset import IndexedGeoTiff, Zarr, dataset_factory
+from ...dataset import GeoTiffDEM, IndexedGeoTiff, Zarr, dataset_factory
 
 
 class Month(str, Enum):
@@ -82,7 +83,12 @@ class BackgroundConfig(BaseModel):
 
 
 class SceneLocation(BaseModel):
-    """Geographic location configuration."""
+    """Geographic location configuration.
+
+    The area of interest is a rectangle ``aoi_width_km`` (x extent) by
+    ``aoi_height_km`` (y extent). When ``aoi_height_km`` is omitted the AOI is a
+    square of side ``aoi_width_km`` (the historical behaviour).
+    """
 
     center_lat: float = Field(
         ..., ge=-90.0, le=90.0, description="Center latitude in degrees"
@@ -90,9 +96,22 @@ class SceneLocation(BaseModel):
     center_lon: float = Field(
         ..., ge=-180.0, le=180.0, description="Center longitude in degrees"
     )
-    aoi_size_km: float = Field(
-        ..., gt=0.0, description="Area of interest size in kilometers"
+    aoi_width_km: float = Field(
+        ...,
+        gt=0.0,
+        description="Area of interest width (x extent) in kilometers",
     )
+    aoi_height_km: Optional[float] = Field(
+        default=None,
+        gt=0.0,
+        description="Area of interest height (y extent) in kilometers. "
+        "Defaults to aoi_width_km (square AOI).",
+    )
+
+    @property
+    def extent_km(self) -> tuple[float, float]:
+        """Rectangular extent as ``(width_km, height_km)``."""
+        return (self.aoi_width_km, self.aoi_height_km or self.aoi_width_km)
 
 
 def _load_settings_data_sources_config() -> Dict[str, Any]:
@@ -120,7 +139,7 @@ def _load_settings_data_sources_config() -> Dict[str, Any]:
 class DataSources(BaseModel):
     """Data source configuration using FileResolver."""
 
-    dem: IndexedGeoTiff | Zarr = Field(..., description="DEM Dataset")
+    dem: IndexedGeoTiff | Zarr | GeoTiffDEM = Field(..., description="DEM Dataset")
     landcover: IndexedGeoTiff | Zarr = Field(..., description="Landcover Dataset")
     material_config_path: PathRef = Field(
         ..., description="Path to custom material configuration JSON"
@@ -311,8 +330,18 @@ class SceneGenConfig(BaseModel):
     def validate_scene_config(self):
         """Validate complete scene configuration."""
         if self.buffer is not None:
-            if self.buffer.size_km <= self.location.aoi_size_km:
+            if self.buffer.size_km <= self.location.aoi_width_km:
                 raise ValueError("Buffer size must be larger than AOI size")
+
+        # Buffer/background are square-only and not yet supported for a
+        # single-GeoTIFF (potentially non-square) DEM.
+        if isinstance(self.data_sources.dem, GeoTiffDEM) and (
+            self.buffer is not None or self.background is not None
+        ):
+            raise ValueError(
+                "buffer/background regions are not supported with a single-GeoTIFF "
+                "DEM yet; remove them or use a tiled DEM dataset."
+            )
 
         return self
 
@@ -428,7 +457,7 @@ def create_scene_config(
     scene_name: str,
     center_lat: float,
     center_lon: float,
-    aoi_size_km: float,
+    aoi_width_km: float,
     output_dir: PathRef,
     dem_resolution_m: float = 30.0,
     landcover_resolution_m: float = 10.0,
@@ -443,7 +472,7 @@ def create_scene_config(
         scene_name: Scene name (used for output files)
         center_lat: Center latitude in degrees
         center_lon: Center longitude in degrees
-        aoi_size_km: Area of interest size in kilometers
+        aoi_width_km: Area of interest size in kilometers (square AOI side)
         output_dir: Output directory for generated scene
         dem_resolution_m: DEM resolution in meters (default: 30.0)
         landcover_resolution_m: Landcover resolution in meters (default: 30.0)
@@ -461,11 +490,87 @@ def create_scene_config(
         scene_name=scene_name,
         description=description,
         location=SceneLocation(
-            center_lat=center_lat, center_lon=center_lon, aoi_size_km=aoi_size_km
+            center_lat=center_lat, center_lon=center_lon, aoi_width_km=aoi_width_km
         ),
         data_sources=data_sources,
         output_dir=output_dir,
         dem_resolution_m=dem_resolution_m,
+        landcover_resolution_m=landcover_resolution_m,
+        atmosphere=atmosphere or _default_atmosphere_config(),
+        **kwargs,
+    )
+
+
+def create_scene_config_from_geotiff(
+    scene_name: str,
+    geotiff_path: PathRef,
+    output_dir: PathRef,
+    dem_resolution_m: Optional[float] = None,
+    landcover_resolution_m: float = 10.0,
+    description: Optional[str] = None,
+    data_overrides: Optional[dict] = None,
+    atmosphere: Optional[AtmosphereConfig] = None,
+    dem_crs: Optional[str] = None,
+    **kwargs,
+) -> SceneGenConfig:
+    """Build a scene config driven by a single GeoTIFF DEM.
+
+    The DEM file's CRS, footprint and resolution define the scene: its centre
+    becomes the scene centre, its (generally non-square) footprint becomes the
+    AOI extent, and its native resolution becomes the default terrain
+    resolution. Landcover is still fetched from the configured dataset over the
+    derived extent.
+
+    Args:
+        scene_name: Scene name (used for output files).
+        geotiff_path: Path to the DEM GeoTIFF (any CRS).
+        output_dir: Output directory for generated scene.
+        dem_resolution_m: Terrain resolution in meters. Defaults to the DEM's
+            native resolution read from the file.
+        landcover_resolution_m: Landcover resolution in meters (default: 10.0).
+        description: Optional scene description.
+        data_overrides: Optional landcover/materials overrides (the DEM is set
+            from ``geotiff_path`` and cannot be overridden here).
+        atmosphere: Optional atmosphere configuration.
+        dem_crs: Fallback CRS used only when the GeoTIFF carries no CRS.
+        **kwargs: Additional configuration options (e.g. ``processing``).
+    """
+    dem = GeoTiffDEM(
+        name="GeoTiffDEM",
+        path=to_pathref(geotiff_path),
+        **({"crs": dem_crs} if dem_crs else {}),
+    )
+    extent = dem.geo_extent()
+    resolution_m = dem_resolution_m or extent["native_resolution_m"]
+    logging.info(
+        "GeoTIFF DEM %s: centre (%.5f, %.5f), extent %.3f km × %.3f km, "
+        "native resolution %.2f m → using %.2f m%s",
+        geotiff_path,
+        extent["center_lat"],
+        extent["center_lon"],
+        extent["width_km"],
+        extent["height_km"],
+        extent["native_resolution_m"],
+        resolution_m,
+        "" if dem_resolution_m is None else " (overridden)",
+    )
+
+    overrides = dict(data_overrides or {})
+    overrides["dem"] = dem
+    data_sources = DataSources(**overrides)
+
+    return SceneGenConfig(
+        scene_name=scene_name,
+        description=description,
+        location=SceneLocation(
+            center_lat=extent["center_lat"],
+            center_lon=extent["center_lon"],
+            aoi_width_km=extent["width_km"],
+            aoi_height_km=extent["height_km"],
+        ),
+        data_sources=data_sources,
+        output_dir=output_dir,
+        dem_resolution_m=resolution_m,
         landcover_resolution_m=landcover_resolution_m,
         atmosphere=atmosphere or _default_atmosphere_config(),
         **kwargs,
