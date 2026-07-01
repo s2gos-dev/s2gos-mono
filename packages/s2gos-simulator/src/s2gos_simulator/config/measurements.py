@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated, List, Literal, Optional, Tuple, Union
 
+import numpy as np
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .spectral import SRFType
@@ -10,6 +12,8 @@ from .viewing import (
     DistantViewing,
     LookAtViewing,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class HemisphericalMeasurementLocation(BaseModel):
@@ -149,6 +153,147 @@ class IrradianceConfig(BaseModel):
         ..., description="Geographic or scene location for the measurement"
     )
     samples_per_pixel: int = Field(512, description="Monte Carlo samples per pixel")
+
+
+_LARGE_GRID_WARN_POINTS = 250_000
+
+
+class IrradianceGridConfig(BaseModel):
+    """Batched BOA irradiance over a grid of points (one Eradiate experiment).
+
+    Computes horizontal downwelling bottom-of-atmosphere irradiance on a regular
+    grid centered at ``(center_x_m, center_y_m)`` in scene coordinates, at
+    ``height_offset_m`` above the DEM. A small white Lambertian patch (ρ=1) is
+    placed at every cell and a single :class:`MultiRadiancemeterMeasure`
+    (``mradiancemeter``) samples all patches at once: each downward ray reads the
+    patch radiance ``L`` and ``E = π·L`` (Lambertian) recovers the irradiance.
+
+    Unlike per-point :class:`IrradianceConfig`, the whole grid runs in **one**
+    experiment, so thousands–millions of cells are tractable (cost scales with the
+    patch count in the scene, not the number of experiments).
+    """
+
+    type: Literal["irradiance_grid"] = Field(
+        "irradiance_grid", description="Measurement type (always 'irradiance_grid')"
+    )
+    id: str = Field(description="Unique identifier for this irradiance grid")
+
+    size_x_m: float = Field(..., gt=0.0, description="Grid extent along x (meters)")
+    size_y_m: Optional[float] = Field(
+        None,
+        gt=0.0,
+        description="Grid extent along y (meters). Defaults to size_x_m (square).",
+    )
+    resolution_m: float = Field(..., gt=0.0, description="Grid cell spacing (meters)")
+    center_x_m: float = Field(
+        0.0,
+        description="Grid center x in scene coordinates (meters; 0 = target center)",
+    )
+    center_y_m: float = Field(
+        0.0,
+        description="Grid center y in scene coordinates (meters; 0 = target center)",
+    )
+
+    height_offset_m: float = Field(
+        0.5, ge=0.0, description="Patch height above the terrain surface (meters)"
+    )
+    terrain_relative_height: bool = Field(
+        True,
+        description="If True, height_offset_m is added to the DEM elevation; "
+        "if False, height_offset_m is used as the absolute patch elevation.",
+    )
+    white_patch_radius_m: float = Field(
+        0.05,
+        gt=0.0,
+        description="Radius of the white Lambertian reference patch (meters)",
+    )
+    ray_offset_m: float = Field(
+        0.01,
+        gt=0.0,
+        description="Height of the radiancemeter ray origin above each patch (meters)",
+    )
+    samples_per_pixel: int = Field(
+        512, ge=1, description="Monte Carlo samples per grid cell"
+    )
+    max_patches_per_batch: int = Field(
+        100,
+        ge=1,
+        description="Max white patches per Eradiate experiment; the grid is covered "
+        "in ceil(N / this) experiments (one experiment can only hold so many patches).",
+    )
+    isolate_batches: bool = Field(
+        True,
+        description="Run each batch's Eradiate experiment in a fresh subprocess so peak "
+        "memory stays at ~one batch. Eradiate's expert mesh/bitmap (kdict/kpmap) interface "
+        "leaks several GB of native memory per experiment that no in-process cleanup "
+        "reclaims — only a process exit frees it. Raising max_patches_per_batch uses fewer "
+        "subprocesses (less per-batch import/mesh-translate overhead) at a higher per-batch "
+        "peak; lower it if a single batch is too big for RAM. Set False to run in-process "
+        "(old behavior; leaks) for debugging.",
+    )
+    account_for_buildings: bool = Field(
+        False,
+        description="Place patches above the true scene surface (terrain + buildings/objects) "
+        "instead of the bare DEM, so patches/ray origins never land inside buildings. Casts a "
+        "downward ray at each cell against the rendered geometry (in one isolated subprocess) "
+        "and uses the first hit as the surface. Only applies when terrain_relative_height=True.",
+    )
+    srf: Optional[SRFType] = Field(None, description="Spectral response function")
+
+    @property
+    def _size_y(self) -> float:
+        return self.size_y_m if self.size_y_m is not None else self.size_x_m
+
+    @property
+    def grid_shape(self) -> Tuple[int, int]:
+        """Grid shape as ``(ny, nx)``."""
+        nx = max(1, round(self.size_x_m / self.resolution_m))
+        ny = max(1, round(self._size_y / self.resolution_m))
+        return (ny, nx)
+
+    @property
+    def n_batches(self) -> int:
+        """Number of experiments needed to cover the grid (ceil(N / batch))."""
+        ny, nx = self.grid_shape
+        return -(-(nx * ny) // self.max_patches_per_batch)
+
+    def grid_axes(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Cell-center coordinates along each axis: ``(x_centers, y_centers)``."""
+        ny, nx = self.grid_shape
+        x = self.center_x_m + (np.arange(nx) - (nx - 1) / 2.0) * self.resolution_m
+        y = self.center_y_m + (np.arange(ny) - (ny - 1) / 2.0) * self.resolution_m
+        return x, y
+
+    def grid_points(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Flattened cell centers ``(xs, ys)`` in row-major order (y outer, x inner).
+
+        Reshaping a length-N result to :attr:`grid_shape` ``(ny, nx)`` recovers the map.
+        """
+        x, y = self.grid_axes()
+        xx, yy = np.meshgrid(x, y)  # (ny, nx), row-major
+        return xx.ravel(), yy.ravel()
+
+    @model_validator(mode="after")
+    def _validate_grid(self) -> "IrradianceGridConfig":
+        if self.white_patch_radius_m >= self.resolution_m / 2.0:
+            raise ValueError(
+                f"white_patch_radius_m ({self.white_patch_radius_m}) must be smaller "
+                f"than half the grid spacing ({self.resolution_m / 2.0}) so patches do "
+                "not overlap."
+            )
+        ny, nx = self.grid_shape
+        n_points = nx * ny
+        if n_points > _LARGE_GRID_WARN_POINTS:
+            logger.warning(
+                "IrradianceGridConfig '%s' defines %d points (%dx%d); the scene will "
+                "hold that many white patches, which is memory-heavy. Consider a coarser "
+                "resolution_m for a quicker run.",
+                self.id,
+                n_points,
+                nx,
+                ny,
+            )
+        return self
 
 
 class BRFConfig(BaseModel):
@@ -501,6 +646,7 @@ class BHRConfig(HemisphericalMeasurementLocation):
 MeasurementConfig = Annotated[
     Union[
         IrradianceConfig,
+        IrradianceGridConfig,
         BRFConfig,
         HDRFConfig,
         HCRFConfig,

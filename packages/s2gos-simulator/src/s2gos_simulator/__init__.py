@@ -20,6 +20,7 @@ from .config import (
     HemisphericalMeasurementLocation,
     HemisphericalViewing,
     IrradianceConfig,
+    IrradianceGridConfig,
     LookAtViewing,
     PixelBHRConfig,
     PixelBRFConfig,
@@ -35,6 +36,7 @@ from .config import (
     create_hypstar_sensor,
 )
 from .hdrf_processor import HDRFProcessor
+from .irradiance_grid_processor import IrradianceGridProcessor
 
 __version__ = "0.1.0"
 
@@ -59,6 +61,7 @@ __all__ = [
     "create_hypstar_sensor",
     # Measurement Configs
     "IrradianceConfig",
+    "IrradianceGridConfig",
     "HDRFConfig",
     "HCRFConfig",
     "BRFConfig",
@@ -75,4 +78,5 @@ __all__ = [
     "ERADIATE_AVAILABLE",
     "BHRProcessor",
     "HDRFProcessor",
+    "IrradianceGridProcessor",
 ]

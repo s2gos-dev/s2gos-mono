@@ -604,6 +604,45 @@ class EradiateTranslator:
             "spp": spp,
         }
 
+    def create_multi_radiancemeter_measure(
+        self,
+        grid_config,
+        origins: list,
+        directions: list,
+    ) -> Dict[str, Any]:
+        """Create an ``mradiancemeter`` measure for a batched BOA irradiance grid.
+
+        One :class:`MultiRadiancemeterMeasure` samples every white reference patch
+        in the scene at once: each ray (``origins[i]`` → ``directions[i]``) reads its
+        patch radiance, and ``E = π·L`` recovers the per-cell irradiance downstream.
+
+        Args:
+            grid_config: IrradianceGridConfig with measurement parameters.
+            origins: List of [x, y, z] ray origins in scene meters (one per patch).
+            directions: List of 3-vectors (one per patch), typically [0, 0, -1].
+
+        Returns:
+            Eradiate ``mradiancemeter`` measure dictionary.
+        """
+        if grid_config.srf is not None:
+            srf = self.translate_srf(grid_config.srf)
+        else:
+            srf = {"type": "uniform", "wmin": 380.0, "wmax": 1680.0}
+
+        logger.debug(
+            f"Creating mradiancemeter '{grid_config.id}' with {len(origins)} rays, "
+            f"spp={grid_config.samples_per_pixel}"
+        )
+
+        return {
+            "type": "mradiancemeter",
+            "id": sanitize_sensor_id(grid_config.id),
+            "origins": origins,
+            "directions": directions,
+            "srf": srf,
+            "spp": grid_config.samples_per_pixel,
+        }
+
     def create_distant_flux_measure(
         self,
         bhr_config: BHRConfig,

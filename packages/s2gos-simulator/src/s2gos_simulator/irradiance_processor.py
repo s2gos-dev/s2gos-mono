@@ -41,6 +41,37 @@ def insert_reference_disk(
     return replace(scene_description, objects=new_objects), (x, y, z)
 
 
+def insert_reference_disks(
+    scene_description: SceneDescription,
+    centers,
+    disk_ids,
+    radius: float = REFERENCE_DISK_RADIUS_M,
+) -> SceneDescription:
+    """Return a copy of scene_description with many white Lambertian disks inserted.
+
+    Batched counterpart of :func:`insert_reference_disk`: builds the full object
+    list once (O(N)) instead of inserting disks one at a time (O(N²)), for grid
+    BOA-irradiance measurements with thousands–millions of patches.
+
+    Args:
+        scene_description: Base scene.
+        centers: Iterable of (x, y, z) patch centers in scene meters.
+        disk_ids: Iterable of unique object ids, parallel to ``centers``.
+        radius: Patch radius in meters (ρ=1 white Lambertian, implied by type="disk").
+    """
+    disks = [
+        {
+            "object_id": did,
+            "type": "disk",
+            "center": [float(x), float(y), float(z)],
+            "radius": radius,
+        }
+        for (x, y, z), did in zip(centers, disk_ids)
+    ]
+    new_objects = disks + list(scene_description.objects or [])
+    return replace(scene_description, objects=new_objects)
+
+
 class IrradianceProcessor:
     """Processor for BOA irradiance measurements using reference disk technique."""
 

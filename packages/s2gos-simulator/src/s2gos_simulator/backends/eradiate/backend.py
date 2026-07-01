@@ -29,6 +29,7 @@ from ...config import (
     HCRFConfig,
     HDRFConfig,
     HemisphericalMeasurementLocation,
+    IrradianceGridConfig,
     PixelBHRConfig,
     PixelBRFConfig,
     PixelHDRFConfig,
@@ -37,6 +38,7 @@ from ...config import (
     SimulationConfig,
 )
 from ...hdrf_processor import HDRFProcessor
+from ...irradiance_grid_processor import IrradianceGridProcessor
 from ...irradiance_processor import IrradianceProcessor
 from ...processors.sensor_processor import SensorProcessor
 
@@ -258,14 +260,17 @@ class EradiateBackend(SimulationBackend):
         bhr_proc = BHRProcessor(self)
         hdrf_proc = HDRFProcessor(self)
         irr_proc = IrradianceProcessor(self)
+        irr_grid_proc = IrradianceGridProcessor(self)
 
-        # Separate BRF and BHR measurements from others (they have special workflows)
+        # Separate BRF, BHR and irradiance-grid measurements from others (they have
+        # self-contained workflows and must not enter the standard sensor path).
         brf_configs = brf_proc.get_brf_configs()
         bhr_configs = bhr_proc.get_bhr_configs()
+        requires_irr_grid = irr_grid_proc.requires_irradiance_grid()
         non_brf_measurements = [
             m
             for m in self.simulation_config.measurements
-            if not isinstance(m, BRFConfig) and not isinstance(m, BHRConfig)
+            if not isinstance(m, (BRFConfig, BHRConfig, IrradianceGridConfig))
         ]
 
         # Extract BRF sensor IDs so we can exclude them from standard/HDRF workflow
@@ -302,6 +307,15 @@ class EradiateBackend(SimulationBackend):
                 radiosity_dir=output_dir / "radiosity",
             )
             all_results.update(bhr_results)
+
+        # Run batched BOA irradiance grid workflow (white-patch + mradiancemeter)
+        if requires_irr_grid:
+            grid_results = irr_grid_proc.execute_irradiance_grid_measurements(
+                scene_description,
+                scene_dir,
+                output_dir,
+            )
+            all_results.update(grid_results)
 
         if non_brf_measurements or self.simulation_config.sensors:
             if requires_hdrf or requires_irr:

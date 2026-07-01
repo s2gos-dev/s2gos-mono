@@ -8,6 +8,7 @@ different processors and backends.
 import logging
 from typing import Optional, Tuple
 
+import numpy as np
 import xarray as xr
 from s2gos_utils.io.paths import UPath
 from s2gos_utils.scene.description import SceneDescription
@@ -41,6 +42,7 @@ class TerrainQuery:
         self.scene_dir = scene_dir
         self._dem_path: Optional[UPath] = None
         self._dem_data: Optional[xr.DataArray] = None
+        self._interpolator: Optional[RegularGridInterpolator] = None
 
     def find_dem_file(self) -> Optional[UPath]:
         """Find DEM file in scene data directory.
@@ -139,6 +141,69 @@ class TerrainQuery:
             else:
                 logger.warning(msg + " Using 0.0m.")
                 return 0.0
+
+    def _get_interpolator(self) -> Optional[RegularGridInterpolator]:
+        """Build (once) and cache a linear interpolator over the DEM grid.
+
+        Returns None if the DEM file cannot be found.
+        """
+        if self._interpolator is not None:
+            return self._interpolator
+
+        dem_path = self.find_dem_file()
+        if dem_path is None:
+            return None
+
+        from s2gos_utils.io.paths import expand_mapper
+
+        with xr.open_zarr(expand_mapper(dem_path)) as dem_ds:
+            dem_data = dem_ds["elevation"]
+            self._interpolator = RegularGridInterpolator(
+                (dem_data.y.values, dem_data.x.values),
+                dem_data.values,
+                method="linear",
+                bounds_error=False,
+                fill_value=0.0,
+            )
+        return self._interpolator
+
+    def query_elevation_at_scene_coords_batch(
+        self,
+        xs: np.ndarray,
+        ys: np.ndarray,
+        raise_on_error: bool = True,
+    ) -> np.ndarray:
+        """Vectorized terrain elevation at many scene ``(x, y)`` points.
+
+        Opens the DEM and builds the interpolator a single time (cached), then
+        evaluates all points at once — the efficient path for grid measurements.
+        Out-of-coverage points fall back to 0.0 (DEM fill), matching the scalar
+        :meth:`query_elevation_at_scene_coords`.
+
+        Args:
+            xs: Scene x-coordinates in meters (array-like).
+            ys: Scene y-coordinates in meters (array-like, same length as xs).
+            raise_on_error: If True, raise when the DEM is missing; else return zeros.
+
+        Returns:
+            ndarray of elevations (meters), same shape as ``xs``.
+        """
+        xs = np.asarray(xs, dtype=float)
+        ys = np.asarray(ys, dtype=float)
+
+        interpolator = self._get_interpolator()
+        if interpolator is None:
+            msg = (
+                f"DEM file not found in {self.scene_dir / 'data'}. "
+                "Cannot query terrain elevation."
+            )
+            if raise_on_error:
+                raise FileNotFoundError(msg)
+            logger.warning(msg + " Using 0.0m for all points.")
+            return np.zeros_like(xs)
+
+        # RegularGridInterpolator was built on (y, x) order.
+        return interpolator(np.column_stack([ys.ravel(), xs.ravel()])).reshape(xs.shape)
 
     def query_elevation_at_geographic_coords(
         self,
