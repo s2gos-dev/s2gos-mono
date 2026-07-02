@@ -15,8 +15,8 @@ import numpy as np
 
 from .library import CandidateSpectrum
 from .sam import cluster_class_reflectance, match_clusters_to_library
-from ..core.config.material_match import SpectralMatchingConfig
-from ..core.materials import allocate_matched_indices
+from ...core.config.material_match import SpectralMatchingConfig
+from ...core.materials import allocate_matched_indices
 
 
 def diversify_selection_texture(

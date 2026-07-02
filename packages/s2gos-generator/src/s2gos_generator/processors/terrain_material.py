@@ -313,7 +313,7 @@ class TerrainMaterialGenerator:
         Returns:
             Snow-adjusted selection texture.
         """
-        from ..seasonal.snow import (
+        from .snow import (
             Month,
             calculate_snow_probability_map,
             get_day_of_year,

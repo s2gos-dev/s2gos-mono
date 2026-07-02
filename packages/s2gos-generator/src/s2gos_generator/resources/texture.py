@@ -229,8 +229,8 @@ def _apply_spectral_matching(
     materials and their indices (read later by the scene step). Returns
     ``(texture_2d, changed)``.
     """
-    from ..spectral.diversify import diversify_selection_texture
-    from ..spectral.library import load_candidate_library
+    from ..processors.spectral.diversify import diversify_selection_texture
+    from ..processors.spectral.library import load_candidate_library
 
     cfg = ctx.config.spectral_matching
     s2_path = ctx.dependency_outputs.get("target_sentinel2")

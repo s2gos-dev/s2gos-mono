@@ -9,15 +9,18 @@ import xarray as xr
 
 from s2gos_generator.core.config.material_match import SpectralMatchingConfig
 from s2gos_generator.core.materials import MAX_MATERIAL_INDEX, allocate_matched_indices
-from s2gos_generator.spectral.diversify import diversify_selection_texture
-from s2gos_generator.spectral.library import CandidateSpectrum, load_candidate_library
-from s2gos_generator.spectral.sam import (
+from s2gos_generator.processors.spectral.diversify import diversify_selection_texture
+from s2gos_generator.processors.spectral.library import (
+    CandidateSpectrum,
+    load_candidate_library,
+)
+from s2gos_generator.processors.spectral.sam import (
     NO_CLUSTER,
     cluster_class_reflectance,
     match_clusters_to_library,
     spectral_angle,
 )
-from s2gos_generator.spectral.sentinel2 import (
+from s2gos_generator.processors.spectral.sentinel2 import (
     _accumulate_until_covered,
     _utm_epsg,
 )

@@ -23,7 +23,7 @@ import numpy as np
 import trimesh
 from shapely.geometry import Polygon
 
-from ..utils.straight_skeleton import Skeleton
+from .straight_skeleton import Skeleton
 
 
 @dataclass

@@ -28,7 +28,7 @@ def process_target_sentinel2(ctx: SceneResourceContext) -> Optional[UPath]:
     if landcover_path is None:
         raise ValueError("Target landcover required for Sentinel-2 fetch")
 
-    from ..spectral.sentinel2 import fetch_s2_reflectance
+    from ..processors.spectral.sentinel2 import fetch_s2_reflectance
 
     with xr.open_zarr(expand_mapper(landcover_path)) as ds:
         lc = ds[list(ds.data_vars)[0]]

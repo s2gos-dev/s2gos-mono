@@ -16,7 +16,7 @@ from s2gos_utils.io.paths import PathLike, open_dataset
 from s2gos_utils.scene.materials import load_materials
 from s2gos_utils.scene.materials.definitions import DiffuseMaterial
 
-from ..core.config.material_match import S2_BAND_WAVELENGTHS_NM
+from ...core.config.material_match import S2_BAND_WAVELENGTHS_NM
 
 
 @dataclass(frozen=True)
