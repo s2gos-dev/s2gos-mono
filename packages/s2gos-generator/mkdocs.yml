@@ -56,6 +56,7 @@ nav:
     - Pipeline: api/pipeline.md
     - Atmosphere: api/atmosphere.md
     - Vegetation: api/vegetation.md
+    - Urban: api/urban.md
     - Assets: api/assets.md
     - Datasets: api/datasets.md
     - Exceptions: api/exceptions.md

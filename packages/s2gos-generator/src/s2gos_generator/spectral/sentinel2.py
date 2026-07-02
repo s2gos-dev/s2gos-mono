@@ -1,12 +1,4 @@
-"""Fetch Sentinel-2 L2A reflectance onto the scene grid.
-
-Ported from ``experimenting/sentinel2_stac.ipynb``. Searches a Copernicus STAC
-catalog around an anchor date, composites the fewest dates that tile the AOI, and
-regrids the result onto the generator's oblique-Mercator scene grid so it aligns
-by coordinate with the landcover/selection-texture raster.
-
-Network access and Copernicus credentials (via environment) are required.
-"""
+"""Fetch Sentinel-2 L2A reflectance onto the scene grid."""
 
 from __future__ import annotations
 
