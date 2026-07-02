@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ..assets.dem import DEMProcessor
 from ..core.context import SceneResourceContext
+from ..processors.dem import DEMProcessor
 
 
 def _process_dem(

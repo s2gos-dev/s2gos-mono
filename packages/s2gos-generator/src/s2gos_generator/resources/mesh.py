@@ -7,9 +7,9 @@ from typing import Optional
 import xarray as xr
 from s2gos_utils.io.paths import expand_mapper
 
-from ..assets.mesh_generator import MeshGenerator
-from ..assets.terraforming import TerraformOperation
 from ..core.context import SceneResourceContext
+from ..processors.mesh_generator import MeshGenerator
+from ..processors.terraforming import TerraformOperation
 
 
 def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:

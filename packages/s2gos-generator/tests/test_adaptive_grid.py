@@ -6,8 +6,8 @@ from collections import defaultdict
 import numpy as np
 import pytest
 
-from s2gos_generator.assets.adaptive_grid import AdaptiveGrid
-from s2gos_generator.assets.error_pyramid import DemErrorPyramid
+from s2gos_generator.processors.adaptive_grid import AdaptiveGrid
+from s2gos_generator.processors.error_pyramid import DemErrorPyramid
 
 
 def _grid(nx, ny, max_depth):

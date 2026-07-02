@@ -10,9 +10,9 @@ import xarray as xr
 from PIL import Image
 from s2gos_utils.io.paths import expand_mapper
 
-from ..assets.terrain_material import TerrainMaterialGenerator
 from ..core.context import SceneResourceContext
 from ..core.materials import build_material_index_map
+from ..processors.terrain_material import TerrainMaterialGenerator
 
 
 def _lc_bounds(lc_data: xr.DataArray) -> tuple[float, float, float, float, float]:

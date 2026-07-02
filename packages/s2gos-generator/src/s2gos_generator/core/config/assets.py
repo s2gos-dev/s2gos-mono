@@ -412,7 +412,7 @@ def load_assets_from_xml(
         - assets_list: List of UserAssets with string material references
         - material_library: Dict of material definitions to embed in scene
     """
-    from ...assets.xml_importer import import_xml_assets
+    from ...processors.xml_importer import import_xml_assets
 
     material_mappings_dicts = None
     if material_mappings:

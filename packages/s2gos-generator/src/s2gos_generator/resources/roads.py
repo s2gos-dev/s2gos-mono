@@ -15,9 +15,9 @@ from typing import Optional
 from shapely.geometry import LineString, MultiLineString, mapping
 
 from .._version import get_version
-from ..assets.terraforming import GradientFilter
-from ..assets.terrain_mesh import extract_dem
 from ..core.context import SceneResourceContext
+from ..processors.terraforming import GradientFilter
+from ..processors.terrain_mesh import extract_dem
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 OVERPASS_MAX_RETRIES = 5

@@ -211,7 +211,7 @@ def _build_vegetation_objects(
     Returns:
         List of SceneDescription-format object dicts (shapegroups + vegetation_collections).
     """
-    from ..assets.xml_importer import create_tree_shapegroup
+    from ..processors.xml_importer import create_tree_shapegroup
 
     species_groups: Dict[tuple, List[Dict[str, Any]]] = {}
     for instance in vegetation_instances:

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from shapely.geometry import LineString
 
-from s2gos_generator.assets.terraforming import (
+from s2gos_generator.processors.terraforming import (
     GradientFilter,
     RoadFlattenOperation,
     apply_road_flatten_batch,

@@ -102,7 +102,7 @@ def _load_settings_data_sources_config() -> Dict[str, Any]:
     1. Load data source paths (DEM, landcover, materials) from the settings file.
     2. Augment the global resolver with custom asset search paths
     """
-    from ...setting import settings
+    from ...settings import settings
 
     dem_settings = settings.generator.dataset.dem
     landcover_settings = settings.generator.dataset.landcover

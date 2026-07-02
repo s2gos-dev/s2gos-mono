@@ -17,7 +17,8 @@ import pytest
 import trimesh
 from shapely.geometry import MultiPolygon, Polygon
 
-from s2gos_generator.assets.buildings import (
+from s2gos_generator.core.config import BuildingsConfig
+from s2gos_generator.processors.buildings import (
     _BuildingTask,
     _parse_height,
     _process_one_building,
@@ -27,7 +28,6 @@ from s2gos_generator.assets.buildings import (
     quadkeys_for_bbox,
     select_tile_files,
 )
-from s2gos_generator.core.config import BuildingsConfig
 
 
 class TestParseHeight:
@@ -133,7 +133,7 @@ class TestProcessOneBuildingFallback:
         # Force build_hip_roof to fail; the pipeline must still emit a
         # full-height flat building rather than dropping it.
         monkeypatch.setattr(
-            "s2gos_generator.assets.buildings.build_hip_roof",
+            "s2gos_generator.processors.buildings.build_hip_roof",
             lambda *a, **k: None,
         )
         result = _process_one_building(self._task(pitched=True))

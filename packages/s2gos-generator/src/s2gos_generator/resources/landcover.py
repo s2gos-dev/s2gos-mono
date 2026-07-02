@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ..assets.landcover import LandCoverProcessor
 from ..core.context import SceneResourceContext
+from ..processors.landcover import LandCoverProcessor
 
 
 def _process_landcover(

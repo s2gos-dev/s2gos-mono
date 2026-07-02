@@ -14,14 +14,14 @@ import yaml
 from s2gos_utils.io.paths import open_file
 from s2gos_utils.io.resolver import resolver
 
-from ..assets.buildings import (
+from ..core.context import SceneResourceContext
+from ..processors.buildings import (
     _safe_name,
     build_meshes,
     load_building_footprints,
     make_dem_elevation_sampler,
     select_tile_files,
 )
-from ..core.context import SceneResourceContext
 
 
 def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
