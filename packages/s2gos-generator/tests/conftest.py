@@ -77,6 +77,7 @@ def mock_path_validation(monkeypatch):
             "dem": mock_dem,
             "landcover": mock_landcover,
             "material_config_path": PathRef("/mock/materials.json", None),
+            "building_tiles": None,
         }
 
     def mock_load_index_gdf(index_path):

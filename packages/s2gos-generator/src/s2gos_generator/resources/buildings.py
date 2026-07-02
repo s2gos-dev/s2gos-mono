@@ -12,6 +12,7 @@ from typing import Optional
 
 import yaml
 from s2gos_utils.io.paths import open_file
+from s2gos_utils.io.resolver import resolver
 
 from ..assets.buildings import (
     _safe_name,
@@ -30,8 +31,14 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
     mapping, each building is assigned one material by weighted random draw before
     grouping."""
     cfg = ctx.config.buildings
-    if cfg is None or not cfg.enabled or cfg.tile_dir is None:
+    if cfg is None or not cfg.enabled:
         return None
+
+    ds_tiles = getattr(ctx.config.data_sources, "building_tiles", None)
+    if ds_tiles is None:
+        logging.info("No building tile source configured — skipping buildings")
+        return None
+    tile_dir = Path(str(resolver.resolve(ds_tiles, strict=True)))
 
     target_dem_path = ctx.dependency_outputs.get("target_dem")
     if target_dem_path is None:
@@ -39,7 +46,7 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
 
     bbox = ctx.target_aoi_polygon.bounds
 
-    file_paths = select_tile_files(cfg.tile_dir, bbox, cfg.index_csv)
+    file_paths = select_tile_files(tile_dir, bbox, cfg.index_csv)
     if not file_paths:
         logging.info("No building tiles overlap AOI — skipping")
         return None

@@ -20,6 +20,8 @@ util_settings.validators.register(
     Validator(
         "generator.files.material_config", cast=str, default=_material_config_path
     ),
+    # Buildings
+    Validator("generator.files.building_tiles", default=None),
 )
 util_settings.validators.validate(only="generator")
 

@@ -107,6 +107,7 @@ def _load_settings_data_sources_config() -> Dict[str, Any]:
     dem_settings = settings.generator.dataset.dem
     landcover_settings = settings.generator.dataset.landcover
     material_config = settings.generator.files.material_config
+    building_tiles = settings.generator.files.get("building_tiles")
 
     return {
         "dem": dataset_factory(dem_settings, dem_settings.get("name", "DEM")),
@@ -114,6 +115,7 @@ def _load_settings_data_sources_config() -> Dict[str, Any]:
             landcover_settings, landcover_settings.get("name", "Landcover")
         ),
         "material_config_path": to_pathref(material_config),
+        "building_tiles": to_pathref(building_tiles) if building_tiles else None,
     }
 
 
@@ -124,6 +126,12 @@ class DataSources(BaseModel):
     landcover: IndexedGeoTiff | Zarr = Field(..., description="Landcover Dataset")
     material_config_path: PathRef = Field(
         ..., description="Path to custom material configuration JSON"
+    )
+    building_tiles: Optional[PathRef] = Field(
+        None,
+        description=(
+            "Directory of quadkey-indexed OpenBuildingMap tiles (plus index CSV)."
+        ),
     )
 
     @model_validator(mode="before")
@@ -144,10 +152,13 @@ class DataSources(BaseModel):
 
     @field_validator(
         "material_config_path",
+        "building_tiles",
     )
     @classmethod
     def validate_path_exists(cls, v):
-        """Validate that local files or directories exist."""
+        """Validate that local files or directories exist (optional fields skip None)."""
+        if v is None:
+            return v
         path = resolver.resolve(v)
         if not path.exists():
             raise ValueError(f"Path does not exist: {v}")
@@ -250,7 +261,7 @@ class SceneGenConfig(BaseModel):
         None,
         description=(
             "Spectral matching configuration (None disables). See "
-            "[SpectralMatchingConfig][s2gos_generator.core.config.material_matching.SpectralMatchingConfig]."
+            "[SpectralMatchingConfig][s2gos_generator.core.config.material_match.SpectralMatchingConfig]."
         ),
     )
     buildings: Optional[BuildingsConfig] = Field(

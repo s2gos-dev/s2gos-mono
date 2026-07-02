@@ -114,11 +114,13 @@ class ResourceFingerprints:
 
     @staticmethod
     def _target_buildings(config) -> dict:
+        building_tiles = getattr(config.data_sources, "building_tiles", None)
         return {
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "aoi_size_km": config.location.aoi_size_km,
             "buildings": config.buildings.model_dump() if config.buildings else None,
+            "building_tiles": str(building_tiles) if building_tiles else None,
         }
 
     @staticmethod
