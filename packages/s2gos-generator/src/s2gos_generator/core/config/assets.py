@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 from s2gos_utils.io.paths import PathRef
 
-from ._utils import _resolve_asset_path
+from ._utils import resolve_asset_path
 
 
 class HamsterConfig(BaseModel):
@@ -26,7 +26,7 @@ class HamsterConfig(BaseModel):
     @classmethod
     def validate_data_path(cls, v):
         """Validate HAMSTER data file exists."""
-        resolved = _resolve_asset_path(v, asset_type="netCDF")
+        resolved = resolve_asset_path(v, asset_type="netCDF")
         return resolved
 
 
@@ -90,7 +90,7 @@ class UserAssets(BaseModel):
     @classmethod
     def validate_ply_path(cls, v):
         """Validate and resolve PLY file path using configured search paths."""
-        resolved = _resolve_asset_path(v, asset_type="PLY mesh")
+        resolved = resolve_asset_path(v, asset_type="PLY mesh")
         return resolved
 
     @field_validator("material")
@@ -347,7 +347,7 @@ class XmlSceneConfig(BaseModel):
     @classmethod
     def validate_xml_path(cls, v):
         """Validate and resolve XML file path using configured search paths."""
-        resolved = _resolve_asset_path(v, asset_type="XML scene")
+        resolved = resolve_asset_path(v, asset_type="XML scene")
         return resolved
 
     @field_validator("base_coordinate")

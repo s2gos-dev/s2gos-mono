@@ -24,12 +24,47 @@ htmlcov/
 s2gos_settings.yaml
 s2gos_settings.local.yaml
 
-# Large binary / data files
+# Local secrets & machine-specific settings (never commit)
+.secrets.yaml
+s2gos_settings.yaml
+
+# Scratch / local data directories (not for version control)
+experimenting/
+extra_data/
+
+# Generated pipeline outputs (scene generation / simulation)
+gen_config/
+gen_output/
+sim_config/
+sim_output/
+*_output/
+frascati_demo_out/
+**/_frascati_test_out/
+**/_tmp_*
+
+# Zarr stores (directories of chunk files)
+*.zarr/
+
+# Generated scene-pipeline artifacts (cache + per-scene data outputs)
+.cache/
+**/data/vegetation_objects.yml
+**/data/buildings.yml
+**/data/roads.json
+**/data/user_assets.yml
+
+# Large binary / generated assets
 *.tar.gz
 *.pkl
 *.mp4
 *.bsp
 de421.bsp
+*.ply
+*.npy
+*.exr
+*.bmp
+*.obj
+*.tif
+*.tiff
 
 # NetCDF / Zarr data files (large scientific data; use S3/external storage instead)
 *.nc
@@ -52,6 +87,10 @@ extra_data/
 *.tmp
 _tmp_*
 tmp/
+
+# Generated/scratch images (documentation figures under docs/ are kept)
+*.png
+!**/docs/**
 
 # Jupyter
 .ipynb_checkpoints/

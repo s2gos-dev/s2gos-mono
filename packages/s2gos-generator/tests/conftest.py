@@ -26,18 +26,18 @@ def mock_path_validation(monkeypatch):
         if isinstance(filename, PathRef):
             return filename
         elif isinstance(filename, dict):
-            return PathRef(filename.get("value"), filename.get("cid"))
+            return PathRef(filename.get("href"), filename.get("x-cid"))
         else:
             return PathRef(filename, None)
 
     monkeypatch.setattr(
-        "s2gos_generator.core.config.atmosphere._resolve_asset_path", mock_resolve
+        "s2gos_generator.core.config.atmosphere.resolve_asset_path", mock_resolve
     )
     monkeypatch.setattr(
-        "s2gos_generator.core.config.vegetation._resolve_asset_path", mock_resolve
+        "s2gos_generator.core.config.vegetation.resolve_asset_path", mock_resolve
     )
     monkeypatch.setattr(
-        "s2gos_generator.core.config.assets._resolve_asset_path", mock_resolve
+        "s2gos_generator.core.config.assets.resolve_asset_path", mock_resolve
     )
 
     class MockResolver:

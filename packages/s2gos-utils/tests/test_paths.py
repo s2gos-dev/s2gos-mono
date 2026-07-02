@@ -52,40 +52,46 @@ class TestPathRefCreation:
         """Test creating PathRef from string, with and without cid."""
         # Without cid
         pr = PathRef("/tmp/test")
-        assert pr.value == "/tmp/test"
+        assert pr.href == "/tmp/test"
         assert pr.cid is None
 
         # With cid
         pr = PathRef("s3://bucket/path", cid="test_cred")
-        assert pr.value == "s3://bucket/path"
+        assert pr.href == "s3://bucket/path"
         assert pr.cid == "test_cred"
 
     def test_pathref_from_path(self):
         """Test creating PathRef from UPath."""
         upath = Path("/tmp/test")
         pr = PathRef(upath)
-        assert pr.value == "/tmp/test"
+        assert pr.href == "/tmp/test"
         assert pr.cid is None
 
     def test_pathref_from_upath(self):
         """Test creating PathRef from UPath."""
         upath = UPath("/tmp/test")
         pr = PathRef(upath)
-        assert pr.value == "/tmp/test"
+        assert pr.href == "/tmp/test"
         assert pr.cid is None
 
     def test_pathref_from_pathref(self):
         """Test creating PathRef from another PathRef."""
         pr1 = PathRef("s3://bucket/path", cid="cred1")
         pr2 = PathRef(pr1)
-        assert pr2.value == pr1.value
+        assert pr2.href == pr1.href
         assert pr2.cid == pr1.cid
 
     def test_pathref_from_dict(self):
-        """Test creating PathRef from dict."""
-        pr = PathRef({"value": "/tmp/test", "cid": "test"})
-        assert pr.value == "/tmp/test"
+        """Test creating PathRef from a dict via model_validate (config path)."""
+        pr = PathRef.model_validate({"href": "/tmp/test", "x-cid": "test"})
+        assert pr.href == "/tmp/test"
         assert pr.cid == "test"
+
+    def test_pathref_from_dict_without_cid(self):
+        """A dict with only 'href' must default cid to None (no KeyError)."""
+        pr = PathRef.model_validate({"href": "/tmp/test"})
+        assert pr.href == "/tmp/test"
+        assert pr.cid is None
 
 
 class TestPathRefUPath:
@@ -132,7 +138,7 @@ class TestPathRefTruediv:
         pr = PathRef("/tmp/base")
         result = pr / "subdir"
         assert isinstance(result, PathRef)
-        assert result.value == "/tmp/base/subdir"
+        assert result.href == "/tmp/base/subdir"
 
     def test_truediv_with_pathref_same_cid(self, mock_s3_credential):
         """Test joining two PathRefs with same credential ID."""
@@ -170,8 +176,39 @@ class TestPathRefMethods:
         pr = PathRef("s3://bucket/path", cid="test")
         result = pr.to_dict()
         assert isinstance(result, dict)
-        assert result["value"] == "s3://bucket/path"
-        assert result["cid"] == "test"
+        assert result["href"] == "s3://bucket/path"
+        assert result["x-cid"] == "test"
+
+    def test_serializes_as_ogc_link(self):
+        """PathRef must serialize to an OGC Link shape: {href, x-cid}."""
+        pr = PathRef("s3://bucket/data.zarr", cid="edh")
+        assert pr.model_dump() == {"href": "s3://bucket/data.zarr", "x-cid": "edh"}
+        # round-trips from the Link-shaped dict
+        assert PathRef.model_validate(pr.model_dump()).cid == "edh"
+
+    def test_unset_link_fields_are_omitted(self):
+        """A bare PathRef serializes to just {href} — no null optional fields."""
+        assert PathRef("/p").model_dump() == {"href": "/p"}
+
+    def test_link_fields_round_trip(self):
+        """All supported Link fields are accepted, serialized, and round-trip."""
+        pr = PathRef(
+            "s3://bucket/data.zarr",
+            cid="edh",
+            type="application/x-zarr",
+            options={"anon": True},
+        )
+        dumped = pr.model_dump()
+        assert dumped == {
+            "href": "s3://bucket/data.zarr",
+            "type": "application/x-zarr",
+            "x-options": {"anon": True},
+            "x-cid": "edh",
+        }
+        rt = PathRef.model_validate(dumped)
+        assert rt.type == "application/x-zarr"
+        assert rt.options == {"anon": True}
+        assert rt.cid == "edh"
 
     def test_str_method(self):
         """Test PathRef.__str__() returns value."""
@@ -182,7 +219,7 @@ class TestPathRefMethods:
         """Test that PathRef is immutable (frozen)."""
         pr = PathRef("/tmp/test")
         with pytest.raises(Exception):  # Pydantic raises ValidationError
-            pr.value = "/new/path"
+            pr.href = "/new/path"
 
 
 class TestToUPath:

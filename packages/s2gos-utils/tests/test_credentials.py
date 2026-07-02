@@ -165,24 +165,24 @@ class TestPathRef:
 
     def test_create_with_credential_id(self):
         """Test creating PathRef with credential_id"""
-        path = PathRef(value="https://example.com/data.zarr", cid="test")
-        assert path.value == "https://example.com/data.zarr"
+        path = PathRef(href="https://example.com/data.zarr", cid="test")
+        assert path.href == "https://example.com/data.zarr"
         assert path.cid == "test"
 
     def test_create_without_credential(self):
         """Test creating PathRef without credentials"""
-        path = PathRef(value="/local/path/data.zarr")
-        assert path.value == "/local/path/data.zarr"
+        path = PathRef(href="/local/path/data.zarr")
+        assert path.href == "/local/path/data.zarr"
         assert path.cid is None
 
     def test_str_representation(self):
         """Test string representation returns the path value"""
-        path = PathRef(value="https://example.com/data.zarr", cid="test")
+        path = PathRef(href="https://example.com/data.zarr", cid="test")
         assert str(path) == "https://example.com/data.zarr"
 
     def test_upath_without_credentials(self):
         """Test getting UPath without credentials"""
-        path = PathRef(value="/tmp/test.txt")
+        path = PathRef(href="/tmp/test.txt")
         upath = path.upath
         assert str(upath) == "/tmp/test.txt"
 
@@ -193,7 +193,7 @@ class TestPathRef:
         provider = DictCredentialProvider({"test": cred})
         set_credential_provider(provider)
 
-        path = PathRef(value="https://example.com/data.zarr", cid="test")
+        path = PathRef(href="https://example.com/data.zarr", cid="test")
         upath = path.upath
 
         # UPath should be created (exact auth details may vary by implementation)
@@ -205,18 +205,18 @@ class TestPathRef:
         provider = DictCredentialProvider({})
         set_credential_provider(provider)
 
-        path = PathRef(value="https://example.com/data.zarr", cid="nonexistent")
+        path = PathRef(href="https://example.com/data.zarr", cid="nonexistent")
 
         with pytest.raises(CredentialNotFoundError):
             _ = path.upath
 
     def test_serialization(self):
         """Test that PathRef serializes without exposing credentials"""
-        path = PathRef(value="https://example.com/data.zarr", cid="secret_cred")
+        path = PathRef(href="https://example.com/data.zarr", cid="secret_cred")
 
         data = path.model_dump()
-        assert data["value"] == "https://example.com/data.zarr"
-        assert data["cid"] == "secret_cred"
+        assert data["href"] == "https://example.com/data.zarr"
+        assert data["x-cid"] == "secret_cred"
         # Should not contain actual credentials
         assert "password" not in str(data)
         assert "username" not in str(data)
@@ -224,12 +224,12 @@ class TestPathRef:
     def test_deserialization(self):
         """Test deserializing PathRef"""
         data = {
-            "value": "https://example.com/data.zarr",
-            "cid": "test",
+            "href": "https://example.com/data.zarr",
+            "x-cid": "test",
         }
-        path = PathRef(**data)
+        path = PathRef.model_validate(data)
 
-        assert path.value == "https://example.com/data.zarr"
+        assert path.href == "https://example.com/data.zarr"
         assert path.cid == "test"
 
 
