@@ -25,7 +25,7 @@ generator:
             crs: "EPSG:4326"
             type: zarr
             path:
-                value: "s3://bucket/worldcover.zarr"
+                href: "s3://bucket/worldcover.zarr"
                 cid: "my_s3_creds"
             variable_name: landcover
 
@@ -47,9 +47,9 @@ Land cover classification dataset. Tested with ESA WorldCover 2021.
 
 ### Dataset Types
 
-Datasets are specified as subobjects with a `type` field. Paths use **[PathRef](../s2gos-utils/api/paths.md)** format:
-- `value`: URI string (local or remote)
-- `cid`: Credential ID (optional) - see [s2gos-utils credentials documentation](../s2gos-utils/credentials.md)
+Datasets are specified as subobjects with a `type` field. Paths use **[PathRef](../s2gos-utils/api/paths.md)** format (an OGC API Link):
+- `href`: URI string (local or remote)
+- `cid`: Credential ID (optional, serialized as `x-cid`) - see [s2gos-utils credentials documentation](../s2gos-utils/credentials.md)
 
 #### Common Parameters
 

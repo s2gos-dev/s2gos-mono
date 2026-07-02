@@ -100,7 +100,7 @@ generator:
             crs: "EPSG:4326"
             type: zarr
             path:
-                value: "s3://bucket/worldcover.zarr"
+                href: "s3://bucket/worldcover.zarr"
                 cid: "my_s3_creds"
             variable_name: landcover
 
