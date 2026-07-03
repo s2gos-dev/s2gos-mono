@@ -4,7 +4,7 @@ import numpy as np
 import xarray as xr
 from pyproj import Proj
 
-from ..core.exceptions import RegridError
+from ...core.exceptions import RegridError
 
 
 def regrid_to_projection(

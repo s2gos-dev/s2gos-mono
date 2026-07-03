@@ -5,7 +5,7 @@ from shapely.geometry import Polygon
 from upath import UPath
 
 from .base_processor import BaseTileProcessor
-from ..dataset import Dataset, IndexedGeoTiff, Zarr
+from ...dataset import Dataset, IndexedGeoTiff, Zarr
 
 
 class DEMProcessor(BaseTileProcessor):

@@ -1,8 +1,10 @@
-from .base_processor import BaseTileProcessor
 from .buildings import BuildingMeshes, BuildingMeshStats, build_meshes
-from .dem import DEMProcessor
-from .landcover import LandCoverProcessor
-from .masks import generate_buffer_mask
+from .terrain_data import (
+    BaseTileProcessor,
+    DEMProcessor,
+    LandCoverProcessor,
+    generate_buffer_mask,
+)
 from .terrain_material import TerrainMaterialGenerator
 from .terrain_mesh import MeshGenerator
 from .xml_importer import import_xml_assets, merge_material_libraries

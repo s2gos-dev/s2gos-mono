@@ -13,7 +13,7 @@ from shapely.geometry import Polygon
 from upath import UPath
 
 from .datautil import regrid_to_projection
-from ..dataset import Dataset
+from ...dataset import Dataset
 
 # Configure PROJ environment to fix "Cannot find proj.db" warnings
 try:

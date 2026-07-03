@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..core.context import SceneResourceContext
-from ..processors.dem import DEMProcessor
+from ..processors.terrain_data import DEMProcessor
 
 
 def _process_dem(

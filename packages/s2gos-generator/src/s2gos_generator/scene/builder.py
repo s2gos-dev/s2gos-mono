@@ -239,7 +239,7 @@ def create_s2gos_scene(
         buffer_resolution = int(buffer_size_km * 10)
         target_resolution = int(aoi_size_km * 10)
 
-        from ..processors.masks import generate_buffer_mask
+        from ..processors.terrain_data import generate_buffer_mask
 
         mask_path = (
             output_dir

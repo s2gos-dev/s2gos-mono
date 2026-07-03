@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..core.context import SceneResourceContext
-from ..processors.landcover import LandCoverProcessor
+from ..processors.terrain_data import LandCoverProcessor
 
 
 def _process_landcover(
