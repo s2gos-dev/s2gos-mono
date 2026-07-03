@@ -7,7 +7,7 @@ import math
 import pytest
 from shapely.geometry import Polygon
 
-from s2gos_generator.processors.building_roof import (
+from s2gos_generator.processors.buildings.roof import (
     _skeleton_faces,
     build_hip_roof,
     compute_pitched_geometry,

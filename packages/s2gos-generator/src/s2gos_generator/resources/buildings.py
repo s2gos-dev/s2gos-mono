@@ -16,12 +16,12 @@ from s2gos_utils.io.resolver import resolver
 
 from ..core.context import SceneResourceContext
 from ..processors.buildings import (
-    _safe_name,
     build_meshes,
     load_building_footprints,
     make_dem_elevation_sampler,
     select_tile_files,
 )
+from ..processors.buildings.meshing import _safe_name
 
 
 def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:

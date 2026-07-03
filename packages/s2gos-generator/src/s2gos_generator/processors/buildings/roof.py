@@ -1,7 +1,7 @@
 """Hip-roof construction on top of a 2D straight skeleton.
 
 Pitched roofs reuse a single straight skeleton of the wall footprint
-(see `straight_skeleton.py`). Every face is lifted
+(see `skeleton.py`). Every face is lifted
 to 3D as
 
     z = clamp(eaves_z + t * tan(pitch), apex_z)
@@ -23,7 +23,7 @@ import numpy as np
 import trimesh
 from shapely.geometry import Polygon
 
-from .straight_skeleton import Skeleton
+from .skeleton import Skeleton
 
 
 @dataclass
