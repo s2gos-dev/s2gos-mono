@@ -17,7 +17,7 @@ class MeshGenerator:
         self, dem_data: xr.DataArray, handle_nans: bool = True
     ) -> trimesh.Trimesh:
         """Convert a DEM DataArray to a Trimesh object."""
-        from .terrain_mesh import extract_dem
+        from .builder import extract_dem
 
         x_coords, y_coords, elevation = extract_dem(dem_data)
         nx, ny = len(x_coords), len(y_coords)
@@ -129,7 +129,7 @@ class MeshGenerator:
         Returns:
             Adaptive Trimesh object.
         """
-        from .terrain_mesh import build_refined_mesh
+        from .builder import build_refined_mesh
 
         return build_refined_mesh(dem_data, operations, refinement_config, handle_nans)
 

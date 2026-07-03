@@ -24,7 +24,7 @@ import xarray as xr
 from shapely.geometry import MultiPolygon, Polygon
 
 from .building_roof import build_hip_roof, compute_pitched_geometry
-from .terrain_mesh import _make_elevation_fn, extract_dem
+from .terrain_mesh.builder import _make_elevation_fn, extract_dem
 
 
 def _parse_height(value, story_height: float, default: float) -> tuple[float, bool]:

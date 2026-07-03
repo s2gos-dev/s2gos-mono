@@ -3,7 +3,7 @@ import pytest
 import trimesh
 import xarray as xr
 
-from s2gos_generator.processors.mesh_generator import MeshGenerator
+from s2gos_generator.processors.terrain_mesh import MeshGenerator
 
 
 @pytest.fixture

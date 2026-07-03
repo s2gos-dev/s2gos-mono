@@ -2,8 +2,8 @@ from .base_processor import BaseTileProcessor
 from .dem import DEMProcessor
 from .landcover import LandCoverProcessor
 from .masks import generate_buffer_mask
-from .mesh_generator import MeshGenerator
 from .terrain_material import TerrainMaterialGenerator
+from .terrain_mesh import MeshGenerator
 from .xml_importer import import_xml_assets, merge_material_libraries
 
 __all__ = [

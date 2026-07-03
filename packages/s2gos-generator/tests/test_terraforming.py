@@ -1,10 +1,10 @@
-"""Tests for road-driven terrain flattening (assets/terraforming.py)."""
+"""Tests for road-driven terrain flattening (processors/terrain_mesh/terraforming.py)."""
 
 import numpy as np
 import pytest
 from shapely.geometry import LineString
 
-from s2gos_generator.processors.terraforming import (
+from s2gos_generator.processors.terrain_mesh import (
     GradientFilter,
     RoadFlattenOperation,
     apply_road_flatten_batch,

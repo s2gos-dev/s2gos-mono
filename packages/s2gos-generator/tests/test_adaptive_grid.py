@@ -1,13 +1,12 @@
-"""Tests for the adaptive-quadtree terrain decimation (assets/adaptive_grid.py)
-and the plane-residual error pyramid that drives it (assets/error_pyramid.py)."""
+"""Tests for the adaptive-quadtree terrain decimation (processors/terrain_mesh/adaptive_grid.py)
+and the plane-residual error pyramid that drives it (processors/terrain_mesh/error_pyramid.py)."""
 
 from collections import defaultdict
 
 import numpy as np
 import pytest
 
-from s2gos_generator.processors.adaptive_grid import AdaptiveGrid
-from s2gos_generator.processors.error_pyramid import DemErrorPyramid
+from s2gos_generator.processors.terrain_mesh import AdaptiveGrid, DemErrorPyramid
 
 
 def _grid(nx, ny, max_depth):

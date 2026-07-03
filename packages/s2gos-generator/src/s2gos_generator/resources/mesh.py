@@ -8,8 +8,7 @@ import xarray as xr
 from s2gos_utils.io.paths import expand_mapper
 
 from ..core.context import SceneResourceContext
-from ..processors.mesh_generator import MeshGenerator
-from ..processors.terraforming import TerraformOperation
+from ..processors.terrain_mesh import MeshGenerator, TerraformOperation
 
 
 def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
