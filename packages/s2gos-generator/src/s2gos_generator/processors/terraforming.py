@@ -38,7 +38,7 @@ class TerraformOperation(Protocol):
 
         Args:
             vertices: (N, 3) array of mesh vertices — may be modified in-place.
-            elevation_fn: maps (M, 2) XY coordinates → elevation array of length M.
+            elevation_fn: maps (M, 2) XY coordinates -> elevation array of length M.
 
         Returns:
             Modified vertices array (may be the same object).
@@ -62,7 +62,7 @@ class TerraformOperation(Protocol):
             vertex_indices: Indices into ``vertices`` that fall inside this
                             operation's influence zone.
             inside_points:  Shapely point array corresponding to ``vertex_indices``.
-            elevation_fn:   maps (M, 2) XY coordinates → elevation array of length M.
+            elevation_fn:   maps (M, 2) XY coordinates -> elevation array of length M.
         """
         ...
 
@@ -73,9 +73,9 @@ class RoadFlattenOperation:
     For each vertex inside the influence zone the elevation is blended toward
     the elevation of the nearest point on the road centerline:
 
-    * Within ``half_width`` of the centerline → fully flattened (alpha = 1).
-    * Between ``half_width`` and ``half_width + buffer_m`` → linearly blended.
-    * Beyond that → unchanged.
+    * Within ``half_width`` of the centerline -> fully flattened (alpha = 1).
+    * Between ``half_width`` and ``half_width + buffer_m`` -> linearly blended.
+    * Beyond that -> unchanged.
     """
 
     def __init__(
@@ -180,7 +180,7 @@ def apply_road_flatten_batch(
     Args:
         vertices:     (N, 3) mesh vertex array — modified in-place.
         operations:   List of :class:`RoadFlattenOperation` to apply.
-        elevation_fn: ``(M, 2) XY → (M,) Z`` elevation sampler.
+        elevation_fn: ``(M, 2) XY -> (M,) Z`` elevation sampler.
 
     Returns:
         The same ``vertices`` array (modified in-place).
@@ -243,7 +243,7 @@ def make_refinement_predicate(
         influence_zone: Merged polygon/multipolygon covering all road buffers.
 
     Returns:
-        ``predicate(xmin, ymin, xmax, ymax) → bool[N]``
+        ``predicate(xmin, ymin, xmax, ymax) -> bool[N]``
     """
     poly = influence_zone
     shapely.prepare(poly)

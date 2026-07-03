@@ -2,7 +2,7 @@ import math
 import random
 import types
 
-from s2gos_generator.resources.vegetation import (
+from s2gos_generator.processors.vegetation import (
     _apply_spacing_filter_optimized,
     _batch_elevation_lookup,
     _calculate_max_instances_per_pixel,
@@ -193,16 +193,9 @@ class TestFilterByExclusionZones:
         assert result[0] is outside
 
 
-def _road_ctx(road_poly, *, enabled=True, buffer_m=0.0):
-    """A minimal ctx exposing only what _filter_by_road_polygons reads."""
-    return types.SimpleNamespace(
-        config=types.SimpleNamespace(
-            vegetation_placement=types.SimpleNamespace(
-                road_exclusion=types.SimpleNamespace(enabled=enabled, buffer_m=buffer_m)
-            )
-        ),
-        road_polygons_by_material={"asphalt": road_poly},
-    )
+def _roads(road_poly):
+    """A road-polygon-by-material mapping with a single asphalt road."""
+    return {"asphalt": road_poly}
 
 
 class TestFilterByRoadPolygons:
@@ -210,34 +203,36 @@ class TestFilterByRoadPolygons:
         from shapely.geometry import box
 
         # A road strip covering x in [-2, 2] for all y.
-        ctx = _road_ctx(box(-2.0, -1000.0, 2.0, 1000.0))
+        roads = _roads(box(-2.0, -1000.0, 2.0, 1000.0))
         on_road = _instance(0.0, 10.0)
         edge = _instance(2.0, 10.0)  # exactly on the edge -> boundary-safe exclusion
         off_road = _instance(50.0, 10.0)
 
-        result = _filter_by_road_polygons([on_road, edge, off_road], ctx)
+        result = _filter_by_road_polygons(
+            [on_road, edge, off_road], roads, enabled=True, buffer_m=0.0
+        )
         assert result == [off_road]
 
     def test_buffer_widens_exclusion(self):
         from shapely.geometry import box
 
         near = _instance(5.0, 0.0)  # 3 m outside the [-2,2] strip
+        roads = _roads(box(-2.0, -1000.0, 2.0, 1000.0))
         # No buffer keeps it; a 5 m buffer pulls it into the exclusion zone.
-        kept = _filter_by_road_polygons(
-            [near], _road_ctx(box(-2.0, -1000.0, 2.0, 1000.0))
-        )
-        excluded = _filter_by_road_polygons(
-            [near], _road_ctx(box(-2.0, -1000.0, 2.0, 1000.0), buffer_m=5.0)
-        )
+        kept = _filter_by_road_polygons([near], roads, enabled=True, buffer_m=0.0)
+        excluded = _filter_by_road_polygons([near], roads, enabled=True, buffer_m=5.0)
         assert kept == [near]
         assert excluded == []
 
     def test_noop_when_disabled(self):
         from shapely.geometry import box
 
-        ctx = _road_ctx(box(-2.0, -1000.0, 2.0, 1000.0), enabled=False)
+        roads = _roads(box(-2.0, -1000.0, 2.0, 1000.0))
         instances = [_instance(0.0, 0.0)]  # squarely on the road
-        assert _filter_by_road_polygons(instances, ctx) is instances
+        assert (
+            _filter_by_road_polygons(instances, roads, enabled=False, buffer_m=0.0)
+            is instances
+        )
 
 
 class TestBatchElevationLookup:

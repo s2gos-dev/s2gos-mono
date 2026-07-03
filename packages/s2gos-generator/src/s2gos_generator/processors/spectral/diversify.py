@@ -99,3 +99,34 @@ def diversify_selection_texture(
         )
 
     return texture_2d, material_defs, material_indices
+
+
+def matched_materials_to_sidecar(
+    material_defs: Dict[str, Any],
+    material_indices: Dict[str, int],
+    landcover_classes,
+) -> dict:
+    """Serialize spectral-matching results to the matched-materials sidecar (schema v1)."""
+    return {
+        "version": 1,
+        "materials": material_defs,
+        "material_indices": material_indices,
+        "source_landcover_classes": list(landcover_classes),
+    }
+
+
+def matched_materials_from_sidecar(data: dict) -> dict:
+    """Read the matched-materials sidecar into ``{"materials", "material_indices"}``.
+
+    Returns an empty dict for an unrecognised schema version.
+    """
+    version = data.get("version", 1)
+    if version != 1:
+        logging.warning(
+            "Unknown matched materials sidecar version %s; skipping", version
+        )
+        return {}
+    return {
+        "materials": data.get("materials", {}),
+        "material_indices": data.get("material_indices", {}),
+    }

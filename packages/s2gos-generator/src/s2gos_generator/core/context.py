@@ -142,33 +142,14 @@ class SceneResourceContext:
         return self._background_aoi_polygon
 
     def _load_roads_from_sidecar(self) -> list:
-        from shapely.geometry import shape
+        from ..processors.roads import roads_from_sidecar
 
         if self.assets.roads_file is None:
             return []
         try:
             with open(str(self.assets.roads_file), "r") as f:
                 data = json.load(f)
-            version = data.get("version", 1)
-            if version != 1:
-                logging.warning(
-                    "Unknown road sidecar version %s; skipping roads", version
-                )
-                return []
-            from ..resources.roads import Road
-
-            result = []
-            for layer in data.get("road_layers", []):
-                mat = layer["material_name"]
-                for r in layer.get("roads", []):
-                    result.append(
-                        Road(
-                            centerline=shape(r["centerline"]),
-                            width=r["width"],
-                            material=mat,
-                        )
-                    )
-            return result
+            return roads_from_sidecar(data)
         except (json.JSONDecodeError, KeyError) as exc:
             logging.warning("Failed to load roads from sidecar: %s", exc)
             return []
@@ -201,21 +182,14 @@ class SceneResourceContext:
         return self._road_polygons_by_material
 
     def _load_matched_materials_sidecar(self) -> dict:
+        from ..processors.spectral.diversify import matched_materials_from_sidecar
+
         if self.assets.matched_materials_file is None:
             return {}
         try:
             with open(str(self.assets.matched_materials_file), "r") as f:
                 data = json.load(f)
-            version = data.get("version", 1)
-            if version != 1:
-                logging.warning(
-                    "Unknown matched materials sidecar version %s; skipping", version
-                )
-                return {}
-            return {
-                "materials": data.get("materials", {}),
-                "material_indices": data.get("material_indices", {}),
-            }
+            return matched_materials_from_sidecar(data)
         except (json.JSONDecodeError, OSError) as exc:
             logging.warning("Failed to load matched materials sidecar: %s", exc)
             return {}

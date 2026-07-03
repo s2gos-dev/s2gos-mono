@@ -1,13 +1,11 @@
-"""Test road painting onto the selection texture (resources/texture.py)."""
-
-import types
+"""Test road painting onto the selection texture (processors/texture.py)."""
 
 import numpy as np
 import pytest
 import xarray as xr
 from shapely.geometry import box
 
-from s2gos_generator.resources.texture import _apply_roads_to_array
+from s2gos_generator.processors.texture import apply_roads
 
 
 def _write_landcover(path):
@@ -21,20 +19,13 @@ def _write_landcover(path):
     return path
 
 
-def _road_ctx(road_poly):
-    return types.SimpleNamespace(
-        road_polygons_by_material={"asphalt": road_poly},
-        config=types.SimpleNamespace(texture_resolution_m=None),
-    )
-
-
 def test_apply_roads_paints_material_at_south_row_zero(tmp_path):
     lc_path = _write_landcover(tmp_path / "lc.zarr")
 
-    ctx = _road_ctx(box(-5.0, -4.0, 35.0, 4.0))
+    road_polygons = {"asphalt": box(-5.0, -4.0, 35.0, 4.0)}
     texture = np.zeros((4, 4), dtype=np.uint8)
 
-    out, union_mask = _apply_roads_to_array(texture, lc_path, ctx, {"asphalt": 7})
+    out, union_mask = apply_roads(texture, lc_path, road_polygons, {"asphalt": 7})
 
     assert out.shape == (4, 4)
     assert (out[0, :] == 7).all()  # southern road -> row 0
@@ -56,12 +47,23 @@ def test_apply_roads_paints_material_at_south_row_zero(tmp_path):
 )
 def test_apply_roads_paints_nothing(tmp_path, road_polys, index_map):
     lc_path = _write_landcover(tmp_path / "lc.zarr")
-    ctx = types.SimpleNamespace(
-        road_polygons_by_material=road_polys,
-        config=types.SimpleNamespace(texture_resolution_m=None),
-    )
     texture = np.zeros((4, 4), dtype=np.uint8)
 
-    out, union_mask = _apply_roads_to_array(texture, lc_path, ctx, index_map)
+    out, union_mask = apply_roads(texture, lc_path, road_polys, index_map)
     assert union_mask is None
     assert (out == 0).all()
+
+
+def test_matched_materials_sidecar_roundtrip():
+    from s2gos_generator.processors.spectral.diversify import (
+        matched_materials_from_sidecar,
+        matched_materials_to_sidecar,
+    )
+
+    defs = {"soil": {"type": "diffuse"}}
+    indices = {"soil": 12}
+    sidecar = matched_materials_to_sidecar(defs, indices, [30, 60])
+    assert sidecar["source_landcover_classes"] == [30, 60]
+    restored = matched_materials_from_sidecar(sidecar)
+    assert restored == {"materials": defs, "material_indices": indices}
+    assert matched_materials_from_sidecar({"version": 2}) == {}

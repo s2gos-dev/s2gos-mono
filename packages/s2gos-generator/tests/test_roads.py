@@ -8,15 +8,17 @@ import pytest
 from shapely.geometry import LineString, box, mapping
 
 from s2gos_generator.core.config.roads import HighwayOverride, RoadsConfig
-from s2gos_generator.resources.roads import (
+from s2gos_generator.processors.roads import (
     Road,
-    _fetch_osm_data,
     _get_road_material,
     _get_road_width,
     _parse_osm_width,
-    _parse_roads,
-    process_target_roads,
+    fetch_osm_data,
+    parse_roads,
+    roads_from_sidecar,
+    roads_to_sidecar,
 )
+from s2gos_generator.resources.roads import process_target_roads
 
 TABLE = RoadsConfig.ROAD_TYPE_TABLE
 SURFACES = RoadsConfig.DEFAULT_SURFACE_MATERIALS
@@ -102,7 +104,7 @@ class TestRoadMaterial:
 
 
 class TestParseRoads:
-    """`_parse_roads`: OSM ways -> Road segments in scene coords, clipped to bounds."""
+    """`parse_roads`: OSM ways -> Road segments in scene coords, clipped to bounds."""
 
     class _CoordStub:
         # 0.001 deg -> 100 m, centred on (45, 15); good enough for a ±5 km scene.
@@ -120,7 +122,7 @@ class TestParseRoads:
         }
 
     def _parse(self, *elements, cfg=None):
-        return _parse_roads(
+        return parse_roads(
             {"elements": list(elements)},
             cfg or RoadsConfig(),
             self._CoordStub(),
@@ -205,7 +207,7 @@ class TestFetchOsmData:
         bad = tmp_path / "roads.json"
         bad.write_text("not json{")
         cfg = RoadsConfig(source="file", file_path=bad)
-        assert _fetch_osm_data(cfg, 0.0, 0.0, 1.0, 1.0) is None
+        assert fetch_osm_data(cfg, 0.0, 0.0, 1.0, 1.0) is None
 
 
 def _write_road_sidecar(path, *, version=1):
@@ -290,7 +292,7 @@ class TestRoadSidecar:
             ]
         }
         monkeypatch.setattr(
-            "s2gos_generator.resources.roads._fetch_osm_data",
+            "s2gos_generator.resources.roads.fetch_osm_data",
             lambda *a, **k: canned,
         )
 
@@ -323,3 +325,20 @@ class TestRoadsWiring:
         # Resolved as an optional dependency of the mesh and texture steps.
         assert "target_roads" in deps_with["target_mesh"]
         assert "target_roads" in deps_with["target_texture"]
+
+
+class TestRoadsSidecar:
+    """`roads_to_sidecar` / `roads_from_sidecar` round-trip and versioning."""
+
+    def test_roundtrip_preserves_segments(self):
+        roads = [
+            Road(LineString([(0, 0), (10, 0)]), 4.0, "asphalt"),
+            Road(LineString([(0, 5), (5, 5)]), 3.0, "gravel_road"),
+        ]
+        restored = roads_from_sidecar(roads_to_sidecar(roads))
+        assert [(r.material, r.width, list(r.centerline.coords)) for r in restored] == [
+            (r.material, r.width, list(r.centerline.coords)) for r in roads
+        ]
+
+    def test_unknown_version_returns_empty(self):
+        assert roads_from_sidecar({"version": 2, "road_layers": []}) == []
