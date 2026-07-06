@@ -12,6 +12,8 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
+# S2GOS / Eradiate Imports
+import numpy as np
 import xarray as xr
 from s2gos_generator import create_scene_config
 from s2gos_generator.core import SceneGenerationPipeline
@@ -41,11 +43,14 @@ from s2gos_simulator.config import (
     SpectralResponse,
     create_hypstar_sensor,
 )
-
-# S2GOS / Eradiate Imports
 from s2gos_utils.io.paths import to_upath
 from s2gos_utils.io.resolver import resolver
 from upath import UPath
+
+if not hasattr(
+    np, "trapezoid"
+):  # Eradiate 1.2 uses np.trapezoid; numpy<2 exposes it as trapz
+    np.trapezoid = np.trapz
 
 # ==============================================================================
 # 1. USER CONFIGURATION
@@ -185,8 +190,6 @@ def combine_hcrf_results(
     Returns:
         Combined dataset with all series
     """
-    import numpy as np
-
     datasets = []
 
     for idx in indices:
@@ -228,6 +231,21 @@ def combine_hcrf_results(
 # ==============================================================================
 # 3. SCENE & SIMULATION SETUP
 # ==============================================================================
+
+
+def ensure_aer_core_v2(aerosol_path: str, out_dir: Path) -> str:
+    """Ensure the aerosol dataset is in Eradiate 1.2's aer_core_v2 format."""
+    ds = xr.open_dataset(aerosol_path)
+    if "phamat" in ds.dims:  # already aer_core_v2
+        return aerosol_path
+
+    from eradiate.data.convert import aer_v1_to_aer_core_v2
+
+    v2 = aer_v1_to_aer_core_v2(ds)  # defaults: normalize=True, check="full"
+    out_path = out_dir / f"{Path(aerosol_path).stem}_v2.nc"
+    v2.to_netcdf(out_path)
+    print(f"  Converted aerosol dataset to aer_core_v2: {out_path.name}")
+    return str(out_path)
 
 
 def build_scene_config(resolved_paths: dict) -> object:
@@ -288,6 +306,8 @@ def build_scene_config(resolved_paths: dict) -> object:
     aod, aer_h = get_atmosphere_params(atm_time, resolved_paths)
     print(f"  Atmosphere Params: AOD={aod:.3f}, Height={aer_h:.1f}m")
 
+    aerosol_ds = ensure_aer_core_v2(resolved_paths["aerosol"], OUTPUT_DIR)
+
     config.set_atmosphere_heterogeneous(
         MolecularAtmosphereConfig(
             thermoprops=ThermophysicalConfig(
@@ -299,7 +319,7 @@ def build_scene_config(resolved_paths: dict) -> object:
         ),
         [
             ParticleLayerConfig(
-                aerosol_dataset=resolved_paths["aerosol"],
+                aerosol_dataset=aerosol_ds,
                 optical_thickness=aod,
                 altitude_bottom=500.0,
                 altitude_top=500.0 + aer_h,
