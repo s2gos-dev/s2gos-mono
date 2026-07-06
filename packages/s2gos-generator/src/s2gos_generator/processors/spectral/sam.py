@@ -20,7 +20,7 @@ NO_CLUSTER = -1
 
 
 def spectral_angle(v1: np.ndarray, v2: np.ndarray) -> float:
-    """Spectral angle (radiansbetween two reflectance vectors.
+    """Spectral angle.
 
     Brightness-invariant: depends only on spectral *shape*. Returns ``pi/2``
     (maximally dissimilar) when either vector has zero norm.

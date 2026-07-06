@@ -5,8 +5,8 @@ from .terrain_data import (
     LandCoverProcessor,
     generate_buffer_mask,
 )
-from .terrain_material import TerrainMaterialGenerator
 from .terrain_mesh import MeshGenerator
+from .terrain_texture import TerrainMaterialGenerator
 from .xml_importer import import_xml_assets, merge_material_libraries
 
 __all__ = [

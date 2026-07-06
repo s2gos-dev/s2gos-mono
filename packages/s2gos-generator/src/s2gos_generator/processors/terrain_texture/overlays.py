@@ -53,7 +53,7 @@ def apply_region_materials(
         if any(r.landcover_filter is not None for r in applicable_regions):
             landcover_2d = np.flipud(landcover_data.values)
 
-    from ..core.region_geometry import geometry_from_dict
+    from ...core.region_geometry import geometry_from_dict
 
     modified = False
     for region_config in applicable_regions:
@@ -76,7 +76,7 @@ def apply_region_materials(
                 modified = True
                 logging.info(
                     f"Applied region '{region_config.region_id}' to {area_name}: "
-                    f"{pixels_modified} pixels → material '{region_config.material_name}' "
+                    f"{pixels_modified} pixels -> material '{region_config.material_name}' "
                     f"(index {material_idx})"
                 )
         except Exception as e:
@@ -179,7 +179,7 @@ def apply_roads(
             texture_2d[road_mask] = mat_idx
             union_mask |= road_mask
             logging.info(
-                "Applied roads [%s] to %s texture: %d pixels → material index %d (%dx%d px @ %.1fm/px)",
+                "Applied roads [%s] to %s texture: %d pixels -> material index %d (%dx%d px @ %.1fm/px)",
                 material_name,
                 area_name,
                 pixels_modified,
@@ -197,13 +197,7 @@ def apply_roads_to_preview(
     road_mask: np.ndarray,
     debug_color: tuple[int, int, int] = (50, 50, 50),
 ) -> None:
-    """Resize the RGB preview to match ``road_mask`` and paint roads on it.
-
-    The mask comes in selection-texture orientation (row 0 = south, no flipud
-    on save), but the RGB preview is saved with ``flip_vertical=True`` for
-    Blender's V-at-bottom convention (row 0 = north). Flip the mask once more
-    before applying so roads land on the correct latitude in the preview.
-    """
+    """Resize the RGB preview to match ``road_mask`` and paint roads on it."""
     target_h, target_w = road_mask.shape
     with Image.open(preview_path) as img:
         rgb = img.convert("RGB")

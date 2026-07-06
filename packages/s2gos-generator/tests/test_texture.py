@@ -5,7 +5,7 @@ import pytest
 import xarray as xr
 from shapely.geometry import box
 
-from s2gos_generator.processors.texture import apply_roads
+from s2gos_generator.processors.terrain_texture import apply_roads
 
 
 def _write_landcover(path):

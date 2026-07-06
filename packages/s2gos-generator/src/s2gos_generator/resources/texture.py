@@ -13,8 +13,8 @@ from s2gos_utils.io.paths import expand_mapper
 
 from ..core.context import SceneResourceContext
 from ..core.materials import build_material_index_map
-from ..processors.terrain_material import TerrainMaterialGenerator
-from ..processors.texture import (
+from ..processors.terrain_texture import (
+    TerrainMaterialGenerator,
     apply_region_materials,
     apply_roads,
     apply_roads_to_preview,

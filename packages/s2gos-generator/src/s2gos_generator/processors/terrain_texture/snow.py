@@ -16,7 +16,7 @@ import xarray as xr
 from scipy.interpolate import interp1d
 from scipy.ndimage import gaussian_filter
 
-from ..core.config import Month
+from ...core.config import Month
 
 # === Temperature Model Constants ===
 T_R = 26.0  # Reference temperature at equator, sea level (°C)
