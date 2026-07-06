@@ -73,3 +73,4 @@ nav:
       - Buildings: api/processors_buildings.md
       - Vegetation: api/processors_vegetation.md
     - Datasets: api/datasets.md
+  - Changelog: changelog.md

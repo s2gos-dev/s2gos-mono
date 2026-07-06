@@ -5783,8 +5783,8 @@ packages:
   timestamp: 1772780208047
 - pypi: packages/s2gos-apps
   name: s2gos-apps
-  version: 0.1.0
-  sha256: e1c99b946305d9776fe900989c02377d39d11f79c893edec8fb7786587ad54b5
+  version: 0.2.0
+  sha256: a990f898762d374c29a08a2bbc8669507f615c47f64efdb92673659048cfaa64
   requires_dist:
   - s2gos-utils
   - s2gos-generator
@@ -5802,8 +5802,8 @@ packages:
   requires_python: '>=3.11'
 - pypi: packages/s2gos-generator
   name: s2gos-generator
-  version: 0.1.0
-  sha256: b3d125a02ad504545f3672375dd87a7845cacfe7ffb238e39a14cb8c86014f0b
+  version: 0.2.0
+  sha256: cdabd1595ce6c274c30db4b22256d75f7f80cbac16549e6be77855c8a3be57b6
   requires_dist:
   - s2gos-utils
   - geopandas
@@ -5838,8 +5838,8 @@ packages:
   requires_python: '>=3.11'
 - pypi: packages/s2gos-simulator
   name: s2gos-simulator
-  version: 0.1.0
-  sha256: c688e78cbbd38e14e5501b5792555fcbbd0897722ee7e4cfa5eb3f8e2c844679
+  version: 0.2.0
+  sha256: 5683310e237923d83a3915706ebae91e153a8d7d4b8e6fac085bfeb09242a13e
   requires_dist:
   - s2gos-utils
   - eradiate[kernel]==1.2.0
@@ -5856,8 +5856,8 @@ packages:
   editable: true
 - pypi: packages/s2gos-utils
   name: s2gos-utils
-  version: 0.1.0
-  sha256: 986da8146f9700f1d7b48dd5f994b6958e89ad844208ac777238df7d51ac157a
+  version: 0.2.0
+  sha256: 256c1205cc73beeca37fae466f713c7024f111260b777ca1fd1c4018d4b2eded
   requires_dist:
   - pydantic>=2
   - pyyaml

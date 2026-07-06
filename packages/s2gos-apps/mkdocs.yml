@@ -49,4 +49,5 @@ nav:
   - Setup: setup.md
   - Examples:
     - Gobabeb GUI Walkthrough: examples/gobabeb_gui.md
+  - Changelog: changelog.md
 

@@ -59,3 +59,4 @@ nav:
     - Viewing: api/viewing.md
     - Spectral: api/spectral.md
     - Backend: api/backend.md
+  - Changelog: changelog.md

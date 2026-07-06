@@ -1,6 +1,6 @@
 [project]
 name = "s2gos-mono"
-version = "0.1.0"
+version = "0.2.0"
 description = "S2GOS monorepo: synthetic scene generation and observation simulation."
 authors = [
     { name = "Misael Gonzalez (Rayference)" },

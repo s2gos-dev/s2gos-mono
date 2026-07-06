@@ -10,7 +10,7 @@ authors = [
 description = "Common shared components for the ESA DTE-S2GOS service (scene descriptions, materials, I/O utilities)."
 name = "s2gos-utils"
 requires-python = ">=3.10,<3.12"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
     "pydantic>=2",
     "pyyaml",

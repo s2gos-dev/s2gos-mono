@@ -33,3 +33,4 @@ nav:
     - Scene Description: api/scene_description.md
     - Materials: api/materials.md
     - Paths: api/paths.md
+  - Changelog: changelog.md
