@@ -1,12 +1,14 @@
-"""Snow seasonality model using synthetic temperature and logistic probability.
+"""Seasonal snow model: estimate where snow lies from an approximate temperature.
 
-Temperature calculation supports two modes:
-1. Synthetic model: T(φ,z,d) = T_R - β·φ + A(φ)cos(2π/365·(d-d_max)) - Γ·z
-2. CAMS profile: Interpolated from atmospheric NetCDF data
+Snow cover is derived in two steps. First a surface temperature is estimated for
+every pixel — either from a simple synthetic climatology (warmer near the equator,
+colder at altitude, swinging between summer and winter) or by interpolating a CAMS
+atmospheric profile onto the terrain. Snow probability then follows a smooth,
+S-shaped transition around freezing: near-certain below freezing and tapering to
+none just above 0 °C.
 
-Probability: P_snow = 1/(1 + exp((T-T_c)/σ)) for T ≤ HARD_FREEZE_LIMIT
-
-Supports January (day 20) and July (day 202) for Northern/Southern hemispheres.
+Two seasons are supported — June and December (the solstices) — for either
+hemisphere. The exact formulas are kept as comments on the functions below.
 """
 
 from typing import Optional, Tuple
@@ -30,8 +32,8 @@ A_LOW_LAT = 3.0  # Amplitude at low latitude (°C)
 LAT_LOW = 10.0  # Reference low latitude (degrees)
 
 # === Phase Constants (NH/SH) ===
-D_MAX_NH = 172  # Day of maximum temperature in Northern Hemisphere (~July 21)
-D_MAX_SH = 355  # Day of maximum temperature in Southern Hemisphere (~Jan 20)
+D_MAX_NH = 172  # Day the seasonal cycle peaks, Northern Hemisphere (~June 21 solstice)
+D_MAX_SH = 355  # Day the seasonal cycle peaks, Southern Hemisphere (~Dec 21 solstice)
 
 # === Snow Probability Parameters ===
 T_C = 0.0  # 50% rain-snow transition temperature (°C)
@@ -57,7 +59,11 @@ def apply_spatial_smoothing(data: np.ndarray, sigma: float = 10.0) -> np.ndarray
 
 
 def calculate_seasonal_amplitude(abs_lat: np.ndarray) -> np.ndarray:
-    """Calculate seasonal amplitude A(φ) via linear interpolation."""
+    """Seasonal temperature swing as a function of latitude.
+
+    Small near the equator, large near the poles (linear interpolation between the
+    two reference latitudes, clamped to that range).
+    """
     slope = (A_HIGH_LAT - A_LOW_LAT) / (LAT_HIGH - LAT_LOW)
     amplitude = A_LOW_LAT + slope * (abs_lat - LAT_LOW)
     return np.clip(amplitude, A_LOW_LAT, A_HIGH_LAT)
@@ -113,7 +119,13 @@ def calculate_temperature_field(
     elevations: np.ndarray,
     day_of_year: int,
 ) -> np.ndarray:
-    """Calculate temperature: T(φ,z,d) = T_R - β·φ + A(φ)cos(2π/365·(d-d_max)) - Γ·z"""
+    """Estimate surface air temperature from latitude, elevation, and day of year.
+
+    Synthetic climatology: start from a warm equatorial reference, cool toward the
+    poles and with altitude, and add a summer/winter swing whose size grows with
+    latitude and whose timing depends on the hemisphere.
+    """
+    # T(phi, z, d) = T_R - BETA*|phi| + A(|phi|)*cos(2*pi/365*(d - d_max)) - LAPSE_RATE*z
     abs_lat = np.abs(latitudes)
     lat_term = -BETA * abs_lat
     amplitude = calculate_seasonal_amplitude(abs_lat)
@@ -131,12 +143,12 @@ def calculate_snow_probability_map(
     smooth_sigma: float = 0.0,
     thermoprops: Optional[xr.Dataset] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Calculate snow probability using logistic model: P = 1/(1 + exp((T-T_c)/σ)) for T ≤ 0.1°C
+    """Estimate the per-pixel probability of snow from temperature.
 
-    Temperature can be calculated using either:
-    - Synthetic model: T(φ,z,d) = T_R - β·φ + A(φ)cos(2π/365·(d-d_max)) - Γ·z
-    - CAMS profile: Interpolated from atmospheric data
+    Temperature comes from a CAMS profile when ``thermoprops`` is given, otherwise
+    from the synthetic model. Probability follows a smooth transition around freezing
+    — close to 1 well below 0 °C, falling to 0 just above it — and any pixel warmer
+    than the hard freeze limit (0.3 °C) is left snow-free.
 
     Args:
         latitudes: Latitude in degrees, shape (height, width)
@@ -155,6 +167,7 @@ def calculate_snow_probability_map(
         temperatures = calculate_temperature_field(latitudes, elevations, day_of_year)
     probabilities = np.zeros_like(temperatures, dtype=np.float32)
 
+    # P = 1 / (1 + exp((T - T_C) / SIGMA)) for T <= HARD_FREEZE_LIMIT, else 0
     cold_mask = temperatures <= HARD_FREEZE_LIMIT
     if np.any(cold_mask):
         cold_temps = temperatures[cold_mask]

@@ -128,7 +128,7 @@ def grid_to_terrain_mesh(
 
     Args:
         grid:         Populated AdaptiveGrid (balanced in-place here).
-        elevation_fn: Callable mapping (N, 2) xy array → (N,) elevations.
+        elevation_fn: Callable mapping (N, 2) xy array -> (N,) elevations.
         operations:   TerraformOperations used for flatten; ignored when flatten=False.
         flatten:      Apply batch vertex flattening along operation centrelines.
         handle_nans:  Remove faces whose vertices contain NaN elevations.
@@ -167,8 +167,8 @@ def build_refined_mesh(
 ) -> trimesh.Trimesh:
     """Build an adaptive quadtree mesh with optional terraforming operations.
 
-    Orchestrates: DEM extraction → decimated grid → operation refinement →
-    triangulation + flatten → NaN cleanup.
+    Orchestrates: DEM extraction -> decimated grid -> operation refinement ->
+    triangulation + flatten -> NaN cleanup.
 
     Args:
         dem_data:   DEM elevation DataArray.

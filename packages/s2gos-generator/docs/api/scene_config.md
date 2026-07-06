@@ -11,11 +11,3 @@ Top-level configuration classes for defining a scene generation run.
 ::: s2gos_generator.core.config.scene.ProcessingOptions
 ::: s2gos_generator.core.config.scene.Month
 ::: s2gos_generator.core.config.scene.create_scene_config
-
-## Adaptive mesh refinement
-
-::: s2gos_generator.core.config.mesh_refinement.MeshRefinementConfig
-
-## Spectral material matching
-
-::: s2gos_generator.core.config.material_match.SpectralMatchingConfig

@@ -310,7 +310,7 @@ def fetch_osm_data(
 
 
 def roads_to_sidecar(roads: list[Road]) -> dict:
-    """Serialize road segments to the roads-sidecar structure (schema version 1)."""
+    """Serialize road segments to the roads-sidecar structure."""
     roads_by_material: dict[str, list[Road]] = {}
     for road in roads:
         roads_by_material.setdefault(road.material, []).append(road)

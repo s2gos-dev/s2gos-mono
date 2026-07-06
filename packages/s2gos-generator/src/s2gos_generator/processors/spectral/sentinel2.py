@@ -227,9 +227,6 @@ def fetch_s2_reflectance(
 ) -> xr.DataArray:
     """Fetch a Sentinel-2 reflectance composite on the scene grid.
 
-    A pure fetch: caching is owned by the generator's fingerprint cache (see
-    :mod:`..core.cache`), so the caller is responsible for persisting the result.
-
     Args:
         center_lat, center_lon: Scene centre (WGS84 degrees).
         target_res_m: Stacking resolution (10 m for the supported bands).

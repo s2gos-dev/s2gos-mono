@@ -148,6 +148,33 @@ section covers only the **data and credentials** each one needs from your enviro
 
 See [Buildings](concepts.md#buildings) for what the feature does.
 
+### Roads
+
+Enable per run with a [`RoadsConfig`][s2gos_generator.core.config.roads.RoadsConfig] on the
+scene config. Road centrelines come from one of two sources:
+
+- `source="overpass"` — fetched live from OpenStreetMap over the public
+  [Overpass API](https://overpass-api.de/). No credentials or local data required.
+- `source="file"` — read from a local JSON file; point the config at your path.
+
+Width and surface material are resolved from OpenStreetMap tags where present, falling back to
+a built-in per-highway-type table and configurable defaults.
+
+!!! note
+    Any published output derived from Overpass/OpenStreetMap data must attribute
+    © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
+
+Enabling roads also engages the [adaptive terrain mesh](#adaptive-terrain-mesh) so roads sit on
+well-resolved, flattened geometry. See [Roads](concepts.md#roads) for what the feature does.
+
+### Adaptive terrain mesh
+
+Tuned per run with a
+[`MeshRefinementConfig`][s2gos_generator.core.config.mesh_refinement.MeshRefinementConfig] on the
+scene config. It is pure geometry processing — it needs nothing from your environment (no extra
+data or credentials) — and is also engaged automatically when roads are enabled. See
+[Adaptive terrain mesh](concepts.md#adaptive-terrain-mesh) for what the feature does.
+
 ### Spectral material matching
 
 Needs two things beyond the base setup:

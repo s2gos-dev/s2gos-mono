@@ -20,6 +20,8 @@ Additional optional resources — [buildings](#buildings), [roads](#roads), [spe
 
 The pipeline caches completed resources to disk. On subsequent runs, any resource whose configuration is unchanged and whose output files are still present is skipped automatically. Pass `use_cache=False` to [`run()`][s2gos_generator.core.pipeline.SceneGenerationPipeline.run] to force a full rebuild.
 
+Internally the code follows a two-layer split. **Resources** (`resources/`) are the thin DAG nodes: each reads its configuration, calls into the processor layer, persists artifacts, and records them on the shared context. **Processors** (`processors/`) are the pure algorithms and format (de)serialization behind those nodes — fetching and parsing roads, painting textures, matching spectra — free of pipeline state so they can be tested and reused in isolation. The [Processors API reference](api/processors_spectral.md) documents the public functions.
+
 The figure below shows a typical pipeline DAG for a scene with some optional resources enabled:
 
 ![Pipeline DAG example](figures/pipeline_dag.png)

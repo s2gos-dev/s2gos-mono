@@ -52,11 +52,24 @@ nav:
   - Examples:
     - Gobabeb Quickstart: examples/gobabeb_quickstart.md
   - API Reference:
-    - Scene Config: api/scene_config.md
-    - Pipeline: api/pipeline.md
-    - Atmosphere: api/atmosphere.md
-    - Vegetation: api/vegetation.md
-    - Urban: api/urban.md
-    - Assets: api/assets.md
+    - Configuration:
+      - Scene: api/scene_config.md
+      - Atmosphere: api/atmosphere.md
+      - Buildings & Roads: api/buildings_roads.md
+      - Vegetation: api/vegetation.md
+      - Assets & Regions: api/assets.md
+      - Adaptive Mesh: api/mesh_refinement.md
+      - Spectral Matching: api/spectral_matching.md
+    - Pipeline & Core:
+      - Pipeline: api/pipeline.md
+      - Exceptions: api/exceptions.md
+    - Processors:
+      - Spectral: api/processors_spectral.md
+      - Roads: api/processors_roads.md
+      - Texture: api/processors_texture.md
+      - Snow: api/processors_snow.md
+      - Terrain Data: api/processors_terrain_data.md
+      - Terrain Mesh: api/processors_terrain_mesh.md
+      - Buildings: api/processors_buildings.md
+      - Vegetation: api/processors_vegetation.md
     - Datasets: api/datasets.md
-    - Exceptions: api/exceptions.md
