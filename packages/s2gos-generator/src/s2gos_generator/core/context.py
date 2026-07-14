@@ -166,8 +166,8 @@ class SceneResourceContext:
         """Merged road footprints per material, derived from the roads list.
 
         Computed once and cached. Each value is the unary_union of all buffered
-        centerlines for that material — the same geometry the texture painter and
-        vegetation filter need, without storing it redundantly in the sidecar.
+        centerlines for that material — the geometry the texture painter needs,
+        without storing it redundantly in the sidecar.
         """
         if self._road_polygons_by_material is None:
             from shapely.ops import unary_union

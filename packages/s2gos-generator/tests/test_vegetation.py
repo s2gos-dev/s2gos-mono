@@ -7,7 +7,7 @@ from s2gos_generator.processors.vegetation import (
     _batch_elevation_lookup,
     _calculate_max_instances_per_pixel,
     _filter_by_exclusion_zones,
-    _filter_by_road_polygons,
+    _filter_by_roads,
     _generate_pixel_vegetation_positions,
 )
 
@@ -193,46 +193,45 @@ class TestFilterByExclusionZones:
         assert result[0] is outside
 
 
-def _roads(road_poly):
-    """A road-polygon-by-material mapping with a single asphalt road."""
-    return {"asphalt": road_poly}
+def _roads():
+    """A single 4 m wide asphalt road running along the y-axis (x in [-2, 2])."""
+    from shapely.geometry import LineString
+
+    from s2gos_generator.processors.roads import Road
+
+    centerline = LineString([(0.0, -1000.0), (0.0, 1000.0)])
+    return [Road(centerline=centerline, width=4.0, material="asphalt")]
 
 
-class TestFilterByRoadPolygons:
+class TestFilterByRoads:
     def test_excludes_positions_on_roads_keeps_others(self):
-        from shapely.geometry import box
-
-        # A road strip covering x in [-2, 2] for all y.
-        roads = _roads(box(-2.0, -1000.0, 2.0, 1000.0))
         on_road = _instance(0.0, 10.0)
         edge = _instance(2.0, 10.0)  # exactly on the edge -> boundary-safe exclusion
         off_road = _instance(50.0, 10.0)
 
-        result = _filter_by_road_polygons(
-            [on_road, edge, off_road], roads, enabled=True, buffer_m=0.0
+        result = _filter_by_roads(
+            [on_road, edge, off_road], _roads(), enabled=True, buffer_m=0.0
         )
         assert result == [off_road]
 
     def test_buffer_widens_exclusion(self):
-        from shapely.geometry import box
-
         near = _instance(5.0, 0.0)  # 3 m outside the [-2,2] strip
-        roads = _roads(box(-2.0, -1000.0, 2.0, 1000.0))
         # No buffer keeps it; a 5 m buffer pulls it into the exclusion zone.
-        kept = _filter_by_road_polygons([near], roads, enabled=True, buffer_m=0.0)
-        excluded = _filter_by_road_polygons([near], roads, enabled=True, buffer_m=5.0)
+        kept = _filter_by_roads([near], _roads(), enabled=True, buffer_m=0.0)
+        excluded = _filter_by_roads([near], _roads(), enabled=True, buffer_m=5.0)
         assert kept == [near]
         assert excluded == []
 
     def test_noop_when_disabled(self):
-        from shapely.geometry import box
-
-        roads = _roads(box(-2.0, -1000.0, 2.0, 1000.0))
         instances = [_instance(0.0, 0.0)]  # squarely on the road
         assert (
-            _filter_by_road_polygons(instances, roads, enabled=False, buffer_m=0.0)
+            _filter_by_roads(instances, _roads(), enabled=False, buffer_m=0.0)
             is instances
         )
+
+    def test_noop_when_no_roads(self):
+        instances = [_instance(0.0, 0.0)]
+        assert _filter_by_roads(instances, [], enabled=True, buffer_m=0.0) is instances
 
 
 class TestBatchElevationLookup:
