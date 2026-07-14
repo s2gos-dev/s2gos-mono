@@ -12,46 +12,42 @@ from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import distance_transform_edt
 
 
-def _filter_by_road_polygons(
+def _filter_by_roads(
     instances: List[Dict[str, Any]],
-    road_polygons_by_material: dict,
+    roads: list,
     *,
     enabled: bool,
     buffer_m: float,
 ) -> List[Dict[str, Any]]:
-    """Exclude vegetation positions that fall within buffered road polygons.
-
-    ``intersects`` is boundary-safe — a point exactly on a road edge is excluded.
+    """Exclude vegetation positions that fall on or near roads.
 
     Args:
         instances: Vegetation placement dicts with a ``"position"`` (x, y).
-        road_polygons_by_material: Merged road polygon per material name.
+        roads: ``Road`` segments (centerline + full width in metres).
         enabled: When False, ``instances`` is returned unchanged.
-        buffer_m: Road polygons are buffered by this many metres before testing.
+        buffer_m: Extra clearance in metres beyond each road's half-width.
     """
     import shapely
     from shapely.strtree import STRtree
 
-    if not enabled or not instances:
+    if not enabled or not instances or not roads:
         return instances
 
-    all_polys = [
-        poly.buffer(buffer_m) if buffer_m > 0 else poly
-        for poly in road_polygons_by_material.values()
+    polys = [
+        road.centerline.buffer(road.width / 2 + buffer_m, cap_style="flat")
+        for road in roads
     ]
-    if not all_polys:
-        return instances
-
-    tree = STRtree(all_polys)
+    tree = STRtree(polys)
     xy = np.array([[inst["position"][0], inst["position"][1]] for inst in instances])
     points = shapely.points(xy[:, 0], xy[:, 1])
     pt_idx, _ = tree.query(points, predicate="intersects")
-    excluded = set(pt_idx.tolist())
+    keep = np.ones(len(instances), dtype=bool)
+    keep[pt_idx] = False
 
-    filtered = [inst for i, inst in enumerate(instances) if i not in excluded]
+    filtered = [inst for inst, k in zip(instances, keep) if k]
     excl_count = len(instances) - len(filtered)
     logging.info(
-        "Road polygon filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
+        "Road filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
         len(filtered),
         excl_count,
         100.0 * excl_count / len(instances) if instances else 0.0,
@@ -101,11 +97,10 @@ def _filter_by_exclusion_zones(
     points = shapely.points(xy[:, 0], xy[:, 1])
 
     pt_idx, _ = tree.query(points, predicate="intersects")
-    excluded = set(pt_idx.tolist())
+    keep = np.ones(len(vegetation_instances), dtype=bool)
+    keep[pt_idx] = False
 
-    filtered_instances = [
-        inst for i, inst in enumerate(vegetation_instances) if i not in excluded
-    ]
+    filtered_instances = [inst for inst, k in zip(vegetation_instances, keep) if k]
     excluded_count = len(vegetation_instances) - len(filtered_instances)
 
     logging.info(
