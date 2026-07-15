@@ -7,6 +7,7 @@ and the parallel mesh-build pipeline.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import os
 import re
@@ -273,9 +274,64 @@ def _process_one_building(task: _BuildingTask) -> _BuildingResult:
     )
 
 
-def _process_chunk(tasks: list[_BuildingTask]) -> list[_BuildingResult]:
-    """Worker entrypoint: process a batch of buildings to amortize IPC overhead."""
-    return [_process_one_building(t) for t in tasks]
+def _concat_vf(
+    parts: list[tuple[np.ndarray, np.ndarray]],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Concatenate (vertices, faces) pairs, offsetting face indices."""
+    if len(parts) == 1:
+        return parts[0]
+    vert_counts = [len(v) for v, _ in parts]
+    offsets = np.cumsum([0, *vert_counts[:-1]])
+    vertices = np.vstack([v for v, _ in parts])
+    faces = np.vstack([f.astype(np.int64) + off for (_, f), off in zip(parts, offsets)])
+    return vertices, faces
+
+
+@dataclass
+class _ChunkResult:
+    """Aggregated mesh arrays for one chunk of buildings."""
+
+    buildings: dict[str, tuple[np.ndarray, np.ndarray]]
+    building_counts: dict[str, int]
+    roof: Optional[tuple[np.ndarray, np.ndarray]]
+    pitched: int
+    flat_fallback: int
+    skipped: int
+
+
+def _process_chunk(tasks: list[_BuildingTask]) -> _ChunkResult:
+    """Worker entrypoint: build a batch of buildings and aggregate the results
+    into per-material (vertices, faces) arrays."""
+
+    building_parts: dict[str, list[tuple[np.ndarray, np.ndarray]]] = {}
+    roof_parts: list[tuple[np.ndarray, np.ndarray]] = []
+    pitched = 0
+    flat_fallback = 0
+    skipped = 0
+
+    for task in tasks:
+        r = _process_one_building(task)
+        if r.wall_mesh is None:
+            skipped += 1
+            continue
+        if r.pitched_attempted and not r.pitched_succeeded:
+            flat_fallback += 1
+        if r.pitched_succeeded:
+            pitched += 1
+        building_parts.setdefault(r.material_name, []).append(
+            (r.wall_mesh.vertices, r.wall_mesh.faces)
+        )
+        if r.roof_mesh is not None:
+            roof_parts.append((r.roof_mesh.vertices, r.roof_mesh.faces))
+
+    return _ChunkResult(
+        buildings={mat: _concat_vf(parts) for mat, parts in building_parts.items()},
+        building_counts={mat: len(parts) for mat, parts in building_parts.items()},
+        roof=_concat_vf(roof_parts) if roof_parts else None,
+        pitched=pitched,
+        flat_fallback=flat_fallback,
+        skipped=skipped,
+    )
 
 
 @dataclass
@@ -306,10 +362,11 @@ def _build_tasks(
     cfg: "BuildingsConfig",
     has_height_col: bool,
 ) -> tuple[list[_BuildingTask], list[str], Optional[np.ndarray], int]:
-    """Pass 1 (sequential, deterministic): parse heights, draw all RNG outcomes
-    (material + pitched/flat), and build a list of self-contained per-building
-    tasks. Doing all RNG draws here keeps results reproducible regardless of how
-    the worker pool later schedules things."""
+    """Parse heights, draw all RNG outcomes (material + pitched/flat), and
+    build a list of self-contained per-building tasks. Doing all RNG draws
+    here keeps results reproducible regardless of how the worker pool later
+    schedules things."""
+
     names, weights = _resolve_material_distribution(cfg.material)
     rng = np.random.default_rng(cfg.material_seed)
     roof_rng = np.random.default_rng(cfg.roof_seed)
@@ -321,13 +378,22 @@ def _build_tasks(
     else:
         material_names = [str(m) for m in rng.choice(names, size=n, p=weights)]
 
+    indices = gdf_valid.index.to_numpy()
+    geoms = gdf_valid.geometry.to_numpy()
+    if has_height_col:
+        raw_heights = gdf_valid[cfg.height_column].to_numpy()
+    else:
+        raw_heights = itertools.repeat(None)
+    if cfg.pitched_roof_proportion > 0.0 and cfg.pitched_roof_min_area_m2 is not None:
+        areas = gdf_valid.geometry.area.to_numpy()
+    else:
+        areas = itertools.repeat(0.0)
+
     tasks: list[_BuildingTask] = []
     unparsed_height = 0
-    for (idx, row), base_z, u, material_name in zip(
-        gdf_valid.iterrows(), base_zs, us, material_names
+    for idx, geom, raw_height, area, base_z, u, material_name in zip(
+        indices, geoms, raw_heights, areas, base_zs, us, material_names
     ):
-        geom = row.geometry
-        raw_height = row.get(cfg.height_column) if has_height_col else None
         height_m, parsed = _parse_height(
             raw_height, cfg.story_height_m, cfg.default_height_m
         )
@@ -338,7 +404,7 @@ def _build_tasks(
             cfg.pitched_roof_proportion > 0.0
             and (
                 cfg.pitched_roof_min_area_m2 is None
-                or geom.area >= cfg.pitched_roof_min_area_m2
+                or area >= cfg.pitched_roof_min_area_m2
             )
             and (
                 cfg.pitched_roof_min_height_m is None
@@ -363,10 +429,13 @@ def _build_tasks(
     return tasks, names, weights, unparsed_height
 
 
+_MAX_CHUNK_SIZE = 16384
+
+
 def _run_tasks(
     tasks: list[_BuildingTask], cfg: "BuildingsConfig"
-) -> list[_BuildingResult]:
-    """Pass 2: build per-building meshes, in parallel for large batches."""
+) -> list[_ChunkResult]:
+    """Build per-building meshes, in parallel for large batches."""
     workers = (
         cfg.roof_workers
         if cfg.roof_workers is not None
@@ -374,14 +443,11 @@ def _run_tasks(
     )
     if workers > 1 and len(tasks) >= 64:
         chunk_size = max(8, (len(tasks) + workers - 1) // workers)
+        chunk_size = min(chunk_size, _MAX_CHUNK_SIZE)
         chunks = [tasks[i : i + chunk_size] for i in range(0, len(tasks), chunk_size)]
-        results: list[_BuildingResult] = []
         with ProcessPoolExecutor(max_workers=workers) as ex:
-            for chunk_results in ex.map(_process_chunk, chunks):
-                results.extend(chunk_results)
-        results.sort(key=lambda r: r.idx)
-        return results
-    return [_process_one_building(t) for t in tasks]
+            return list(ex.map(_process_chunk, chunks))
+    return [_process_chunk(tasks)]
 
 
 def build_meshes(
@@ -437,44 +503,37 @@ def build_meshes(
             cfg.default_height_m,
         )
 
-    results = _run_tasks(tasks, cfg)
+    chunk_results = _run_tasks(tasks, cfg)
 
-    # Pass 3 (sequential): assemble results into the per-material mesh lists.
-    meshes_by_material: dict[str, list[trimesh.Trimesh]] = {n: [] for n in names}
-    roof_meshes: list[trimesh.Trimesh] = []
-    pitched_count = 0
-    flat_fallback = 0
-    for r in results:
-        if r.wall_mesh is None:
-            skipped += 1
-            continue
-        if r.pitched_attempted and not r.pitched_succeeded:
-            flat_fallback += 1
-        if r.pitched_succeeded:
-            pitched_count += 1
-        meshes_by_material[r.material_name].append(r.wall_mesh)
-        if r.roof_mesh is not None:
-            roof_meshes.append(r.roof_mesh)
+    pitched_count = sum(c.pitched for c in chunk_results)
+    flat_fallback = sum(c.flat_fallback for c in chunk_results)
+    skipped += sum(c.skipped for c in chunk_results)
 
-    # Combine each non-empty material group (and the roofs) into a single mesh.
     material_meshes: dict[str, trimesh.Trimesh] = {}
     per_material_counts: dict[str, int] = {}
     for material_name in names:
-        meshes = meshes_by_material[material_name]
-        if not meshes:
+        parts = [
+            c.buildings[material_name]
+            for c in chunk_results
+            if material_name in c.buildings
+        ]
+        if not parts:
             continue
-        per_material_counts[material_name] = len(meshes)
-        material_meshes[material_name] = (
-            meshes[0] if len(meshes) == 1 else trimesh.util.concatenate(meshes)
+        per_material_counts[material_name] = sum(
+            c.building_counts[material_name]
+            for c in chunk_results
+            if material_name in c.building_counts
+        )
+        vertices, faces = _concat_vf(parts)
+        material_meshes[material_name] = trimesh.Trimesh(
+            vertices=vertices, faces=faces, process=False
         )
 
     roof_mesh = None
-    if roof_meshes:
-        roof_mesh = (
-            roof_meshes[0]
-            if len(roof_meshes) == 1
-            else trimesh.util.concatenate(roof_meshes)
-        )
+    roof_parts = [c.roof for c in chunk_results if c.roof is not None]
+    if roof_parts:
+        vertices, faces = _concat_vf(roof_parts)
+        roof_mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
 
     total = sum(per_material_counts.values())
     stats = BuildingMeshStats(
