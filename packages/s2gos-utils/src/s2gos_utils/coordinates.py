@@ -1,7 +1,9 @@
 import logging
 from typing import Dict, Optional, Tuple, Union
 
+import geopandas as gpd
 import numpy as np
+import shapely
 import xarray as xr
 from pyproj import CRS, Transformer
 from shapely.geometry import Polygon
@@ -78,7 +80,9 @@ class CoordinateSystem:
             relative to the scene center).
         """
         gdf = gdf.to_crs(self.scene_crs).copy()
-        gdf.geometry = gdf.geometry.translate(-self._center_x, -self._center_y)
+        offset = np.array([self._center_x, self._center_y])
+        shifted = shapely.transform(gdf.geometry.values, lambda xy: xy - offset)
+        gdf.geometry = gpd.GeoSeries(shifted, index=gdf.index, crs=self.scene_crs)
         return gdf
 
     def scene_to_latlon(
