@@ -20,7 +20,9 @@ from shapely.geometry import MultiPolygon, Polygon
 from s2gos_generator.core.config import BuildingsConfig
 from s2gos_generator.processors.buildings.meshing import (
     _BuildingTask,
+    _concat_vf,
     _parse_height,
+    _process_chunk,
     _process_one_building,
     _resolve_material_distribution,
     _safe_name,
@@ -226,6 +228,65 @@ class TestBuildMeshes:
         assert result.stats.total == 0
         assert result.material_meshes == {}
         assert result.roof_mesh is None
+
+
+class TestConcatVF:
+    def test_single_pair_returned_unchanged(self):
+        v = np.zeros((4, 3))
+        f = np.array([[0, 1, 2], [0, 2, 3]])
+        out_v, out_f = _concat_vf([(v, f)])
+        assert out_v is v and out_f is f
+
+    def test_face_indices_offset_by_vertex_counts(self):
+        v1 = np.zeros((4, 3))
+        f1 = np.array([[0, 1, 2], [0, 2, 3]])
+        v2 = np.ones((3, 3))
+        f2 = np.array([[0, 1, 2]])
+        out_v, out_f = _concat_vf([(v1, f1), (v2, f2)])
+        assert out_v.shape == (7, 3)
+        np.testing.assert_array_equal(out_f, [[0, 1, 2], [0, 2, 3], [4, 5, 6]])
+
+
+def _make_tasks(n: int) -> list[_BuildingTask]:
+    return [
+        _BuildingTask(
+            idx=i,
+            geom=Polygon([(i * 20, 0), (i * 20 + 8, 0), (i * 20 + 8, 8), (i * 20, 8)]),
+            height_m=10.0,
+            base_z=100.0,
+            skirt_m=0.5,
+            material_name="brick" if i % 2 else "glass",
+            pitched=False,
+            pitch_deg=35.0,
+            target_roof_height=3.0,
+        )
+        for i in range(n)
+    ]
+
+
+class TestProcessChunk:
+    def test_chunk_split_is_deterministic(self):
+        """Processing one chunk equals assembling two half-chunks."""
+        tasks = _make_tasks(10)
+        whole = _process_chunk(tasks)
+        first, second = _process_chunk(tasks[:5]), _process_chunk(tasks[5:])
+
+        for mat in whole.buildings:
+            parts = [c.buildings[mat] for c in (first, second) if mat in c.buildings]
+            v, f = _concat_vf(parts)
+            np.testing.assert_array_equal(whole.buildings[mat][0], v)
+            np.testing.assert_array_equal(whole.buildings[mat][1], f)
+            assert whole.building_counts[mat] == sum(
+                c.building_counts.get(mat, 0) for c in (first, second)
+            )
+        assert whole.skipped == first.skipped + second.skipped
+
+    def test_extrusion_failure_counts_as_skipped(self):
+        tasks = _make_tasks(4)
+        tasks[1].geom = Polygon()  # un-extrudable
+        result = _process_chunk(tasks)
+        assert result.skipped == 1
+        assert sum(result.building_counts.values()) == 3
 
 
 def test_quadkeys_for_bbox_round_trips_to_containing_tile():
