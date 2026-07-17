@@ -696,13 +696,17 @@ class EradiateMaterialAdapter:
 
         Args:
             material_id: Material identifier (e.g., "_mat_baresoil_hamster")
-            albedo_data: HAMSTER albedo DataArray with (lat, lon, wavelength) dimensions
+            albedo_data: HAMSTER albedo DataArray
 
         Returns:
-            Dictionary with texture and material definitions for HAMSTER albedo
+            Dictionary with the material definition for HAMSTER albedo
         """
-        texture_data = np.ones_like(albedo_data.values[:, :, :3])
-        texture_id = f"texture_{material_id}"
+        if not ERADIATE_AVAILABLE:
+            raise ImportError("Eradiate is not available")
+
+        texture_data = np.ones_like(
+            albedo_data.isel(wavelength=0).values[..., np.newaxis]
+        )
 
         # Validate texture data - ensure it has valid dimensions
         if texture_data.size == 0:
@@ -712,17 +716,13 @@ class EradiateMaterialAdapter:
             )
 
         result = {
-            texture_id: {
+            "type": "diffuse",
+            "reflectance": {
                 "type": "bitmap",
-                "id": texture_id,
                 "filter_type": "bilinear",
                 "wrap_mode": "clamp",
                 "data": mi.TensorXf(texture_data),
                 "raw": True,
-            },
-            material_id: {
-                "type": "diffuse",
-                "reflectance": {"type": "ref", "id": texture_id},
             },
         }
 
@@ -739,25 +739,17 @@ class EradiateMaterialAdapter:
         Returns:
             Dictionary with scene parameters for spectral interpolation
         """
-        if not ERADIATE_AVAILABLE:
-            raise ImportError("Eradiate is not available")
 
         def hamster_spectral_func(ctx: "KernelContext") -> np.ndarray:
             """Interpolate HAMSTER albedo data for given wavelength."""
             interpolated = albedo_data.sel(wavelength=ctx.si.w, method="nearest")
             return interpolated.values[..., np.newaxis]
 
-        param_key = f"{material_id}.reflectance.data"
+        param = "reflectance.data"
 
         result = {
-            param_key: SceneParameter(
-                hamster_spectral_func,
-                search=SearchSceneParameter(
-                    node_type=mi.BSDF,
-                    node_id=material_id,
-                    parameter_relpath="reflectance.data",
-                ),
-                flags=KernelSceneParameterFlags.SPECTRAL,
+            f"{material_id}.{param}": _declare_mono_scene_parameter(
+                hamster_spectral_func, node_id=material_id, param=param
             )
         }
 

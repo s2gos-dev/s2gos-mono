@@ -364,9 +364,11 @@ class SurfaceBuilder:
 
                 hamster_material_id = f"_mat_{mat_name}_{surface_name}"
 
-                hamster_kdict = self.material_adapter.create_hamster_kdict(
-                    material_id=hamster_material_id, albedo_data=hamster_data
-                )
+                hamster_kdict = {
+                    hamster_material_id: self.material_adapter.create_hamster_kdict(
+                        material_id=hamster_material_id, albedo_data=hamster_data
+                    )
+                }
 
                 hamster_kpmap = self.material_adapter.create_hamster_kpmap(
                     material_id=hamster_material_id, albedo_data=hamster_data
@@ -578,12 +580,16 @@ class SurfaceBuilder:
     def _expand_vegetation_collection(
         self, vegetation_collection_obj: dict, scene_dir: UPath, kdict: dict
     ):
-        """Expand vegetation collection to individual Mitsuba instances efficiently.
+        """Expand a vegetation collection into a single ``instancelist`` shape.
+
+        Emits one kernel-dict entry per collection: an ``instancelist`` plugin
+        holding the shared shapegroup plus an ``(N, 4, 4)`` buffer of per-tree
+        object-to-world transforms
 
         Args:
             vegetation_collection_obj: Vegetation collection object from scene description
             scene_dir: Scene directory for resolving paths
-            kdict: Eradiate kernel dictionary to add instances to
+            kdict: Eradiate kernel dictionary to add the instancelist to
         """
         data_file = vegetation_collection_obj["data_file"]
         binary_path = scene_dir / data_file
@@ -601,9 +607,14 @@ class SurfaceBuilder:
                 f"Expanding vegetation collection '{collection_name}' with {count} instances"
             )
 
-            for i in range(count):
-                instance_id = f"vegetation_instance_{collection_name}_{i}"
+            if count == 0:
+                return
 
+            has_tilt_x = "tilt_x" in vegetation_data.dtype.names
+            has_tilt_y = "tilt_y" in vegetation_data.dtype.names
+
+            transforms = np.empty((count, 4, 4), dtype=np.float32)
+            for i in range(count):
                 x, y, z = (
                     float(vegetation_data[i]["x"]),
                     float(vegetation_data[i]["y"]),
@@ -611,16 +622,8 @@ class SurfaceBuilder:
                 )
                 rotation = float(vegetation_data[i]["rotation"])
                 scale = float(vegetation_data[i]["scale"])
-                tilt_x = (
-                    float(vegetation_data[i]["tilt_x"])
-                    if "tilt_x" in vegetation_data.dtype.names
-                    else 0.0
-                )
-                tilt_y = (
-                    float(vegetation_data[i]["tilt_y"])
-                    if "tilt_y" in vegetation_data.dtype.names
-                    else 0.0
-                )
+                tilt_x = float(vegetation_data[i]["tilt_x"]) if has_tilt_x else 0.0
+                tilt_y = float(vegetation_data[i]["tilt_y"]) if has_tilt_y else 0.0
 
                 to_world = mi.ScalarTransform4f.translate([x, y, z])
                 to_world = to_world @ mi.ScalarTransform4f.rotate([1, 0, 0], 90)
@@ -629,11 +632,13 @@ class SurfaceBuilder:
                 to_world = to_world @ mi.ScalarTransform4f.rotate([0, 1, 0], tilt_y)
                 to_world = to_world @ mi.ScalarTransform4f.scale(scale)
 
-                kdict[instance_id] = {
-                    "type": "instance",
-                    "shapegroup": {"type": "ref", "id": shapegroup_ref},
-                    "to_world": to_world,
-                }
+                transforms[i] = np.array(to_world.matrix)
+
+            kdict[f"vegetation_instances_{collection_name}"] = {
+                "type": "instancelist",
+                "shapegroup": {"type": "ref", "id": shapegroup_ref},
+                "transforms": mi.TensorXf(transforms),
+            }
 
         except Exception as e:
             logging.error(

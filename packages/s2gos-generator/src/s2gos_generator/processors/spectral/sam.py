@@ -1,10 +1,4 @@
-"""Clustering and Spectral Angle Mapper matching.
-
-Ported from ``experimenting/sentinel2_stac.ipynb``: cluster the reflectance of a
-landcover class with k-means (z-scored per band so the high-variance NIR band does
-not dominate), then assign each cluster the library material with the smallest
-spectral angle.
-"""
+"""Clustering and Spectral Angle Mapper matching."""
 
 from __future__ import annotations
 
@@ -102,11 +96,12 @@ def match_clusters_to_library(
 
     Returns:
         List aligned with ``palette`` rows; entry is the matched
-        :class:`CandidateSpectrum` or ``None`` (empty cluster or rejected match).
+        :class:`CandidateSpectrum`, or ``None`` for an empty cluster, an all-zero
+        centroid, or a rejected match, each of which leaves the base landcover material in place.
     """
     matches: List[Optional[CandidateSpectrum]] = []
     for centroid in palette:
-        if not np.isfinite(centroid).all():
+        if not np.isfinite(centroid).all() or not centroid.any():
             matches.append(None)
             continue
         best, best_angle = None, float("inf")

@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 
 from .library import CandidateSpectrum
-from .sam import cluster_class_reflectance, match_clusters_to_library
+from .sam import NO_CLUSTER, cluster_class_reflectance, match_clusters_to_library
 from ...core.config.material_match import SpectralMatchingConfig
 from ...core.materials import allocate_matched_indices
 
@@ -70,6 +70,15 @@ def diversify_selection_texture(
         label_map, palette = cluster_class_reflectance(
             refl, class_mask, cfg.clusters_per_class, cfg.random_seed
         )
+        n_missing = n_pixels - int((label_map != NO_CLUSTER).sum())
+        if n_missing:
+            logging.warning(
+                "Spectral diversification: class %s — %d/%d pixel(s) have no "
+                "reflectance and keep their base material",
+                esa_class,
+                n_missing,
+                n_pixels,
+            )
         matches = match_clusters_to_library(palette, library, cfg.max_sam_angle_deg)
         per_class.append((esa_class, label_map, matches))
         matched_ids.extend(m.material_id for m in matches if m is not None)

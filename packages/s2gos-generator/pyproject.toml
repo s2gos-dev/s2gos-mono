@@ -32,7 +32,10 @@ dependencies = [
     "graphviz",
     "scipy",
     "mapbox-earcut",
-    "mercantile"
+    "mercantile",
+    "odc-stac",
+    "pystac-client",
+    "boto3"
 ]
 
 [dependency-groups]
