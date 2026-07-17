@@ -22,7 +22,9 @@ from s2gos_generator.processors.spectral.sam import (
 )
 from s2gos_generator.processors.spectral.sentinel2 import (
     _accumulate_until_covered,
-    _utm_epsg,
+    _scene_geobox,
+    _to_band_array,
+    _trim_swath_edges,
 )
 
 BANDS = ["B02", "B03", "B04", "B08"]
@@ -130,6 +132,16 @@ class TestClustering:
         # A strict angle gate rejects even the nearest match.
         gated = match_clusters_to_library(palette, library, max_sam_angle_deg=0.001)
         assert gated[0] is None
+
+    def test_all_zero_centroid_matches_nothing(self):
+        # A zero centroid is equidistant (pi/2) from every candidate, so any match
+        # would be arbitrary iteration order; fall back to the base material instead.
+        library = [
+            CandidateSpectrum("dark", {"type": "diffuse"}, np.array([0.1, 0.5])),
+            CandidateSpectrum("bright", {"type": "diffuse"}, np.array([0.4, 0.45])),
+        ]
+        palette = np.array([[0.0, 0.0]])
+        assert match_clusters_to_library(palette, library, None) == [None]
 
 
 def _write_spectrum(path, w_nm, reflectance):
@@ -247,7 +259,6 @@ class TestSentinel2Composite:
         assert coverage == 1.0
         assert not np.isnan(composite.values).any()  # the eastern hole is filled
         assert loaded == [0, 1]  # stopped once covered; the third date was not needed
-        # Closest date wins on its own region; later date only fills the gap.
         assert np.all(composite.values[:, :, : NX // 2] == 1.0)
         assert np.all(composite.values[:, :, NX // 2 :] == 2.0)
 
@@ -257,12 +268,13 @@ class TestSentinel2Composite:
         load_fn, loaded = _counting_loader(layers)
 
         composite, coverage = _accumulate_until_covered(
-            order=list(range(5)), load_fn=load_fn, min_coverage=0.99, max_dates=3
+            order=list(range(5)), load_fn=load_fn, min_coverage=0.99
         )
 
         assert abs(coverage - 0.5) < 1e-6
+        # Uncoverable pixels stay NaN -> downstream they keep their base material.
         assert np.isnan(composite.values[:, :, NX // 2 :]).all()
-        assert len(loaded) <= 3
+        assert len(loaded) == 5  # exhausts the candidates
 
     def test_skips_failed_reads_and_recovers(self):
         layers = {1: _layer(2.0, "east"), 2: _layer(3.0, "west")}
@@ -288,13 +300,128 @@ class TestSentinel2Composite:
                 order=[0, 1, 2], load_fn=load_fn, min_coverage=0.99
             )
 
-    def test_utm_epsg_picks_zone_and_hemisphere(self):
-        # Greenwich-ish, northern hemisphere -> zone 31N (EPSG:32631).
-        assert _utm_epsg(45.0, 3.0) == 32631
-        # Same longitude band, southern hemisphere -> 32731.
-        assert _utm_epsg(-45.0, 3.0) == 32731
-        # Far-west longitude -> low zone number.
-        assert _utm_epsg(0.0, -177.0) == 32601
+    def test_logs_dates_used_in_the_composite(self, caplog):
+        layers = {
+            "2021-05-03": _layer(1.0, "west"),
+            "2021-05-26": _layer(2.0, "east"),
+        }
+        load_fn, _ = _counting_loader(layers)
+
+        with caplog.at_level("INFO"):
+            _accumulate_until_covered(
+                order=["2021-05-03", "2021-05-26"],
+                load_fn=load_fn,
+                min_coverage=0.99,
+            )
+
+        messages = "\n".join(caplog.messages)
+        assert "+ 2021-05-03 -> coverage" in messages
+        assert "+ 2021-05-26 -> coverage" in messages
+        assert "composite from 2 date(s)" in messages
+        assert "2021-05-03, 2021-05-26" in messages
+
+
+def _wide_layer(fill, nan_from_col=None, n=20):
+    """A (2, n, n) layer filled with ``fill``; columns >= nan_from_col are NaN."""
+    arr = np.full((2, n, n), fill, dtype="float32")
+    if nan_from_col is not None:
+        arr[:, :, nan_from_col:] = np.nan
+    return xr.DataArray(arr, dims=("band", "y", "x"), coords={"band": ["B02", "B04"]})
+
+
+class TestTrimSwathEdges:
+    """``_trim_swath_edges`` — swath-edge rim removal before compositing."""
+
+    def test_erodes_internal_boundary_but_not_raster_border(self):
+        layer = _wide_layer(1.0, nan_from_col=13)
+
+        trimmed = _trim_swath_edges(layer, buffer_px=3)
+
+        valid = ~np.isnan(trimmed.values).any(axis=0)
+        # The 3 valid columns adjacent to the nodata region are eroded away.
+        assert not valid[:, 10:13].any()
+        assert valid[:, :10].all()
+        # The raster's own border is untouched: full first column, and the
+        # top/bottom rows of the surviving region.
+        assert valid[:, 0].all()
+        assert valid[0, :10].all() and valid[-1, :10].all()
+
+    def test_fully_valid_layer_is_returned_unchanged(self):
+        layer = _wide_layer(1.0)
+        assert _trim_swath_edges(layer, buffer_px=3) is layer
+
+    def test_trimmed_rim_is_refilled_by_the_next_composite_date(self):
+        layers = {0: _wide_layer(1.0, nan_from_col=13), 1: _wide_layer(2.0)}
+
+        composite, coverage = _accumulate_until_covered(
+            order=[0, 1],
+            load_fn=lambda d: _trim_swath_edges(layers[d], buffer_px=3),
+            min_coverage=0.99,
+        )
+
+        assert coverage == 1.0
+        assert not np.isnan(composite.values).any()
+        # Closest date keeps its trustworthy interior; the rim next to its
+        # swath edge (cols 10..12) now carries the next date's values.
+        assert np.all(composite.values[:, :, :10] == 1.0)
+        assert np.all(composite.values[:, :, 10:] == 2.0)
+
+
+def _centre_grid(n, res):
+    """Ascending pixel-centre coords centred on 0, mirroring the landcover grid."""
+    half = n * res / 2
+    return np.linspace(-half + res / 2, half - res / 2, n)
+
+
+class TestSceneGeobox:
+    """``_scene_geobox`` - scene-grid GeoBox construction for odc-stac."""
+
+    def test_pixel_centres_round_trip_through_the_affine(self):
+        pytest.importorskip("odc.geo")
+        res = 10.0
+        grid_y, grid_x = _centre_grid(6, res), _centre_grid(4, res)
+
+        gbox = _scene_geobox(grid_y, grid_x, "EPSG:32633")
+
+        # Shape is (ny, nx) — a non-square grid catches swapped axes.
+        assert gbox.shape == (6, 4)
+        # Centre of the top-left pixel is (west-most x, north-most y)...
+        assert gbox.transform * (0.5, 0.5) == pytest.approx((grid_x[0], grid_y[-1]))
+        # ...and of the bottom-right pixel (east-most x, south-most y).
+        assert gbox.transform * (3.5, 5.5) == pytest.approx((grid_x[-1], grid_y[0]))
+
+    def test_irregular_spacing_raises(self):
+        pytest.importorskip("odc.geo")
+        grid_y = _centre_grid(4, 10.0)
+        grid_x = _centre_grid(4, 10.0).copy()
+        grid_x[2] += 1.0
+        with pytest.raises(ValueError, match="regularly spaced"):
+            _scene_geobox(grid_y, grid_x, "EPSG:32633")
+
+
+class TestBandArray:
+    """``_to_band_array`` — band ordering and DN-nodata masking."""
+
+    def test_orders_bands_and_masks_nodata(self):
+        dn = {
+            # (time, y, x); DN 0 is the nodata fill.
+            "B04_10m": np.array([[[1000, 0], [2000, 3000]]], dtype="uint16"),
+            "B02_10m": np.array([[[500, 600], [0, 700]]], dtype="uint16"),
+        }
+        ds = xr.Dataset(
+            {k: (("time", "y", "x"), v) for k, v in dn.items()},
+            coords={"time": [np.datetime64("2021-07-15", "ns")]},
+        )
+
+        out = _to_band_array(ds, ["B02", "B04"])
+
+        # Requested order wins over Dataset variable order.
+        assert list(out.band.values) == ["B02", "B04"]
+        assert out.dtype == np.float32
+        b04 = out.sel(band="B04").values[0]
+        assert np.isnan(b04[0, 1])  # DN 0 -> NaN
+        assert b04[1, 0] == 2000  # valid DNs preserved
+        assert np.isnan(out.sel(band="B02").values[0, 1, 0])
 
 
 def _scene_with_one_class():
@@ -357,6 +484,35 @@ class TestDiversify:
         for mid, idx in indices.items():
             assert (out == idx).any()
 
+    def test_uncovered_class_pixels_keep_their_base_material(self, caplog):
+        texture, landcover, refl = _scene_with_one_class()
+        texture[:, :] = 1  # base landcover index for the whole grid
+        refl[:, 0, :] = np.nan  # row 0 of class 30 has no Sentinel-2 coverage
+        library = [
+            CandidateSpectrum(
+                "bright",
+                {"type": "diffuse", "reflectance": {"type": "uniform", "value": 0.4}},
+                np.array([0.4, 0.4, 0.4, 0.45]),
+            ),
+        ]
+
+        with caplog.at_level("WARNING"):
+            out, _, indices = diversify_selection_texture(
+                texture,
+                landcover,
+                refl,
+                _diversify_config(clusters_per_class=1),
+                {"grassland": 1},
+                library,
+            )
+
+        # Uncovered class pixels are never painted; the covered row is.
+        assert (out[0, :] == 1).all()
+        assert (out[1, :] == indices["bright"]).all()
+        assert "4/8 pixel(s) have no reflectance and keep their base material" in (
+            "\n".join(caplog.messages)
+        )
+
     def test_duplicate_match_collapses_to_one_index(self):
         texture, landcover, refl = _scene_with_one_class()
         base = {"grassland": 1}
@@ -381,12 +537,23 @@ class TestConfig:
             (dict(acquisition_date="15-07-2021"), "YYYY-MM-DD"),
             (dict(bands=["B02", "B12"]), "Unsupported Sentinel-2 band"),
             (dict(bands=["B02", "B02"]), "Duplicate bands"),
+            (dict(min_coverage=0.0), "greater than 0"),
+            (dict(min_coverage=1.5), "less than or equal to 1"),
         ],
-        ids=["bad-date", "unknown-band", "duplicate-bands"],
+        ids=[
+            "bad-date",
+            "unknown-band",
+            "duplicate-bands",
+            "min-coverage-zero",
+            "min-coverage-above-one",
+        ],
     )
     def test_rejects_invalid_config(self, overrides, match):
         with pytest.raises(ValueError, match=match):
             _valid(**overrides)
+
+    def test_composite_knobs_default_to_documented_values(self):
+        assert _valid().min_coverage == 1.0
 
     def test_attaches_to_scene_config(self, make_minimal_config):
         cfg = _valid()

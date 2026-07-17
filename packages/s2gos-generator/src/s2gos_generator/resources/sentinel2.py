@@ -4,14 +4,11 @@ import logging
 from typing import Optional
 
 import xarray as xr
+from odc.geo.xr import assign_crs
 from s2gos_utils.io.paths import expand_mapper
 from upath import UPath
 
 from ..core.context import SceneResourceContext
-
-# Sentinel-2 10 m bands are stacked at native resolution, then regridded to the
-# landcover grid.
-_S2_NATIVE_RES_M = 10.0
 
 
 def process_target_sentinel2(ctx: SceneResourceContext) -> Optional[UPath]:
@@ -37,9 +34,6 @@ def process_target_sentinel2(ctx: SceneResourceContext) -> Optional[UPath]:
 
     scene_crs_wkt = ctx.coordinate_system.scene_crs.to_wkt()
     reflectance = fetch_s2_reflectance(
-        center_lat=ctx.center_lat,
-        center_lon=ctx.center_lon,
-        target_res_m=_S2_NATIVE_RES_M,
         acquisition_date=cfg.acquisition_date,
         search_window_days=cfg.search_window_days,
         bands=cfg.bands,
@@ -49,11 +43,12 @@ def process_target_sentinel2(ctx: SceneResourceContext) -> Optional[UPath]:
         grid_y=grid_y,
         grid_x=grid_x,
         aoi_polygon=ctx.target_aoi_polygon,
+        min_coverage=cfg.min_coverage,
         credential_id=cfg.credential_id,
     )
 
     cache_path = ctx.data_dir / "sentinel2_reflectance.zarr"
-    reflectance.to_dataset(name="reflectance").rio.write_crs(scene_crs_wkt).to_zarr(
+    assign_crs(reflectance.to_dataset(name="reflectance"), crs=scene_crs_wkt).to_zarr(
         cache_path, mode="w"
     )
 

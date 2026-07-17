@@ -60,15 +60,33 @@ class SpectralMatchingConfig(BaseModel):
         description="Anchor acquisition date 'YYYY-MM-DD' for the Sentinel-2 composite.",
     )
     search_window_days: int = Field(
-        310,
+        80,
         ge=0,
-        description="± days around acquisition_date to search for usable scenes.",
+        description=(
+            "± days around acquisition_date to search for usable scenes. Also the "
+            "composite's cost bound: every candidate day in the window may be "
+            "loaded while coverage stays below min_coverage. Wide windows can "
+            "composite imagery from a different season than the anchor date."
+        ),
     )
     max_cloud_cover: float = Field(
         5.0,
         ge=0.0,
         le=100.0,
-        description="Maximum eo:cloud_cover (percent) for candidate scenes.",
+        description=(
+            "Maximum cloud_cover (percent) for candidate scenes. STAC reports "
+            "this for the whole Sentinel-2 granule (~110 km across), not for the "
+            "AOI, which is typically a few percent of it. "
+        ),
+    )
+    min_coverage: float = Field(
+        1.0,
+        gt=0.0,
+        le=1.0,
+        description=(
+            "Fraction of the scene grid that must carry reflectance before "
+            "compositing stops. Pixels left uncovered keep their base landcover material. "
+        ),
     )
     bands: List[str] = Field(
         default_factory=lambda: ["B02", "B03", "B04", "B08"],
