@@ -1,4 +1,11 @@
-"""Fetch Sentinel-2 L2A reflectance onto the scene grid."""
+"""Fetch a Sentinel-2 L2A reflectance composite onto the scene grid.
+
+Searches a STAC catalog around an acquisition date and mosaics the clearest dates
+onto the landcover grid. Rasters store integer DN, not reflectance:
+``reflectance = DN * scale + offset``, with per-band ``scale``/``offset`` read from
+the product metadata (:func:`_band_radiometry`). A pixel survives only if that
+reflectance is positive and its SCL scene class is not excluded.
+"""
 
 from __future__ import annotations
 
@@ -11,14 +18,37 @@ import xarray as xr
 
 # Asset suffix for the 10 m bands in the Copernicus sentinel-2-l2a collection.
 _ASSET_SUFFIX = "_10m"
-# Sentinel-2 L2A digital-number -> bottom-of-atmosphere reflectance (baseline N0400+).
-_DN_SCALE = 1e-4
-_DN_OFFSET = -0.1
-# Digital-number fill value marking pixels without data.
+# Scene-classification asset in the Copernicus sentinel-2-l2a collection (20 m).
+_SCL_ASSET = "SCL_20m"
+
 _DN_NODATA = 0
-# Pixels to erode off each date's valid region at internal data/nodata
-# boundaries (swath edges) before compositing.
-_EDGE_TRIM_PX = 3
+_SCL_NODATA = 0
+
+# STAC raster-extension keys carrying the DN -> reflectance transform.
+_RADIOMETRY_KEYS = frozenset({"raster:scale", "raster:offset"})
+
+# Skip fetching a date's reflectance when its valid pixels would fill less than
+# this fraction of the composite's remaining gap (a cheap 20 m SCL read decides
+# before any 10 m band read). Never applied to the first date.
+_SKIP_MIN_GAP_FILL = 0.25
+
+
+class S2FetchError(RuntimeError):
+    """No usable Sentinel-2 imagery for the AOI in the search window.
+
+    A *data availability* failure, so callers may degrade to "no spectral
+    matching". Misconfiguration raises plain :class:`RuntimeError` instead.
+    """
+
+
+def _date_window(acquisition_date: str, window_days: int) -> str:
+    """Build a STAC ``start/end`` string spanning ``+-window_days`` around the anchor."""
+    from datetime import datetime, timedelta
+
+    anchor = datetime.strptime(acquisition_date, "%Y-%m-%d")
+    start = (anchor - timedelta(days=window_days)).strftime("%Y-%m-%d")
+    end = (anchor + timedelta(days=window_days)).strftime("%Y-%m-%d")
+    return f"{start}/{end}"
 
 
 def _configure_s3_credential(
@@ -27,10 +57,8 @@ def _configure_s3_credential(
     """Resolve an s3 credential into ``odc.stac.configure_rio`` arguments.
 
     Resolves ``credential_id`` through the settings/secrets credential provider
-    (``.secrets.yaml``).
-
-    Returns ``(None, {})`` when no id is given, so reads fall back to the
-    ambient boto3 credential chain (``AWS_*`` env, profiles).
+    (``.secrets.yaml``). Returns ``(None, {})`` when no id is given, so reads
+    fall back to the ambient boto3 credential chain (``AWS_*`` env, profiles).
     """
     if not credential_id:
         return None, {}
@@ -56,21 +84,65 @@ def _configure_s3_credential(
     return aws, gdal_opts
 
 
-def _date_window(acquisition_date: str, window_days: int) -> str:
-    """Build a STAC ``start/end`` datetime string around the anchor date."""
-    from datetime import datetime, timedelta
+def _band_radiometry(
+    collection, bands: Sequence[str], stac_url: str
+) -> Dict[str, Tuple[float, float]]:
+    """Per-band ``(scale, offset)`` for the DN -> reflectance conversion.
 
-    anchor = datetime.strptime(acquisition_date, "%Y-%m-%d")
-    start = (anchor - timedelta(days=window_days)).strftime("%Y-%m-%d")
-    end = (anchor + timedelta(days=window_days)).strftime("%Y-%m-%d")
-    return f"{start}/{end}"
+    Reads the raster-extension keys ``raster:scale``/``raster:offset``, which CDSE
+    declares on the collection's ``item_assets`` once for every scene. The values
+    are ESA's ``QUANTIFICATION_VALUE`` and ``BOA_ADD_OFFSET``, we read them from
+    STAC ourselves because odc-stac 0.5.2 does not surface scale/offset.
+
+    Raises:
+        RuntimeError: A band is missing either key — a bad ``stac_url`` rather
+            than a transient gap, hence deliberately not :class:`S2FetchError`.
+    """
+    item_assets = getattr(collection, "item_assets", None) or {}
+    radiometry: Dict[str, Tuple[float, float]] = {}
+    for band in bands:
+        asset_key = f"{band}{_ASSET_SUFFIX}"
+        definition = item_assets.get(asset_key)
+        props = definition.to_dict() if definition is not None else {}
+        if not _RADIOMETRY_KEYS <= props.keys():
+            raise RuntimeError(
+                f"{stac_url} declares no raster:scale/raster:offset for "
+                f"{asset_key} on the sentinel-2-l2a collection item_assets."
+            )
+        radiometry[band] = (
+            float(props["raster:scale"]),
+            float(props["raster:offset"]),
+        )
+    return radiometry
+
+
+def _to_band_array(
+    ds: xr.Dataset, bands: Sequence[str], radiometry: Dict[str, Tuple[float, float]]
+) -> xr.DataArray:
+    """Stack per-band DN variables into a ``(band, time, y, x)`` reflectance array.
+
+    Applies each band's ``scale``/``offset`` and NaNs pixels at or below zero
+    reflectance.
+    """
+    da = ds[[f"{b}{_ASSET_SUFFIX}" for b in bands]].to_array(dim="band")
+    da = da.assign_coords(band=list(bands)).astype("float32")
+    scale = xr.DataArray(
+        [radiometry[b][0] for b in bands], coords={"band": list(bands)}, dims="band"
+    )
+    offset = xr.DataArray(
+        [radiometry[b][1] for b in bands], coords={"band": list(bands)}, dims="band"
+    )
+    reflectance = (da * scale + offset).astype("float32")
+    return reflectance.where(reflectance > 0)
 
 
 def _scene_geobox(grid_y: np.ndarray, grid_x: np.ndarray, scene_crs_wkt: str):
     """GeoBox of the scene grid (north-up) built from pixel-centre coords.
 
     ``grid_y``/``grid_x`` are the ascending, regularly spaced pixel-centre
-    coordinates of the landcover raster in the scene CRS.
+    coordinates of the landcover raster in the scene CRS. odc-stac warps every
+    item onto this geobox, which is what makes the fetched reflectance align
+    pixel-for-pixel with the landcover.
     """
     from affine import Affine
     from odc.geo.geobox import GeoBox
@@ -96,27 +168,10 @@ def _scene_geobox(grid_y: np.ndarray, grid_x: np.ndarray, scene_crs_wkt: str):
     return GeoBox((len(grid_y), len(grid_x)), transform, scene_crs_wkt)
 
 
-def _to_band_array(ds: xr.Dataset, bands: Sequence[str]) -> xr.DataArray:
-    """Stack per-band variables into a (band, time, y, x) float32 DataArray.
-
-    Selects the ``{band}_10m`` variables in the requested order and converts
-    the DN nodata fill (0) to NaN, which is what the composite logic expects.
-    """
-    da = ds[[f"{b}{_ASSET_SUFFIX}" for b in bands]].to_array(dim="band")
-    da = da.assign_coords(band=list(bands)).astype("float32")
-    return da.where(da != _DN_NODATA)
-
-
 def _align_to_grid(
     da: xr.DataArray, grid_y: np.ndarray, grid_x: np.ndarray
 ) -> xr.DataArray:
-    """Flip the north-up composite to ascending y and pin the exact grid coords.
-
-    odc derives coordinates from the geobox affine, which can drift from the
-    landcover's linspace-built coords in the last float ulp; after a sanity
-    check the exact grid arrays are assigned so downstream alignment (zarr,
-    texture matching) is bit-identical.
-    """
+    """Flip the north-up composite to ascending y and pin the exact grid coords."""
     da = da.sortby("y")
     tol_y = 1e-6 * abs(float(grid_y[1] - grid_y[0]))
     tol_x = 1e-6 * abs(float(grid_x[1] - grid_x[0]))
@@ -132,12 +187,7 @@ def _align_to_grid(
 
 
 def _load_date(da: xr.DataArray, date, retries: int = 4, base_delay: float = 2.0):
-    """Compute one date with exponential backoff to ride out HTTP 429s.
-
-    The dask scheduler is scoped to this compute call (sequential reads keep
-    the request rate friendly to the CDSE endpoint) instead of being set
-    process-globally.
-    """
+    """Compute one date, retrying with exponential backoff."""
     last_exc = None
     for attempt in range(retries):
         try:
@@ -149,17 +199,12 @@ def _load_date(da: xr.DataArray, date, retries: int = 4, base_delay: float = 2.0
     raise last_exc
 
 
-def _trim_swath_edges(
-    layer: xr.DataArray, buffer_px: int = _EDGE_TRIM_PX
-) -> xr.DataArray:
-    """NaN-out valid pixels within ``buffer_px`` of a nodata region (swath-edge rim)."""
-    from scipy.ndimage import binary_erosion
+def _scl_valid_mask(scl: xr.DataArray, exclude: Sequence[int]) -> xr.DataArray:
+    """``(y, x)`` bool mask of pixels usable per the scene classification.
 
-    valid = ~np.isnan(layer.values).any(axis=0)
-    if valid.all():  # date fully covers the scene — nothing to trim
-        return layer
-    eroded = binary_erosion(valid, iterations=buffer_px, border_value=1)
-    return layer.where(xr.DataArray(eroded, dims=("y", "x")))
+    False where SCL is nodata (0) or one of the ``exclude`` classes.
+    """
+    return ~scl.isin(sorted({_SCL_NODATA, *exclude}))
 
 
 def _pixel_coverage(layer: xr.DataArray) -> float:
@@ -176,34 +221,69 @@ def _accumulate_until_covered(
     order,
     load_fn,
     min_coverage: float = 0.99,
+    valid_mask_fn=None,
+    min_gap_fill: float = _SKIP_MIN_GAP_FILL,
 ):
-    """Mosaic dates (in ``order``) until pixel coverage of the AOI is complete.
+    """Mosaic dates in ``order`` until the AOI is covered.
 
-    Coverage is judged by **actual valid pixels**, not catalog tile ids: each loaded
-    date is mosaicked onto the accumulator (closest dates kept first, so they win on
-    overlap and later dates only fill NaN gaps). This rides through failed/partial
-    reads, by pulling further dates to fill the gap, instead of trusting a tile-id set that hides
-    the hole.
+    Coverage counts *actual valid pixels*, not catalog tile ids. Closest
+    dates composite first and win on overlap; later ones only fill NaN gaps, and
+    whatever no date covers stays NaN — downstream matching reads that as "keep
+    the base landcover material".
 
-    Stops at ``min_coverage`` or once candidates run out, whichever comes first;
-    pixels no candidate covers stay NaN, which downstream matching reads as
-    "keep the base landcover material".
+    With ``valid_mask_fn`` each date's cheap 20 m SCL mask is read before its four
+    10 m bands, so rejections cost less.
 
     Args:
         order: Candidate dates, already sorted closest-first to the anchor.
         load_fn: ``load_fn(date) -> DataArray`` for one mosaicked date (band, y, x).
         min_coverage: Stop once this fraction of the grid is filled.
+        valid_mask_fn: Optional ``valid_mask_fn(date) -> (y, x) bool DataArray``
+            of pixels usable for compositing (e.g. cloud-free per SCL).
+        min_gap_fill: Fraction of the remaining gap a non-first date must promise
+            to fill to be worth fetching.
 
     Returns:
-        ``(composite, coverage)``. Raises if no date loads at all.
+        ``(composite, coverage)``.
+
+    Raises:
+        S2FetchError: No date contributed — every candidate failed to load, was
+            screened out by the scene classification, or both.
     """
     accum, coverage = None, 0.0
     dates_used, last_error = [], None
+    screened, thin = 0, 0
     for d in order:
         if accum is not None and coverage >= min_coverage:
             break
         try:
-            layer = load_fn(d)
+            if valid_mask_fn is not None:
+                valid = valid_mask_fn(d)
+                if not bool(valid.any()):
+                    screened += 1
+                    logging.info(
+                        "Spectral S2: skip %s — no pixel passes the scene "
+                        "classification",
+                        _date_str(d),
+                    )
+                    continue
+                # A gap-fill gate needs a gap; the first date is always taken.
+                if accum is not None:
+                    gaps = accum.isel(band=0, drop=True).isnull()
+                    gap_px = int(gaps.sum())
+                    new_px = int((valid & gaps).sum())
+                    if new_px < min_gap_fill * max(gap_px, 1):
+                        thin += 1
+                        logging.info(
+                            "Spectral S2: skip %s, valid pixels fill %.2f%% of "
+                            "the remaining gap",
+                            _date_str(d),
+                            100 * new_px / max(gap_px, 1),
+                        )
+                        continue
+                layer = load_fn(d).where(valid)
+            else:
+                layer = load_fn(d)
         except Exception as exc:  # noqa: BLE001 — transient network failures
             last_error = exc
             logging.warning(
@@ -214,27 +294,47 @@ def _accumulate_until_covered(
         coverage = _pixel_coverage(accum)
         dates_used.append(d)
         logging.info(
-            "Spectral S2: + %s -> coverage %.1f%%", _date_str(d), coverage * 100
+            "Spectral S2: + %s -> coverage %.2f%% (%d px uncovered)",
+            _date_str(d),
+            coverage * 100,
+            int(accum.isel(band=0).isnull().sum()),
         )
 
     if accum is None:
+        if screened and last_error is not None:
+            raise S2FetchError(
+                f"Sentinel-2 fetch failed: {screened} candidate date(s) were "
+                f"screened out by the scene classification and the rest failed to "
+                f"load. Last error: {last_error!r}"
+            )
+        if screened:
+            raise S2FetchError(
+                f"Sentinel-2 fetch failed: all {screened} candidate date(s) were "
+                "screened out by the scene classification,  the AOI looks "
+                "persistently cloudy. Widen search_window_days, raise "
+                "max_cloud_cover, or relax scl_exclude."
+            )
         cause = repr(last_error) if last_error else "no candidate dates found"
-        raise RuntimeError(
+        raise S2FetchError(
             f"Sentinel-2 fetch failed: every candidate date failed to load "
             f"(network/endpoint issue, not the composite logic). Last error: {cause}"
         )
 
     logging.info(
-        "Spectral S2: composite from %d date(s) [%s], coverage %.1f%%",
+        "Spectral S2: composite from %d date(s) [%s], %d screened out, %d too "
+        "thin, coverage %.2f%% (%d px uncovered)",
         len(dates_used),
         ", ".join(_date_str(d) for d in dates_used),
+        screened,
+        thin,
         coverage * 100,
+        int(accum.isel(band=0).isnull().sum()),
     )
     if coverage < min_coverage:
         logging.warning(
-            "Spectral S2: composite coverage %.1f%% below target %.1f%% after %d "
-            "date(s); AOI may be partially missing (persistent cloud gaps or repeated "
-            "read failures across all candidate dates).",
+            "Spectral S2: composite coverage %.2f%% below target %.2f%% after %d "
+            "date(s); AOI may be partially missing (persistent cloud gaps or "
+            "repeated read failures across all candidate dates).",
             coverage * 100,
             min_coverage * 100,
             len(dates_used),
@@ -253,37 +353,42 @@ def fetch_s2_reflectance(
     grid_x: np.ndarray,
     aoi_polygon,
     min_coverage: float,
+    scl_exclude: Optional[Sequence[int]] = None,
     credential_id: Optional[str] = None,
 ) -> xr.DataArray:
     """Fetch a Sentinel-2 reflectance composite on the scene grid.
 
-    Every matching item is warped by odc-stac from its native CRS straight
-    onto the scene grid (resolution and extent come from ``grid_y``/``grid_x``),
-    same-day items are mosaicked via ``groupby="solar_day"``, and days closest
-    to the anchor date are composited until the grid is covered.
+    odc-stac warps every matching item from its native CRS straight onto the scene
+    grid, same-day items are mosaicked via ``groupby="solar_day"``, and dates
+    closest to the anchor are composited until ``min_coverage`` is reached.
 
     Args:
         acquisition_date: Anchor date ``YYYY-MM-DD``.
         search_window_days: ± days around the anchor to search.
         bands: Sentinel-2 bands, defining the returned band order.
-        max_cloud_cover: Maximum ``eo:cloud_cover`` percent — reported per whole
-            granule (~110 km), not for the actual AOI, so a passing
-            granule may still be cloudy over the AOI.
-        stac_url: STAC catalog endpoint.
+        max_cloud_cover: Maximum ``eo:cloud_cover`` percent — a coarse granule
+            (~110 km) pre-filter; ``scl_exclude`` does the per-pixel screening.
+        stac_url: STAC catalog endpoint. Must publish per-band radiometry.
         scene_crs_wkt: Scene oblique-Mercator CRS as WKT.
-        grid_y, grid_x: Scene grid coordinates (from the landcover raster) to
-            load onto, guaranteeing coordinate alignment.
+        grid_y, grid_x: Scene grid coordinates from the landcover raster; these
+            fix the output resolution and extent, guaranteeing alignment.
         aoi_polygon: AOI polygon in WGS84 (shapely) for the STAC query.
-        min_coverage: Fraction of the scene grid that must be filled; dates
-            are composited closest-first until this coverage is reached.
+        min_coverage: Fraction of the scene grid that must be filled.
+        scl_exclude: SCL classes masked out per pixel (nodata 0 is always
+            masked). None disables SCL loading and masking entirely.
         credential_id: Id of an s3 credential (``.secrets.yaml``) for the
             Copernicus 'eodata' bucket; None falls back to ambient AWS_* env.
 
     Returns:
-        ``(band, y, x)`` reflectance DataArray; band coord equals ``bands``, y
-        ascending (south-row-0), reflectance clipped to ``>= 0``. Pixels no
-        candidate date covers are NaN, which downstream matching reads as
-        "keep the base landcover material".
+        ``(band, y, x)`` reflectance, band coord equal to ``bands``, y ascending
+        (south-row-0). Pixels no date covered are NaN, which downstream matching
+        reads as "keep the base landcover material".
+
+    Raises:
+        S2FetchError: No usable imagery — empty search, or no date survived
+            loading and screening.
+        RuntimeError: The catalog publishes no per-band radiometry (see
+            :func:`_band_radiometry`) — a misconfiguration, not a transient gap.
     """
     bands = list(bands)
 
@@ -305,10 +410,14 @@ def fetch_s2_reflectance(
     )
     items = search.item_collection()
     if len(items) == 0:
-        raise RuntimeError(
+        raise S2FetchError(
             f"No Sentinel-2 scenes found near {acquisition_date} "
             f"(±{search_window_days} d, cloud < {max_cloud_cover}%) for the AOI."
         )
+
+    radiometry = _band_radiometry(
+        catalog.get_collection("sentinel-2-l2a"), bands, stac_url
+    )
 
     aws, cred_gdal_opts = _configure_s3_credential(credential_id)
     gdal_opts = {
@@ -322,25 +431,35 @@ def fetch_s2_reflectance(
     gdal_opts.update(cred_gdal_opts)
     odc.stac.configure_rio(cloud_defaults=True, aws=aws, **gdal_opts)
 
+    # Load raw DN: _to_band_array applies the radiometry, so we keep control of
+    # the conversion and the reflectance>0 masking. SCL is categorical and must be
+    # resampled nearest, never interpolated.
     ds = odc.stac.load(
         items,
-        bands=[f"{b}{_ASSET_SUFFIX}" for b in bands],
+        bands=[f"{b}{_ASSET_SUFFIX}" for b in bands]
+        + ([_SCL_ASSET] if scl_exclude is not None else []),
         geobox=_scene_geobox(grid_y, grid_x, scene_crs_wkt),
         groupby="solar_day",
-        resampling="bilinear",
+        resampling={"*": "bilinear", _SCL_ASSET: "nearest"},
         dtype="uint16",
         nodata=_DN_NODATA,
         chunks={},
         fail_on_error=False,
     )
-    stack = _to_band_array(ds, bands)
+    stack = _to_band_array(ds, bands, radiometry)
+    valid_mask_fn = (
+        None
+        if scl_exclude is None
+        else lambda d: _scl_valid_mask(_load_date(ds[_SCL_ASSET], d), scl_exclude)
+    )
 
     target = np.datetime64(acquisition_date)
     order = sorted(stack.time.values, key=lambda t: abs(t - target))
     composite, coverage = _accumulate_until_covered(
         order,
-        load_fn=lambda d: _trim_swath_edges(_load_date(stack, d)),
+        load_fn=lambda d: _load_date(stack, d),
         min_coverage=min_coverage,
+        valid_mask_fn=valid_mask_fn,
     )
     if coverage == 0.0:
         hint = (
@@ -348,16 +467,14 @@ def fetch_s2_reflectance(
             if credential_id
             else "missing credentials (set credential_id, or export AWS_* env vars)"
         )
-        raise RuntimeError(
+        raise S2FetchError(
             "Sentinel-2 composite is empty (0% coverage). Every band read returned "
             f"nodata — most likely an S3 authentication failure: {hint}."
         )
 
-    aligned = _align_to_grid(composite, grid_y, grid_x)
-
-    refl = np.clip(aligned.values * _DN_SCALE + _DN_OFFSET, 0.0, None).astype("float32")
-    return xr.DataArray(
-        refl,
-        dims=("band", "y", "x"),
-        coords={"band": bands, "y": grid_y, "x": grid_x},
+    return (
+        _align_to_grid(composite, grid_y, grid_x)
+        .astype("float32")
+        .transpose("band", "y", "x")
+        .drop_vars("time", errors="ignore")
     )
