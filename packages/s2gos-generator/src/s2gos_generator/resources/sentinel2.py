@@ -25,7 +25,7 @@ def process_target_sentinel2(ctx: SceneResourceContext) -> Optional[UPath]:
     if landcover_path is None:
         raise ValueError("Target landcover required for Sentinel-2 fetch")
 
-    from ..processors.spectral.sentinel2 import fetch_s2_reflectance
+    from ..processors.spectral.sentinel2 import S2FetchError, fetch_s2_reflectance
 
     with xr.open_zarr(expand_mapper(landcover_path)) as ds:
         lc = ds[list(ds.data_vars)[0]]
@@ -33,19 +33,24 @@ def process_target_sentinel2(ctx: SceneResourceContext) -> Optional[UPath]:
         grid_x = lc.coords["x"].values
 
     scene_crs_wkt = ctx.coordinate_system.scene_crs.to_wkt()
-    reflectance = fetch_s2_reflectance(
-        acquisition_date=cfg.acquisition_date,
-        search_window_days=cfg.search_window_days,
-        bands=cfg.bands,
-        max_cloud_cover=cfg.max_cloud_cover,
-        stac_url=cfg.stac_url,
-        scene_crs_wkt=scene_crs_wkt,
-        grid_y=grid_y,
-        grid_x=grid_x,
-        aoi_polygon=ctx.target_aoi_polygon,
-        min_coverage=cfg.min_coverage,
-        credential_id=cfg.credential_id,
-    )
+    try:
+        reflectance = fetch_s2_reflectance(
+            acquisition_date=cfg.acquisition_date,
+            search_window_days=cfg.search_window_days,
+            bands=cfg.bands,
+            max_cloud_cover=cfg.max_cloud_cover,
+            stac_url=cfg.stac_url,
+            scene_crs_wkt=scene_crs_wkt,
+            grid_y=grid_y,
+            grid_x=grid_x,
+            aoi_polygon=ctx.target_aoi_polygon,
+            min_coverage=cfg.min_coverage,
+            scl_exclude=cfg.scl_exclude,
+            credential_id=cfg.credential_id,
+        )
+    except S2FetchError as exc:
+        logging.error("Sentinel-2 fetch failed, skipping spectral matching: %s", exc)
+        return None
 
     cache_path = ctx.data_dir / "sentinel2_reflectance.zarr"
     assign_crs(reflectance.to_dataset(name="reflectance"), crs=scene_crs_wkt).to_zarr(

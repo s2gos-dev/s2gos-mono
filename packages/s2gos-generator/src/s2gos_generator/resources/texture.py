@@ -46,11 +46,8 @@ def _apply_spectral_matching(
         logging.warning("Spectral matching enabled but Sentinel-2 data missing")
         return texture_2d, False
 
-    refl = (
-        xr.open_zarr(expand_mapper(s2_path))["reflectance"]
-        .sel(band=list(cfg.bands))
-        .values
-    )
+    with xr.open_zarr(expand_mapper(s2_path)) as ds:
+        refl = ds["reflectance"].sel(band=list(cfg.bands)).values
     with xr.open_zarr(expand_mapper(landcover_path)) as ds:
         landcover_2d = ds[list(ds.data_vars)[0]].values
 

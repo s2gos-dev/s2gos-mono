@@ -155,6 +155,13 @@ def _validate_building_files(output_dir: UPath, asset_paths: Dict[str, UPath]) -
     return True
 
 
+def _validate_sentinel2_file(output_dir: UPath, asset_paths: Dict[str, UPath]) -> bool:
+    """False when no reflectance zarr was recorded — e.g. a prior fetch
+    failure — so the fetch is retried next run instead of cached as done."""
+    path = asset_paths.get("sentinel2_file")
+    return path is not None and path.exists()
+
+
 def _validate_user_asset_files(
     output_dir: UPath, asset_paths: Dict[str, UPath]
 ) -> bool:
@@ -188,7 +195,9 @@ _RESOURCE_CACHE_SPECS: Dict[str, ResourceCacheSpec] = {
     "background_landcover": ResourceCacheSpec(["background_landcover_file"]),
     "target_mesh": ResourceCacheSpec(["mesh_file"]),
     "buffer_mesh": ResourceCacheSpec(["buffer_mesh_file"]),
-    "target_sentinel2": ResourceCacheSpec(["sentinel2_file"]),
+    "target_sentinel2": ResourceCacheSpec(
+        ["sentinel2_file"], validator=_validate_sentinel2_file
+    ),
     "target_texture": ResourceCacheSpec(
         [
             "selection_texture_file",

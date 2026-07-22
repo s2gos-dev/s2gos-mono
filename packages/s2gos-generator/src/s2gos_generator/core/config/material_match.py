@@ -70,22 +70,35 @@ class SpectralMatchingConfig(BaseModel):
         ),
     )
     max_cloud_cover: float = Field(
-        5.0,
+        70.0,
         ge=0.0,
         le=100.0,
         description=(
-            "Maximum cloud_cover (percent) for candidate scenes. STAC reports "
-            "this for the whole Sentinel-2 granule (~110 km across), not for the "
-            "AOI, which is typically a few percent of it. "
+            "Coarse granule-level pre-filter: maximum eo:cloud_cover (percent), "
+            "reported for the whole Sentinel-2 granule (~110 km across), not for "
+            "the AOI. Per-pixel cloud screening is done by scl_exclude, so this "
+            "only needs to drop near-overcast granules; a passing granule costs "
+            "at most one cheap 20 m SCL read before any reflectance is fetched."
+        ),
+    )
+    scl_exclude: Optional[List[int]] = Field(
+        default_factory=lambda: [1, 3, 8, 9, 10],
+        description=(
+            "Sentinel-2 SCL classes masked out per pixel before compositing: "
+            "by default 1 saturated/defective, 3 cloud shadow, 8/9 medium/high-"
+            "probability cloud, 10 thin cirrus. SCL nodata (0) is always masked, "
+            "so an empty list screens nodata only. Set to null to skip loading "
+            "the SCL band altogether, disabling per-pixel screening."
         ),
     )
     min_coverage: float = Field(
-        1.0,
+        0.99,
         gt=0.0,
         le=1.0,
         description=(
             "Fraction of the scene grid that must carry reflectance before "
-            "compositing stops. Pixels left uncovered keep their base landcover material. "
+            "compositing stops. Pixels left uncovered keep their base landcover "
+            "material. Values close to 1.0 can be expensive in cloudy regions."
         ),
     )
     bands: List[str] = Field(
@@ -138,6 +151,16 @@ class SpectralMatchingConfig(BaseModel):
                 f"acquisition_date must be 'YYYY-MM-DD', got {v!r}"
             ) from exc
         return v
+
+    @field_validator("scl_exclude")
+    @classmethod
+    def _validate_scl_exclude(cls, v):
+        if v is None:
+            return v
+        bad = [c for c in v if not 0 <= c <= 11]
+        if bad:
+            raise ValueError(f"scl_exclude classes must be in 0..11, got {bad}")
+        return sorted(set(v))
 
     @field_validator("bands")
     @classmethod
