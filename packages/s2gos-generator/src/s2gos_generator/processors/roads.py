@@ -1,4 +1,4 @@
-"""Road algorithms: OSM/Overpass fetching, parsing, width/material resolution,
+"""Road and railways algorithms: OSM/Overpass fetching, parsing, width/material resolution,
 sidecar (de)serialization, and terrain-flatten operation building."""
 
 import json
@@ -35,10 +35,14 @@ def _is_transient_urlerror(exc: urllib.error.URLError) -> bool:
 
 def _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east) -> Optional[dict]:
     """Fetch road data from Overpass API with retry on transient failures."""
+    bbox = f"{bbox_south},{bbox_west},{bbox_north},{bbox_east}"
     query = (
-        f'[out:json];way["highway"]'
-        f"({bbox_south},{bbox_west},{bbox_north},{bbox_east});"
-        f"out geom;"
+        "[out:json];"
+        "("
+        f'way["highway"]({bbox});'
+        f'way["railway"]({bbox});'
+        ");"
+        "out geom;"
     )
     data = urllib.parse.urlencode({"data": query}).encode("utf-8")
     user_agent = f"s2gos-generator/{get_version()}"
@@ -160,6 +164,45 @@ def _get_road_width(
     return lanes * lane_width + 2 * default_shoulder_m
 
 
+def _get_railway_width(
+    tags: dict,
+    rail_type: str,
+    railway_overrides: dict,
+    default_track_width_m: float,
+) -> float:
+    """Determine railway corridor width from overrides, OSM tags, or defaults.
+    Resolution order: override total_width -> OSM width tag -> track-count based default.
+    """
+    override = railway_overrides.get(rail_type)
+    if override is not None and override.total_width_m is not None:
+        return override.total_width_m
+
+    osm_width_str = tags.get("width")
+    if osm_width_str:
+        osm_width = _parse_osm_width(osm_width_str)
+        if osm_width is not None:
+            return osm_width
+
+    tracks_str = tags.get("tracks")
+    tracks = 1
+    if tracks_str is not None:
+        try:
+            tracks = int(tracks_str)
+        except ValueError:
+            logging.debug(
+                "Ignoring non-integer OSM tracks tag %r on railway=%s",
+                tracks_str,
+                rail_type,
+            )
+
+    track_width = (
+        override.lane_width_m
+        if override is not None and override.lane_width_m is not None
+        else default_track_width_m
+    )
+    return tracks * track_width
+
+
 def _get_road_material(
     tags: dict,
     hw_type: str,
@@ -185,6 +228,19 @@ def _get_road_material(
         return hw_defaults.default_material
 
     return default_material
+
+
+def _get_railway_material(
+    tags: dict,
+    rail_type: str,
+    railway_overrides: dict,
+    default_railway_material: str,
+) -> str:
+    """Determine railway material from override, else a fixed default (ballast)."""
+    override = railway_overrides.get(rail_type)
+    if override is not None and override.default_material is not None:
+        return override.default_material
+    return default_railway_material
 
 
 @dataclass(slots=True)
@@ -213,6 +269,9 @@ def parse_roads(
     default_material = roads_cfg.default_material
     default_lane_width_m = roads_cfg.default_lane_width_m
     default_shoulder_m = roads_cfg.default_shoulder_m
+    railway_overrides = roads_cfg.railway_overrides
+    default_track_width_m = roads_cfg.default_track_width_m
+    default_railway_material = roads_cfg.default_railway_material
 
     for element in elements:
         if element.get("type") != "way":
@@ -220,12 +279,17 @@ def parse_roads(
 
         tags = element.get("tags", {})
         hw_type = tags.get("highway")
-
-        if hw_type is None:
+        rail_type = tags.get("railway")
+        if hw_type is None and rail_type is None:
             continue
-        if (
+        if hw_type is not None and (
             roads_cfg.highway_types is not None
             and hw_type not in roads_cfg.highway_types
+        ):
+            continue
+        if rail_type is not None and (
+            getattr(roads_cfg, "railway_types", None) is not None
+            and rail_type not in roads_cfg.railway_types
         ):
             continue
 
@@ -249,23 +313,30 @@ def parse_roads(
         if clipped_cl.is_empty:
             continue
 
-        width = _get_road_width(
-            tags,
-            hw_type,
-            highway_overrides,
-            road_type_table,
-            default_lane_width_m,
-            default_shoulder_m,
-        )
-
-        material = _get_road_material(
-            tags,
-            hw_type,
-            highway_overrides,
-            road_type_table,
-            surface_materials,
-            default_material,
-        )
+        if hw_type is not None:
+            width = _get_road_width(
+                tags,
+                hw_type,
+                highway_overrides,
+                road_type_table,
+                default_lane_width_m,
+                default_shoulder_m,
+            )
+            material = _get_road_material(
+                tags,
+                hw_type,
+                highway_overrides,
+                road_type_table,
+                surface_materials,
+                default_material,
+            )
+        else:
+            width = _get_railway_width(
+                tags, rail_type, railway_overrides, default_track_width_m
+            )
+            material = _get_railway_material(
+                tags, rail_type, railway_overrides, default_railway_material
+            )
 
         # A road that re-enters the AOI after leaving produces a MultiLineString.
         # Decompose into one Road per component so RoadFlattenOperation always

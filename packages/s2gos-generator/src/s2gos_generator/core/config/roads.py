@@ -25,6 +25,23 @@ class HighwayOverride(BaseModel):
     default_material: Optional[str] = None
 
 
+class RailwayDefaults(NamedTuple):
+    """Per-railway-type geometry and material defaults."""
+
+    track_count: int
+    track_width_m: float
+    default_material: str
+
+
+class RailwayOverride(BaseModel):
+    """Per-railway-type override for geometry and material defaults."""
+
+    total_width_m: Optional[float] = None
+    track_count: Optional[int] = None
+    track_width_m: Optional[float] = None
+    default_material: Optional[str] = None
+
+
 class RoadsConfig(BaseModel):
     """Configuration for road infrastructure in scenes."""
 
@@ -90,6 +107,23 @@ class RoadsConfig(BaseModel):
             lane_count=2, lane_width_m=3.25, default_material="asphalt"
         ),
     }
+    RAILWAY_TYPE_TABLE: ClassVar[dict[str, RailwayDefaults]] = {
+        "rail": RailwayDefaults(
+            track_count=1, track_width_m=4.5, default_material="ballast"
+        ),
+        "light_rail": RailwayDefaults(
+            track_count=1, track_width_m=3.5, default_material="ballast"
+        ),
+        "tram": RailwayDefaults(
+            track_count=1, track_width_m=2.5, default_material="asphalt"
+        ),
+        "narrow_gauge": RailwayDefaults(
+            track_count=1, track_width_m=3.0, default_material="ballast"
+        ),
+        "subway": RailwayDefaults(
+            track_count=1, track_width_m=4.0, default_material="ballast"
+        ),
+    }
 
     DEFAULT_SURFACE_MATERIALS: ClassVar[dict[str, str]] = {
         "asphalt": "asphalt",
@@ -134,6 +168,18 @@ class RoadsConfig(BaseModel):
     default_material: str = Field("asphalt")
     default_lane_width_m: float = Field(3.0, gt=0.0)
     default_shoulder_m: float = Field(0.5, ge=0.0)
+
+    railway_types: Optional[list[str]] = Field(
+        None, description="Railway types to include"
+    )
+
+    railway_overrides: dict[str, RailwayOverride] = Field(
+        default_factory=dict,
+        description="Per-highway-type overrides for geometry and material.",
+    )
+    default_track_width_m: float = Field(3.0, gt=0.0)
+    default_railway_material: str = Field("snow")
+
     mesh_gradient_threshold: float = Field(
         0.02,
         ge=0.0,
