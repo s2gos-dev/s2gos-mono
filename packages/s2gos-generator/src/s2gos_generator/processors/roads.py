@@ -42,7 +42,7 @@ def _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east) -> Optional[di
         f'way["highway"]({bbox});'
         f'way["railway"]({bbox});'
         ");"
-        "out geom;"
+        "out body geom;"
     )
     data = urllib.parse.urlencode({"data": query}).encode("utf-8")
     user_agent = f"s2gos-generator/{get_version()}"
@@ -59,7 +59,25 @@ def _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east) -> Optional[di
                 },
             )
             with urllib.request.urlopen(req, timeout=60) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+
+                # return json.loads(resp.read().decode("utf-8"))
+
+                raw_bytes = resp.read()
+                # Save raw JSON
+                with open("raw_overpass.json", "wb") as f:
+                    f.write(raw_bytes)
+                data_dict = json.loads(raw_bytes.decode("utf-8"))
+
+                # Filter out everything except "rail"
+                if "elements" in data_dict:
+                    data_dict["elements"] = [
+                        elem
+                        for elem in data_dict["elements"]
+                        if elem.get("tags", {}).get("railway") == "rail"
+                    ]
+
+                return data_dict
+
         except urllib.error.HTTPError as exc:
             if exc.code in OVERPASS_RETRYABLE_STATUS and attempt < OVERPASS_MAX_RETRIES:
                 logging.info(
