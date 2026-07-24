@@ -4,7 +4,6 @@ from .assets import (
     MaterialRegion,
     UserAssets,
     XmlSceneConfig,
-    load_assets_from_xml,
 )
 from .atmosphere import (
     AbsorptionDatabase,
@@ -86,7 +85,6 @@ __all__ = [
     "MaterialMapping",
     "XmlSceneConfig",
     "MaterialRegion",
-    "load_assets_from_xml",
     # mesh_refinement
     "MeshRefinementConfig",
     # ways

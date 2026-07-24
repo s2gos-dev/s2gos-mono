@@ -7,7 +7,7 @@ from .terrain_data import (
 )
 from .terrain_mesh import MeshGenerator
 from .terrain_texture import TerrainMaterialGenerator
-from .xml_importer import import_xml_assets, merge_material_libraries
+from .xml_importer import ParsedMitsubaScene, parse_mitsuba_scene
 
 __all__ = [
     "BaseTileProcessor",
@@ -17,8 +17,8 @@ __all__ = [
     "DEMProcessor",
     "LandCoverProcessor",
     "MeshGenerator",
+    "ParsedMitsubaScene",
     "TerrainMaterialGenerator",
     "generate_buffer_mask",
-    "import_xml_assets",
-    "merge_material_libraries",
+    "parse_mitsuba_scene",
 ]

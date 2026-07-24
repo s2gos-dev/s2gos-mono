@@ -165,7 +165,11 @@ def _validate_sentinel2_file(output_dir: UPath, asset_paths: Dict[str, UPath]) -
 def _validate_user_asset_files(
     output_dir: UPath, asset_paths: Dict[str, UPath]
 ) -> bool:
-    """Check that every .ply mesh referenced in user_assets.yml exists."""
+    """Check that every file referenced in user_assets.yml exists.
+
+    Covers placed meshes (``mesh``), instance-collection transform buffers
+    (``data_file``), and shapegroup component files (``filename`` on dict values).
+    """
     assets_file = asset_paths.get("user_assets_file")
     if assets_file is None or not assets_file.exists():
         return False
@@ -175,12 +179,18 @@ def _validate_user_asset_files(
         with open_file(assets_file, "r") as f:
             data = yaml.safe_load(f)
         for obj in data.get("objects", []):
-            mesh = obj.get("mesh")
-            if mesh and not (output_dir / mesh).exists():
-                logging.info(
-                    "Cache miss: user_assets (secondary file missing: %s)", mesh
-                )
-                return False
+            referenced = [obj.get("mesh"), obj.get("data_file")]
+            referenced += [
+                value.get("filename")
+                for value in obj.values()
+                if isinstance(value, dict)
+            ]
+            for rel in referenced:
+                if rel and not (output_dir / rel).exists():
+                    logging.info(
+                        "Cache miss: user_assets (secondary file missing: %s)", rel
+                    )
+                    return False
     except Exception as exc:
         logging.warning("Deep validation failed for user_assets: %s", exc)
         return False

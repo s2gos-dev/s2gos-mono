@@ -252,6 +252,7 @@ class TestProcessUserAssets:
         ctx.output_dir = tmp_path / "output"
         ctx.data_dir = tmp_path / "data"
         ctx.user_assets = user_assets or []
+        ctx.config.xml_scenes = []
         ctx.dependency_outputs = {"target_dem": tmp_path / "dem.tif"}
         cs = MagicMock()
         cs.scene_to_latlon.return_value = (45.0, 10.0)

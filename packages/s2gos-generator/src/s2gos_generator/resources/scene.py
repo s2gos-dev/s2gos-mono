@@ -87,7 +87,7 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
     else:
         logging.info("Scene description: No HAMSTER data paths found in context")
 
-    additional_material_libraries = list(ctx.additional_material_libraries)
+    additional_material_libraries = []
     if ctx.config.region_material_defs:
         additional_material_libraries.append(ctx.config.region_material_defs)
 
