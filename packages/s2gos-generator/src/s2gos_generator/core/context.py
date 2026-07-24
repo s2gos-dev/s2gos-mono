@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from shapely.geometry import box
 from upath import UPath
@@ -17,30 +17,18 @@ class SceneResourceContext:
     def __init__(
         self,
         config: SceneGenConfig,
-        combined_user_assets: List = None,
-        additional_material_libraries: List = None,
         **kwargs,
     ):
         """Initialize scene resource context.
 
         Args:
             config: Scene generation configuration
-            combined_user_assets: List combining config + XML assets
-            additional_material_libraries: Extra material libraries from XML
         """
 
         # Core configuration
         self.config = config
         self.dependency_outputs: Dict[str, UPath | None] = {}
         self.kwargs = kwargs
-
-        # Asset management
-        self.config_assets = list(config.user_assets)
-        self.xml_assets = (
-            combined_user_assets[len(config.user_assets) :]
-            if combined_user_assets
-            else []
-        )
 
         # Direct computed properties from config
         self.output_dir = config.scene_output_dir.upath
@@ -56,7 +44,6 @@ class SceneResourceContext:
 
         # Scene-specific data
         self.assets = SceneAssets()
-        self.additional_material_libraries = additional_material_libraries or []
         self.scene_description: Optional[object] = None
 
         # AOI polygon storage for geometric operations
@@ -73,8 +60,8 @@ class SceneResourceContext:
 
     @property
     def user_assets(self):
-        """Get combined user assets (config + XML assets)."""
-        return self.config_assets + self.xml_assets
+        """User assets declared in the config (XML scenes are expanded separately)."""
+        return list(self.config.user_assets)
 
     @property
     def has_buffer(self) -> bool:

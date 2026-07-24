@@ -404,7 +404,10 @@ class SurfaceBuilder:
         for key, value in kdict.items():
             if isinstance(value, dict) and value.get("type") == "shapegroup":
                 for comp_key, comp_value in value.items():
-                    if isinstance(comp_value, dict) and comp_value.get("type") == "ply":
+                    if isinstance(comp_value, dict) and comp_value.get("type") in (
+                        "ply",
+                        "ellipsoidsmesh",
+                    ):
                         bsdf = comp_value.get("bsdf", {})
                         if bsdf.get("type") == "ref":
                             ref_id = bsdf.get("id")
@@ -445,6 +448,8 @@ class SurfaceBuilder:
                 self._add_shapegroup(kdict, obj, scene_dir)
             elif obj_type == "instance":
                 self._add_instance(kdict, obj)
+            elif obj_type == "instance_collection":
+                self._add_instance_collection(kdict, obj, scene_dir)
             elif obj_type == "vegetation_collection":
                 self._expand_vegetation_collection(obj, scene_dir, kdict)
             elif obj_type == "disk":
@@ -473,6 +478,8 @@ class SurfaceBuilder:
             if isinstance(value, dict) and value.get("type") == "ply":
                 shape_dict = self._create_ply_shape_dict(value, scene_dir)
                 obj_dict[key] = shape_dict
+            elif isinstance(value, dict) and value.get("type") == "ellipsoidsmesh":
+                obj_dict[key] = self._create_ellipsoidsmesh_shape_dict(value, scene_dir)
             elif isinstance(value, dict) and value.get("type") in [
                 "sphere",
                 "cube",
@@ -515,6 +522,33 @@ class SurfaceBuilder:
 
         obj_id = obj.get("id") or obj.get("object_id", f"instance_{len(kdict)}")
         kdict[obj_id] = obj_dict
+
+    def _add_instance_collection(
+        self, kdict: dict, obj: dict, scene_dir: UPath
+    ) -> None:
+        """Add a batch of shapegroup instances via a single ``instancelist``.
+
+        The collection's data file holds the exact per-instance object-to-world
+        matrices, which are handed to Mitsuba verbatim.
+
+        Args:
+            kdict: Kernel dictionary to update
+            obj: Instance-collection spec with ``shapegroup_ref`` and ``data_file``
+                (a ``(N, 4, 4)`` float transform buffer, relative to ``scene_dir``)
+            scene_dir: Base directory for resolving the transform buffer
+        """
+        data_path = scene_dir / obj["data_file"]
+        with open_file(data_path, "rb") as f:
+            transforms = np.load(f)
+
+        collection_id = obj.get("id") or obj.get(
+            "object_id", f"instance_collection_{len(kdict)}"
+        )
+        kdict[collection_id] = {
+            "type": "instancelist",
+            "shapegroup": {"type": "ref", "id": obj["shapegroup_ref"]},
+            "transforms": mi.TensorXf(transforms.astype(np.float32)),
+        }
 
     def _add_disk(self, kdict: dict, obj: dict) -> None:
         """Add a disk object to kernel dictionary.
@@ -670,6 +704,36 @@ class SurfaceBuilder:
         if "face_normals" in value:
             shape_dict["face_normals"] = value["face_normals"]
 
+        if "bsdf" in value:
+            shape_dict["bsdf"] = value["bsdf"]
+
+        return shape_dict
+
+    def _create_ellipsoidsmesh_shape_dict(self, value: dict, scene_dir: UPath) -> dict:
+        """Create an ``ellipsoidsmesh`` shape dictionary for use in shapegroups.
+
+        The ellipsoids are supplied as an ``(N, 10)`` float buffer (center, semi-axes,
+        quaternion with the real part last) loaded from a ``.npy`` file and handed to
+        the plugin via its ``data`` tensor. ``extent`` defaults to ``1.0`` so the
+        stored semi-axes are read literally.
+
+        Args:
+            value: Ellipsoids shape spec with ``filename`` (``.npy``), optional
+                ``extent``, and optional ``bsdf``
+            scene_dir: Base directory for resolving the ``.npy`` path
+
+        Returns:
+            Mitsuba shape dictionary
+        """
+        data_path = scene_dir / value["filename"]
+        with open_file(data_path, "rb") as f:
+            ellipsoids = np.load(f)
+
+        shape_dict = {
+            "type": "ellipsoidsmesh",
+            "data": mi.TensorXf(ellipsoids.astype(np.float32)),
+            "extent": float(value.get("extent", 1.0)),
+        }
         if "bsdf" in value:
             shape_dict["bsdf"] = value["bsdf"]
 

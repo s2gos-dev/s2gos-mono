@@ -2,9 +2,11 @@ import fnmatch
 import logging
 import re
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from s2gos_utils.io.paths import exists
+import numpy as np
+from s2gos_utils.io.paths import exists, open_file
 from s2gos_utils.scene.materials.spectrum import (
     FileSpectrum,
     InterpolatedSpectrum,
@@ -28,225 +30,6 @@ def _sanitize_material_id(material_id: str) -> str:
         Sanitized material ID safe for use in S2GOS
     """
     return material_id.replace(".", "_").replace("-", "_")
-
-
-def import_xml_assets(
-    xml_path: str,
-    base_coordinate: Tuple[float, float],
-    coord_type: str,
-    object_id_prefix: str = "asset",
-    elevation_offset: float = 0.0,
-    scale: float = 1.0,
-    fix_blender_coords: bool = True,
-    rotation_x: float = 0.0,
-    rotation_y: float = 0.0,
-    rotation_z: float = 0.0,
-    material_mappings: Optional[List[Dict[str, Any]]] = None,
-    validate_materials: bool = True,
-) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
-    """Import Mitsuba XML and convert to S2GOS assets with material library.
-
-    Args:
-        xml_path: Path to Mitsuba XML file
-        base_coordinate: Base coordinates (lon, lat) or (x, y)
-        coord_type: "geographic" or "scene"
-        object_id_prefix: Prefix for asset IDs
-        elevation_offset: Height offset above terrain (meters)
-        scale: Uniform scaling factor
-        fix_blender_coords: Apply Blender→Mitsuba coordinate correction (90° X rotation)
-        rotation_x: Global rotation around X-axis in degrees (applied after fix_blender_coords)
-        rotation_y: Global rotation around Y-axis in degrees (applied after fix_blender_coords)
-        rotation_z: Global rotation around Z-axis in degrees (applied after fix_blender_coords)
-        material_mappings: List of MaterialMapping dicts (with pattern, material, mode fields)
-        validate_materials: If True, validate material references and PLY file existence
-
-    Returns:
-        Tuple of (assets_list, material_library):
-        - assets_list: List of asset dicts with string material references
-        - material_library: Dict of {material_id: material_definition}
-    """
-    if len(base_coordinate) != 2:
-        raise ValueError(
-            f"base_coordinate must be a list/tuple of exactly 2 elements, got: {base_coordinate}"
-        )
-
-    logging.info(f"Importing assets from XML: {xml_path}")
-
-    xml_data = _parse_xml(xml_path)
-    material_library = _convert_materials(xml_data["materials"], xml_path)
-
-    logging.info(f"Successfully converted {len(material_library)} materials from XML")
-
-    assets = []
-
-    for shape in xml_data["shapes"]:
-        ply_filename = UPath(shape["file"]).stem
-
-        material_ref = None
-        if material_mappings:
-            for mapping in material_mappings:
-                pattern = mapping["pattern"]
-                material = mapping["material"]
-                mode = mapping.get("mode", "glob")  # Default to glob
-
-                if _match_filename(ply_filename, pattern, mode):
-                    material_ref = material
-                    break
-
-        if material_ref is None:
-            original_material_id = shape["material"]
-            sanitized_material_id = _sanitize_material_id(original_material_id)
-
-            if sanitized_material_id in material_library:
-                material_ref = sanitized_material_id
-            else:
-                available_materials = ", ".join(sorted(material_library.keys()))
-                logging.warning(
-                    f"Material '{original_material_id}' (sanitized: '{sanitized_material_id}') "
-                    f"not found for '{ply_filename}'. "
-                    f"Available materials: [{available_materials}]. "
-                    f"Using 'concrete' fallback."
-                )
-                material_ref = "concrete"
-
-        # Apply rotations with proper axis mapping
-        # When fix_blender_coords=True, a 90° X-rotation is applied which swaps Y/Z axes
-        # We need to remap user's rotations so rotation_z always means "rotate around up"
-        if fix_blender_coords:
-            # After 90° X rotation: Y-axis becomes up (world Z), Z-axis becomes -Y (world)
-            # Swap user's Y/Z rotations to maintain intuitive behavior
-            final_rotation_x = 90.0 + rotation_x
-            final_rotation_y = (
-                rotation_z  # User's Z rotation → Y-axis (now up in rotated frame)
-            )
-            final_rotation_z = (
-                -rotation_y
-            )  # User's Y rotation → -Z-axis (negated due to flip)
-        else:
-            # No coordinate fix: rotations are straightforward
-            final_rotation_x = rotation_x
-            final_rotation_y = rotation_y
-            final_rotation_z = rotation_z
-
-        if abs(final_rotation_x) < 1e-10:
-            final_rotation_x = 0.0
-        if abs(final_rotation_y) < 1e-10:
-            final_rotation_y = 0.0
-        if abs(final_rotation_z) < 1e-10:
-            final_rotation_z = 0.0
-
-        asset_data = {
-            "object_id": f"{object_id_prefix}_{ply_filename}",
-            "ply_path": shape["file"],
-            "material": material_ref,
-            "elevation_offset": elevation_offset,
-            "scale": scale,
-            "rotation_x": final_rotation_x,
-            "rotation_y": final_rotation_y,
-            "rotation_z": final_rotation_z,
-            "blender_fix": fix_blender_coords,
-        }
-
-        if "face_normals" in shape:
-            asset_data["face_normals"] = shape["face_normals"]
-
-        assets.append(asset_data)
-
-    if validate_materials:
-        _validate_assets(assets, material_library)
-
-    logging.info(f"Successfully imported {len(assets)} assets from {xml_path}")
-
-    return assets, material_library
-
-
-def merge_material_libraries(
-    *libraries: Dict[str, Dict[str, Any]],
-) -> Dict[str, Dict[str, Any]]:
-    """Merge multiple material libraries, warning about conflicts."""
-    merged = {}
-    for i, library in enumerate(libraries):
-        for mat_id, mat_def in library.items():
-            if mat_id in merged:
-                logging.warning(
-                    f"Material '{mat_id}' conflict. Using definition from library {i + 1}."
-                )
-            merged[mat_id] = mat_def
-    return merged
-
-
-def _parse_xml(xml_path: str) -> Dict[str, Any]:
-    """Parse Mitsuba XML file to extract materials and shapes.
-
-    Args:
-        xml_path: Path to Mitsuba XML file
-
-    Returns:
-        Dictionary with "materials" and "shapes" keys
-
-    Raises:
-        FileNotFoundError: If XML file doesn't exist
-        ET.ParseError: If XML is malformed
-    """
-    xml_file = UPath(xml_path)
-    if not xml_file.exists():
-        raise FileNotFoundError(f"XML file not found: {xml_path}")
-
-    try:
-        tree = ET.parse(xml_path)
-    except ET.ParseError as e:
-        raise ET.ParseError(
-            f"Failed to parse XML file '{xml_path}': {e}. "
-            "Please check that the file is valid Mitsuba XML."
-        ) from e
-
-    xml_dir = xml_file.parent.resolve()
-
-    # Parse materials
-    materials = {}
-    for bsdf in tree.findall(".//bsdf"):
-        material_id = bsdf.get("id")
-        if material_id:
-            materials[material_id] = _parse_bsdf_element(bsdf)
-        else:
-            logging.warning(
-                f"Found <bsdf> element without 'id' attribute in {xml_path}. Skipping."
-            )
-
-    # Parse shapes
-    shapes = []
-    for shape in tree.findall('.//shape[@type="ply"]'):
-        filename_elem = shape.find('./string[@name="filename"]')
-        if filename_elem is not None:
-            filename = filename_elem.get("value")
-            if not filename:
-                logging.warning(f"Shape in {xml_path} has empty filename. Skipping.")
-                continue
-
-            material_ref = shape.find('./ref[@name="bsdf"]')
-            material_id = (
-                material_ref.get("id", "default-bsdf")
-                if material_ref is not None
-                else "default-bsdf"
-            )
-
-            shape_data = {"file": str(xml_dir / filename), "material": material_id}
-            face_normals_elem = shape.find('./boolean[@name="face_normals"]')
-            if face_normals_elem is not None:
-                face_normals_value = face_normals_elem.get("value", "false").lower()
-                shape_data["face_normals"] = face_normals_value == "true"
-
-            shapes.append(shape_data)
-        else:
-            logging.warning(
-                f"Shape in {xml_path} missing <string name='filename'> element. Skipping."
-            )
-
-    logging.info(
-        f"Parsed {xml_path}: found {len(materials)} materials and {len(shapes)} shapes"
-    )
-
-    return {"materials": materials, "shapes": shapes}
 
 
 def _parse_bsdf_element(bsdf_element) -> Dict[str, Any]:
@@ -340,6 +123,50 @@ def _parse_property(element) -> Any:
     return value
 
 
+def _parse_inline_spectrum(value: str) -> Optional[Dict[str, Any]]:
+    """Parse an inline ``"wl:val, wl:val, ..."`` spectrum string.
+
+    Returns the interpolated-spectrum dict, or ``None`` when the string cannot be
+    parsed — the caller decides the error message and fallback.
+    """
+    try:
+        pairs = [p.strip().split(":") for p in value.split(",")]
+        wavelengths = [float(p[0].strip()) for p in pairs]
+        values_list = [float(p[1].strip()) for p in pairs]
+    except (ValueError, IndexError) as e:
+        logging.error(
+            f"Failed to parse inline spectrum value '{value}': {e}. "
+            "Expected format: 'wavelength:value, wavelength:value, ...'."
+        )
+        return None
+
+    if wavelengths != sorted(wavelengths):
+        logging.warning(
+            f"Spectrum wavelengths are not in ascending order: {wavelengths}. "
+            "This may cause interpolation issues."
+        )
+    for wl in wavelengths:
+        if not (200 <= wl <= 4000):
+            logging.warning(
+                f"Wavelength {wl} nm is outside typical range [200, 4000] nm"
+            )
+    for val in values_list:
+        if val < 0 or val > 1:
+            logging.warning(
+                f"Spectrum value {val} is outside typical reflectance range [0, 1]"
+            )
+
+    logging.debug(
+        f"Parsed inline spectrum: {len(wavelengths)} wavelength points "
+        f"from {wavelengths[0]:.1f} to {wavelengths[-1]:.1f} nm"
+    )
+    return {
+        "type": "interpolated",
+        "wavelengths": wavelengths,
+        "values": values_list,
+    }
+
+
 def _parse_spectrum_element(element) -> Any:
     """Parse spectrum element following Mitsuba 3 specification.
 
@@ -383,59 +210,16 @@ def _parse_spectrum_element(element) -> Any:
             )
             return 0.5
 
-        # Inline wavelength:value pairs format: "400:0.56, 500:0.18, 600:0.58"
-        if ":" in value:
-            try:
-                pairs = [p.strip().split(":") for p in value.split(",")]
-                wavelengths = [float(p[0].strip()) for p in pairs]
-                values_list = [float(p[1].strip()) for p in pairs]
-
-                # Validate wavelengths are in ascending order
-                if wavelengths != sorted(wavelengths):
-                    logging.warning(
-                        f"Spectrum wavelengths are not in ascending order: {wavelengths}. "
-                        "This may cause interpolation issues."
-                    )
-
-                # Validate wavelength range (typical range: 200-4000 nm)
-                for wl in wavelengths:
-                    if not (200 <= wl <= 4000):
-                        logging.warning(
-                            f"Wavelength {wl} nm is outside typical range [200, 4000] nm"
-                        )
-
-                # Validate values are non-negative (reflectance should be in [0, 1])
-                for val in values_list:
-                    if val < 0 or val > 1:
-                        logging.warning(
-                            f"Spectrum value {val} is outside typical reflectance range [0, 1]"
-                        )
-
-                logging.debug(
-                    f"Parsed inline spectrum: {len(wavelengths)} wavelength points "
-                    f"from {wavelengths[0]:.1f} to {wavelengths[-1]:.1f} nm"
-                )
-
-                return {
-                    "type": "interpolated",
-                    "wavelengths": wavelengths,
-                    "values": values_list,
-                }
-
-            except (ValueError, IndexError) as e:
-                logging.error(
-                    f"Failed to parse inline spectrum value '{value}': {e}. "
-                    "Expected format: 'wavelength:value, wavelength:value, ...'. "
-                    "Using default 0.5."
-                )
-                return 0.5
-        else:
+        if ":" not in value:
             logging.error(
                 f"Interpolated spectrum has value '{value}' but no ':' delimiter. "
                 "Expected format: 'wavelength:value, wavelength:value, ...'. "
                 "Using default 0.5."
             )
             return 0.5
+
+        spectrum = _parse_inline_spectrum(value)
+        return spectrum if spectrum is not None else 0.5
 
     else:
         if filename:
@@ -448,56 +232,15 @@ def _parse_spectrum_element(element) -> Any:
             return 0.5
 
         try:
-            float_val = float(value)
-            return float_val
+            return float(value)
         except ValueError:
             pass
 
         if ":" in value:
-            try:
-                pairs = [p.strip().split(":") for p in value.split(",")]
-                wavelengths = [float(p[0].strip()) for p in pairs]
-                values_list = [float(p[1].strip()) for p in pairs]
-
-                # Validate wavelengths are in ascending order
-                if wavelengths != sorted(wavelengths):
-                    logging.warning(
-                        f"Spectrum wavelengths are not in ascending order: {wavelengths}. "
-                        "This may cause interpolation issues."
-                    )
-
-                # Validate wavelength range (typical range: 200-4000 nm)
-                for wl in wavelengths:
-                    if not (200 <= wl <= 4000):
-                        logging.warning(
-                            f"Wavelength {wl} nm is outside typical range [200, 4000] nm"
-                        )
-
-                # Validate values are non-negative (reflectance should be in [0, 1])
-                for val in values_list:
-                    if val < 0 or val > 1:
-                        logging.warning(
-                            f"Spectrum value {val} is outside typical reflectance range [0, 1]"
-                        )
-
-                logging.debug(
-                    f"Parsed inline spectrum: {len(wavelengths)} wavelength points "
-                    f"from {wavelengths[0]:.1f} to {wavelengths[-1]:.1f} nm"
-                )
-
-                return {
-                    "type": "interpolated",
-                    "wavelengths": wavelengths,
-                    "values": values_list,
-                }
-
-            except (ValueError, IndexError) as e:
-                logging.error(
-                    f"Failed to parse inline spectrum value '{value}': {e}. "
-                    "Expected format: 'wavelength:value, wavelength:value, ...'. "
-                    "Using default 0.5."
-                )
-                return 0.5
+            spectrum = _parse_inline_spectrum(value)
+            if spectrum is not None:
+                return spectrum
+            return 0.5
 
         logging.warning(
             f"Could not parse spectrum value '{value}'. "
@@ -875,16 +618,6 @@ MATERIAL_CONVERTERS = {
 }
 
 
-def _ensure_list(value: Any) -> List[float]:
-    """Ensure value is a list of floats."""
-    if isinstance(value, (list, tuple)):
-        return [float(x) for x in value]
-    elif isinstance(value, (int, float)):
-        return [float(value)] * 3
-    else:
-        return [0.5, 0.5, 0.5]
-
-
 def _match_filename(filename: str, pattern: str, mode: str = "glob") -> bool:
     """Check if filename matches pattern using specified matching strategy.
 
@@ -915,9 +648,263 @@ def _match_filename(filename: str, pattern: str, mode: str = "glob") -> bool:
         )
 
 
+_INSTANCE_MARKER = '<shape type="instance"'
+
+
+def _read_scene_header(xml_path: str) -> Tuple[str, bool]:
+    """Return the XML text up to the first ``<instance>`` shape, and whether one exists.
+
+    Instanced scenes list their (potentially hundreds of thousands of) ``<instance>``
+    placements *after* a small header of BSDFs, top-level shapes, and shapegroups.
+    Reading only that header keeps parsing cheap and never builds the full DOM. For an
+    ordinary asset XML with no instances, the whole (small) file is the header.
+    """
+    buffer = ""
+    with open_file(xml_path, "r") as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                return buffer, False
+            buffer += chunk
+            idx = buffer.find(_INSTANCE_MARKER)
+            if idx != -1:
+                return buffer[:idx] + "</scene>\n", True
+
+
+# Placeholder material id for a shape that declares no ``<ref name="bsdf">``.
+NO_BSDF = "default-bsdf"
+
+
+def _parse_scene_shape(shape, xml_dir: "UPath") -> Optional[Dict[str, Any]]:
+    """Parse a ``ply`` or ``ellipsoidsmesh`` shape into a component descriptor.
+
+    Returns ``{"type", "file" (absolute source path), "material", ...}`` or ``None``
+    for an unsupported/filename-less shape. A shape without a bsdf reference gets the
+    :data:`NO_BSDF` placeholder material id.
+    """
+    stype = shape.get("type")
+    if stype not in ("ply", "ellipsoidsmesh"):
+        return None
+    filename_elem = shape.find('./string[@name="filename"]')
+    if filename_elem is None or not filename_elem.get("value"):
+        logging.warning("Skipping %s shape without a filename", stype)
+        return None
+
+    src = UPath(filename_elem.get("value"))
+    if not src.is_absolute():
+        src = (xml_dir / src).resolve()
+
+    ref = shape.find('./ref[@name="bsdf"]')
+    material = (
+        _sanitize_material_id(ref.get("id"))
+        if ref is not None and ref.get("id")
+        else NO_BSDF
+    )
+    component: Dict[str, Any] = {"type": stype, "file": str(src), "material": material}
+
+    if stype == "ply":
+        fn = shape.find('./boolean[@name="face_normals"]')
+        if fn is not None:
+            component["face_normals"] = fn.get("value", "false").lower() == "true"
+    else:  # ellipsoidsmesh
+        extent = shape.find('./float[@name="extent"]')
+        component["extent"] = (
+            float(extent.get("value"))
+            if extent is not None and extent.get("value")
+            else 1.0
+        )
+    return component
+
+
+@dataclass(frozen=True)
+class ParsedMitsubaScene:
+    """A Mitsuba scene reduced to what the generator can place.
+
+    Attributes:
+        materials: ``{sanitized_bsdf_id: material_def}`` converted to s2gos form via
+            the material converter registry.
+        shapes: Top-level placeable ``ply`` components, each
+            ``{"type", "file", "material", ...}`` with an absolute source path.
+        shapegroups: ``[{"id", "components"}]`` where components are ``ply`` or
+            ``ellipsoidsmesh`` descriptors.
+        instanced: Whether the scene lists ``<instance>`` placements (read lazily via
+            :func:`read_instance_transforms`).
+    """
+
+    materials: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    shapes: List[Dict[str, Any]] = field(default_factory=list)
+    shapegroups: List[Dict[str, Any]] = field(default_factory=list)
+    instanced: bool = False
+
+
+def parse_mitsuba_scene(xml_path: str) -> ParsedMitsubaScene:
+    """Parse the placeable content of a Mitsuba XML scene (flat or instanced).
+
+    Reads only the pre-``<instance>`` header (see :func:`_read_scene_header`), so it is
+    cheap even for multi-hundred-MB instanced scenes; a flat asset XML is parsed whole.
+    ``<instance>`` placements are never loaded here — the caller streams them at
+    generation time with :func:`read_instance_transforms`.
+    """
+    header_xml, instanced = _read_scene_header(xml_path)
+    try:
+        root = ET.fromstring(header_xml)
+    except ET.ParseError as e:
+        raise ET.ParseError(
+            f"Failed to parse Mitsuba XML '{xml_path}': {e}. "
+            "Please check that the file is valid Mitsuba XML."
+        ) from e
+
+    xml_dir = UPath(xml_path).parent
+
+    raw_materials: Dict[str, Any] = {}
+    for bsdf in root.findall(".//bsdf"):
+        material_id = bsdf.get("id")
+        if material_id:
+            raw_materials[material_id] = _parse_bsdf_element(bsdf)
+    materials = _convert_materials(raw_materials, xml_path)
+
+    shapegroups: List[Dict[str, Any]] = []
+    for sg in root.findall('./shape[@type="shapegroup"]'):
+        components = [
+            c
+            for c in (
+                _parse_scene_shape(child, xml_dir) for child in sg.findall("./shape")
+            )
+            if c is not None
+        ]
+        shapegroups.append({"id": sg.get("id"), "components": components})
+
+    shapes: List[Dict[str, Any]] = []
+    for shp in root.findall("./shape"):
+        if shp.get("type") in ("shapegroup", "instance"):
+            continue
+        component = _parse_scene_shape(shp, xml_dir)
+        if component is None:
+            continue
+        if component["type"] == "ellipsoidsmesh":
+            logging.warning(
+                "Top-level ellipsoidsmesh in %s is not placeable; wrap it in a "
+                "shapegroup. Skipping.",
+                xml_path,
+            )
+            continue
+        shapes.append(component)
+
+    logging.info(
+        "Parsed Mitsuba scene %s: %d material(s), %d top-level shape(s), "
+        "%d shapegroup(s)%s",
+        xml_path,
+        len(materials),
+        len(shapes),
+        len(shapegroups),
+        " + instances" if instanced else "",
+    )
+    return ParsedMitsubaScene(materials, shapes, shapegroups, instanced)
+
+
+def _parse_vec(element, default: float) -> np.ndarray:
+    """Read a Mitsuba ``x``/``y``/``z`` or ``value`` vector as ``(3,)`` floats.
+
+    ``value`` may be comma- or space-separated. Missing per-axis attributes fall back
+    to ``default`` (0 for translate/rotate axes, 1 for scale).
+    """
+    value = element.get("value")
+    if value is not None:
+        parts = [float(p) for p in value.replace(",", " ").split()]
+        if len(parts) == 1:  # a single value applies to every axis (e.g. uniform scale)
+            return np.array(parts * 3, dtype="float64")
+        if len(parts) == 3:
+            return np.array(parts, dtype="float64")
+        raise ValueError(f"Expected 1 or 3 components in '{value}', got {len(parts)}")
+    return np.array(
+        [float(element.get(a, default)) for a in ("x", "y", "z")], dtype="float64"
+    )
+
+
+def _op_to_matrix(child) -> np.ndarray:
+    """Convert a single ``<transform>`` child element to a ``(4, 4)`` matrix."""
+    from scipy.spatial.transform import Rotation
+
+    tag = child.tag
+    m = np.eye(4)
+    if tag == "translate":
+        m[:3, 3] = _parse_vec(child, 0.0)
+    elif tag == "scale":
+        m[:3, :3] = np.diag(_parse_vec(child, 1.0))
+    elif tag == "rotate":
+        axis = _parse_vec(child, 0.0)
+        norm = float(np.linalg.norm(axis))
+        angle = float(child.get("angle", 0.0))
+        if norm == 0.0:
+            if angle != 0.0:
+                raise ValueError("<rotate> has a zero axis but a nonzero angle")
+            return m
+        m[:3, :3] = Rotation.from_rotvec(axis / norm * np.radians(angle)).as_matrix()
+    elif tag == "matrix":
+        values = [float(p) for p in child.get("value", "").replace(",", " ").split()]
+        if len(values) == 16:
+            m = np.array(values, dtype="float64").reshape(4, 4)
+        elif len(values) == 9:
+            m[:3, :3] = np.array(values, dtype="float64").reshape(3, 3)
+        else:
+            raise ValueError(f"<matrix> expects 9 or 16 values, got {len(values)}")
+    else:
+        raise NotImplementedError(
+            f"Unsupported <instance> transform operation '<{tag}>' "
+            "(supported: translate, rotate, scale, matrix)."
+        )
+    return m
+
+
+def _transform_to_matrix(transform) -> np.ndarray:
+    """Compose a ``<transform>`` element into a ``(4, 4)`` object-to-world matrix."""
+    m = np.eye(4)
+    for child in transform:
+        m = _op_to_matrix(child) @ m
+    return m
+
+
+def read_instance_transforms(xml_path: str) -> Dict[str, np.ndarray]:
+    """Stream ``<shape type="instance">`` placements into per-shapegroup transforms.
+
+    Uses :func:`xml.etree.ElementTree.iterparse` and clears each element, so the
+    (potentially hundreds of thousands of) instances never live in memory at once.
+
+    Each instance's ``<transform name="to_world">`` is composed into a ``(4, 4)``
+    object-to-world matrix (``translate``/``rotate``/``scale``/``matrix`` supported.
+    Instances without a shapegroup ``<ref>`` are skipped with a warning.
+
+    Returns ``{shapegroup_id: (N, 4, 4) float64}`` of instance transforms.
+    """
+    transforms: Dict[str, List[np.ndarray]] = {}
+    skipped_no_ref = 0
+    context = ET.iterparse(str(xml_path), events=("start", "end"))
+    _, root = next(context)  # the root element, so completed children can be dropped
+    for event, elem in context:
+        if event != "end" or elem.tag != "shape" or elem.get("type") != "instance":
+            continue
+        ref = elem.find("./ref")
+        shapegroup_id = ref.get("id") if ref is not None else None
+        if shapegroup_id is None:
+            skipped_no_ref += 1
+        else:
+            transform = elem.find('./transform[@name="to_world"]')
+            matrix = np.eye(4) if transform is None else _transform_to_matrix(transform)
+            transforms.setdefault(shapegroup_id, []).append(matrix)
+        root.clear()
+
+    if skipped_no_ref:
+        logging.warning(
+            "Skipped %d <instance> shape(s) without a shapegroup <ref> in %s",
+            skipped_no_ref,
+            xml_path,
+        )
+    return {k: np.asarray(v, dtype=np.float64) for k, v in transforms.items()}
+
+
 def create_tree_shapegroup(
     tree_xml_path: str, output_dir: Optional["UPath"] = None
-) -> Dict[str, Any]:
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Create Mitsuba shapegroup from tree XML file.
 
     Args:
@@ -925,10 +912,10 @@ def create_tree_shapegroup(
         output_dir: Scene output directory where mesh files will be copied
 
     Returns:
-        Dictionary containing shapegroup definition for Mitsuba scene
+        Tuple of (shapegroup definition, converted material definitions)
     """
-    xml_data = _parse_xml(tree_xml_path)
-    materials = _convert_materials(xml_data["materials"], tree_xml_path)
+    scene = parse_mitsuba_scene(tree_xml_path)
+    materials = scene.materials
 
     shapegroup = {"type": "shapegroup", "id": "tree_group"}
 
@@ -936,22 +923,22 @@ def create_tree_shapegroup(
         tree_meshes_dir = UPath(output_dir) / "meshes" / "tree"
         tree_meshes_dir.mkdir(parents=True, exist_ok=True)
 
-    for i, shape in enumerate(xml_data["shapes"]):
+    for i, shape in enumerate(scene.shapes):
         shape_name = f"tree_component_{i}"
 
-        # Get material reference - sanitize to match IDs from _convert_materials
-        material_id = _sanitize_material_id(shape["material"])
+        # Material ids from parse_mitsuba_scene are already sanitized.
+        material_id = shape["material"]
 
         source_file_path = UPath(shape["file"])
 
         if output_dir and source_file_path.exists():
+            from s2gos_utils.io.paths import copy
+
             dest_filename = source_file_path.name
             dest_path = tree_meshes_dir / dest_filename
 
             if not dest_path.exists():
-                with open(source_file_path, "rb") as f_in:
-                    with dest_path.open("wb") as f_out:
-                        f_out.write(f_in.read())
+                copy(source_file_path, dest_path)
                 logging.info(f"Copied tree mesh: {dest_filename}")
 
             mesh_filename = f"meshes/tree/{dest_filename}"
@@ -968,23 +955,3 @@ def create_tree_shapegroup(
         }
 
     return shapegroup, materials
-
-
-def _validate_assets(
-    assets: List[Dict[str, Any]], material_library: Dict[str, Dict[str, Any]]
-) -> None:
-    """Validate asset material references and PLY file existence."""
-    errors = []
-
-    for asset in assets:
-        asset_id = asset["object_id"]
-
-        # Note: Material references may be external (from scene library) so we don't validate them here
-        ply_path = UPath(asset["ply_path"])
-        if not ply_path.exists():
-            errors.append(f"Asset '{asset_id}': PLY file not found: {ply_path}")
-
-    if errors:
-        raise ValueError(
-            "Asset validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
-        )

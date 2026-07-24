@@ -27,8 +27,6 @@ class SceneGenerationPipeline:
             config: Scene generation configuration
         """
         self.config = config
-        self.xml_assets = []
-        self.xml_material_libraries = []
         self.registry = ResourceRegistry()
         self.executor = CachedDAGExecutor(self.registry)
         self._initialized = False
@@ -38,7 +36,6 @@ class SceneGenerationPipeline:
         if self._initialized:
             return
 
-        self._process_xml_scenes()
         self._register_resources()
         self.registry.update_scene_dependencies()
         self._setup_output_directories()
@@ -133,7 +130,7 @@ class SceneGenerationPipeline:
             )
 
         # Optional resources
-        if self.config.user_assets or self.xml_assets:
+        if self.config.user_assets or self.config.xml_scenes:
             self.registry.register("user_assets", ["target_dem"], process_user_assets)
 
         if self.config.hamster and self.config.hamster.enabled:
@@ -156,42 +153,6 @@ class SceneGenerationPipeline:
             ["target_mesh", "target_texture"],
             create_scene_description,
         )
-
-    def _get_all_assets(self):
-        """Get combined list of config assets + XML assets without mutating config."""
-        return list(self.config.user_assets) + list(self.xml_assets)
-
-    def _process_xml_scenes(self) -> None:
-        if not self.config.xml_scenes:
-            return
-
-        from .config import load_assets_from_xml
-
-        for xml_scene_config in self.config.xml_scenes:
-            # Generate meaningful prefix from XML filename if not specified
-            object_id_prefix = xml_scene_config.object_id_prefix
-            if object_id_prefix is None:
-                xml_path = xml_scene_config.xml_path.upath
-                object_id_prefix = xml_path.stem  # filename without extension
-
-            assets, materials = load_assets_from_xml(
-                xml_path=str(xml_scene_config.xml_path),
-                base_coordinate=xml_scene_config.base_coordinate,
-                coord_type=xml_scene_config.coord_type,
-                object_id_prefix=object_id_prefix,
-                elevation_offset=xml_scene_config.elevation_offset,
-                scale=xml_scene_config.scale,
-                fix_blender_coords=xml_scene_config.fix_blender_coords,
-                rotation_x=xml_scene_config.rotation_x,
-                rotation_y=xml_scene_config.rotation_y,
-                rotation_z=xml_scene_config.rotation_z,
-                material_mappings=xml_scene_config.material_mappings,
-                validate_materials=xml_scene_config.validate_materials,
-            )
-
-            self.xml_assets.extend(assets)
-            if materials:
-                self.xml_material_libraries.append(materials)
 
     def _setup_output_directories(self) -> None:
         directories = [
@@ -263,11 +224,7 @@ class SceneGenerationPipeline:
         self.initialize()
 
         try:
-            ctx = SceneResourceContext(
-                config=self.config,
-                additional_material_libraries=self.xml_material_libraries,
-                combined_user_assets=self._get_all_assets(),
-            )
+            ctx = SceneResourceContext(config=self.config)
 
             poly = ctx.target_aoi_polygon
             logging.info(
