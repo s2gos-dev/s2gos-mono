@@ -155,7 +155,7 @@ class EradiateBackend(SimulationBackend):
                     GroundInstrumentType.PERSPECTIVE_CAMERA,
                     GroundInstrumentType.PYRANOMETER,
                     GroundInstrumentType.FLUX_METER,
-                    GroundInstrumentType.DHP_CAMERA,
+                    GroundInstrumentType.FISHEYE_CAMERA,
                     GroundInstrumentType.RADIANCEMETER,
                 ]:
                     errors.append(
