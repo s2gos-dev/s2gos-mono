@@ -143,8 +143,101 @@ class GroundInstrumentType(str, Enum):
     PERSPECTIVE_CAMERA = "perspective_camera"
     PYRANOMETER = "pyranometer"
     FLUX_METER = "flux_meter"
-    DHP_CAMERA = "dhp_camera"
+    FISHEYE_CAMERA = "fisheye_camera"
     RADIANCEMETER = "radiancemeter"
+
+
+class FisheyeOptions(BaseModel):
+    """Fisheye lens projection and calibration options.
+
+    The ``polynomial`` projection model reproduces a real, calibrated
+    camera/lens pair through its normalised projection function
+    ``rho(theta) = lens_a * theta + lens_b * theta**2`` (with ``rho`` in
+    [0, 1]), in that mode the sensor's ``fov`` is ignored, since the
+    calibration fully defines the mapping.
+    """
+
+    projection_model: Literal[
+        "equidistant",
+        "equisolid",
+        "stereographic",
+        "orthographic",
+        "equisolid_full",
+        "polynomial",
+    ] = Field("equisolid", description="Fisheye projection law")
+    lens_a: Optional[float] = Field(
+        None,
+        description=(
+            "Polynomial calibration coefficient A (linear term), 'Lens A'. "
+            "Required and strictly positive when projection_model='polynomial'."
+        ),
+    )
+    lens_b: Optional[float] = Field(
+        None,
+        description="Polynomial calibration coefficient B (quadratic term), 'Lens B'",
+    )
+    max_radius: Optional[float] = Field(
+        None,
+        description=(
+            "Calibrated image-circle radius ('Maximum Radius') in pixels at "
+            "calibration_resolution. Defaults to the disk inscribed in the film."
+        ),
+    )
+    center_x: Optional[float] = Field(
+        None,
+        description=(
+            "Calibrated optical-centre x coordinate ('Lens X') in pixels at "
+            "calibration_resolution. Defaults to the film centre."
+        ),
+    )
+    center_y: Optional[float] = Field(
+        None,
+        description=(
+            "Calibrated optical-centre y coordinate ('Lens Y') in pixels at "
+            "calibration_resolution. Defaults to the film centre."
+        ),
+    )
+    calibration_resolution: Optional[Tuple[int, int]] = Field(
+        None,
+        description=(
+            "Resolution (width, height) the calibration was performed at, i.e. "
+            "the pixel frame for center_x/center_y/max_radius. Defaults to the "
+            "sensor's resolution; must share its aspect ratio."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_polynomial_calibration(self):
+        calibration_fields = {
+            "lens_a": self.lens_a,
+            "lens_b": self.lens_b,
+            "max_radius": self.max_radius,
+            "center_x": self.center_x,
+            "center_y": self.center_y,
+            "calibration_resolution": self.calibration_resolution,
+        }
+
+        if self.projection_model != "polynomial":
+            set_fields = sorted(
+                k for k, v in calibration_fields.items() if v is not None
+            )
+            if set_fields:
+                raise ValueError(
+                    f"Calibration fields {set_fields} are only used by the "
+                    f"'polynomial' projection model, got projection_model="
+                    f"'{self.projection_model}'"
+                )
+            return self
+
+        if self.lens_a is None or self.lens_a <= 0:
+            raise ValueError(
+                "The 'polynomial' projection model requires lens_a > 0, "
+                f"got {self.lens_a}"
+            )
+        if self.max_radius is not None and self.max_radius <= 0:
+            raise ValueError(f"max_radius must be > 0, got {self.max_radius}")
+
+        return self
 
 
 class PostProcessingOptions(BaseModel):
@@ -367,15 +460,19 @@ class GroundSensor(BaseSensor):
     ] = Field(..., description="Viewing geometry")
     fov: Optional[float] = Field(
         None,
-        description="Field of view in degrees (for camera-like instruments: HYPSTAR, perspective_camera, dhp_camera)",
+        description="Field of view in degrees (for camera-like instruments: HYPSTAR, perspective_camera, fisheye_camera)",
     )
     resolution: Optional[List[int]] = Field(
         None,
-        description="Film resolution [width, height] (for camera-like instruments: HYPSTAR, perspective_camera, dhp_camera)",
+        description="Film resolution [width, height] (for camera-like instruments: HYPSTAR, perspective_camera, fisheye_camera)",
     )
     post_processing: Optional[PostProcessingOptions] = Field(
         None,
         description="Post-processing pipeline options (spatial averaging, SRF, circular mask, etc.)",
+    )
+    fisheye: Optional[FisheyeOptions] = Field(
+        None,
+        description="Fisheye projection/calibration options (fisheye_camera only)",
     )
 
     @model_validator(mode="before")
@@ -413,6 +510,25 @@ class GroundSensor(BaseSensor):
                     spectral_regions=HYPSTAR_SPECTRAL_REGIONS,
                 )
 
+        is_fisheye = (
+            inst == GroundInstrumentType.FISHEYE_CAMERA or inst == "fisheye_camera"
+        )
+
+        if is_fisheye:
+            if data.get("fov") is None:
+                data["fov"] = 180.0
+
+            if data.get("resolution") is None:
+                logger.warning(
+                    "Fisheye sensor missing 'resolution'. Defaulting to [1024, 1024]"
+                )
+                data["resolution"] = [1024, 1024]
+
+            if data.get("post_processing") is None:
+                data["post_processing"] = PostProcessingOptions(
+                    apply_circular_mask=True
+                )
+
         return data
 
     @model_validator(mode="after")
@@ -420,7 +536,7 @@ class GroundSensor(BaseSensor):
         camera_instruments = [
             GroundInstrumentType.HYPSTAR,
             GroundInstrumentType.PERSPECTIVE_CAMERA,
-            GroundInstrumentType.DHP_CAMERA,
+            GroundInstrumentType.FISHEYE_CAMERA,
         ]
 
         if self.instrument in camera_instruments:
@@ -428,6 +544,20 @@ class GroundSensor(BaseSensor):
                 raise ValueError(
                     f"'{self.instrument.value}' requires a pointing view "
                     f"('directional' or 'angular_from_origin'), not '{self.viewing.type}'."
+                )
+
+        if (
+            self.fisheye is not None
+            and self.fisheye.calibration_resolution is not None
+            and self.resolution is not None
+        ):
+            calib_w, calib_h = self.fisheye.calibration_resolution
+            film_w, film_h = self.resolution[0], self.resolution[1]
+            if abs(calib_w / calib_h - film_w / film_h) > 1e-3 * (calib_w / calib_h):
+                raise ValueError(
+                    f"calibration_resolution {tuple(self.fisheye.calibration_resolution)} "
+                    f"and resolution {list(self.resolution)} must have the same "
+                    f"aspect ratio."
                 )
 
         if self.id is None:

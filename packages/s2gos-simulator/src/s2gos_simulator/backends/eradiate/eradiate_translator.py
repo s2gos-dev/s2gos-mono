@@ -32,7 +32,7 @@ from ...config import (
     RectangleTarget,
     SatelliteSensor,
 )
-from ...config.sensors import PostProcessingOptions
+from ...config.sensors import FisheyeOptions, PostProcessingOptions
 
 try:
     from eradiate.units import unit_registry as ureg
@@ -458,18 +458,36 @@ class EradiateTranslator:
 
             base_measure["origin"] = origin
 
-            if sensor.instrument in [
-                GroundInstrumentType.PERSPECTIVE_CAMERA,
-                GroundInstrumentType.DHP_CAMERA,
-            ]:
+            if sensor.instrument == GroundInstrumentType.PERSPECTIVE_CAMERA:
                 base_measure["type"] = "perspective"
                 base_measure["film_resolution"] = sensor.resolution or [1024, 1024]
-                base_measure["fov"] = sensor.fov or (
-                    180.0
-                    if sensor.instrument == GroundInstrumentType.DHP_CAMERA
-                    else 70.0
-                )
+                base_measure["fov"] = sensor.fov or 70.0
                 base_measure["up"] = view.up or [0, 0, 1]
+
+            elif sensor.instrument == GroundInstrumentType.FISHEYE_CAMERA:
+                base_measure["type"] = "fisheye"
+                base_measure["film_resolution"] = sensor.resolution or [1024, 1024]
+                base_measure["up"] = view.up or [0, 0, 1]
+
+                fisheye = sensor.fisheye or FisheyeOptions()
+                base_measure["projection_model"] = fisheye.projection_model
+
+                if fisheye.projection_model == "polynomial":
+                    for key in (
+                        "lens_a",
+                        "lens_b",
+                        "max_radius",
+                        "center_x",
+                        "center_y",
+                        "calibration_resolution",
+                    ):
+                        value = getattr(fisheye, key)
+                        if value is not None:
+                            base_measure[key] = value
+                else:
+                    base_measure["fov"] = (
+                        sensor.fov if sensor.fov is not None else 180.0
+                    )
 
             elif sensor.instrument == GroundInstrumentType.HYPSTAR:
                 base_measure["type"] = "perspective"
