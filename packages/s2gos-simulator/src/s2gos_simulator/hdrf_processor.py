@@ -6,7 +6,7 @@ from upath import UPath
 
 from .backends.eradiate.reflectance_computation import compute_hcrf, compute_hdrf
 from .config import HCRFConfig, HDRFConfig
-from .irradiance_processor import IrradianceProcessor
+from .flux_processor import FluxProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class HDRFProcessor:
     def __init__(self, backend):
         self.backend = backend
         self.simulation_config = backend.simulation_config
-        self.irradiance_processor = IrradianceProcessor(backend)
+        self.irradiance_processor = FluxProcessor(backend)
 
     def requires_hdrf(self) -> bool:
         """Check if any measurements require HDRF computation.
@@ -135,7 +135,7 @@ class HDRFProcessor:
             E_ds = raw_results[irr_id]
 
             L_data = L_ds.get("radiance")
-            E_data = E_ds.get("boa_irradiance")
+            E_data = E_ds.get("flux_density")
 
             if L_data is None or E_data is None:
                 logger.error(f"Missing data variables in datasets for {meas_id}")
@@ -149,14 +149,14 @@ class HDRFProcessor:
                 if ref_type == "hdrf":
                     result_ds = compute_hdrf(
                         radiance=L_data,
-                        boa_irradiance=E_data,
+                        flux_density=E_data,
                         measurement_id=meas_id,
                         extra_attrs=extra_attrs,
                     )
                 else:
                     result_ds = compute_hcrf(
                         radiance=L_data,
-                        boa_irradiance=E_data,
+                        flux_density=E_data,
                         measurement_id=meas_id,
                         extra_attrs=extra_attrs,
                     )

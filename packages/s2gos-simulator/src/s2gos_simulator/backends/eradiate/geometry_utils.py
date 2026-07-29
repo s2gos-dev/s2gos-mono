@@ -8,6 +8,7 @@ from s2gos_utils.scene import SceneDescription
 from upath import UPath
 
 from ...config import AngularFromOriginViewing, LookAtViewing
+from ...config.viewing import zenith_azimuth_to_unit_vector
 
 
 def sanitize_sensor_id(sensor_id: str) -> str:
@@ -124,16 +125,7 @@ class GeometryUtils:
         Returns:
             A tuple containing (target_position, direction_vector).
         """
-        zen_rad = np.deg2rad(view.zenith)
-        az_rad = np.deg2rad(view.azimuth)
-
-        direction = np.array(
-            [
-                np.sin(zen_rad) * np.cos(az_rad),
-                np.sin(zen_rad) * np.sin(az_rad),
-                np.cos(zen_rad),
-            ]
-        )
+        direction = np.array(zenith_azimuth_to_unit_vector(view.zenith, view.azimuth))
 
         origin_vec = np.array(view.origin)
         target_vec = origin_vec + direction * 1000.0

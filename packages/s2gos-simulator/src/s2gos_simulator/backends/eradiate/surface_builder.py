@@ -11,6 +11,7 @@ from s2gos_utils.scene import SceneDescription
 from upath import UPath
 
 from .eradiate_materials import EradiateMaterialAdapter
+from ...config.viewing import perpendicular_to
 
 try:
     import mitsuba as mi
@@ -553,7 +554,9 @@ class SurfaceBuilder:
     def _add_disk(self, kdict: dict, obj: dict) -> None:
         """Add a disk object to kernel dictionary.
 
-        Creates a circular disk with Lambertian white material.
+        Creates a circular disk with Lambertian white material. Mitsuba's disk
+        lies in the XY plane with a +z normal; when an optional ``normal`` is
+        given the disk is reoriented so its geometric normal matches it.
 
         Args:
             kdict: Kernel dictionary to update
@@ -561,21 +564,37 @@ class SurfaceBuilder:
         """
         center = obj["center"]
         radius = obj["radius"]
+        normal = obj.get("normal")
         disk_id = obj.get("id") or obj.get("object_id", f"disk_{len(kdict)}")
+
+        if normal is None:
+            to_world = mi.ScalarTransform4f.translate(
+                center
+            ) @ mi.ScalarTransform4f.scale(radius)
+        else:
+            n = np.asarray(normal, dtype=float)
+            norm = np.linalg.norm(n)
+            if norm == 0.0:
+                raise ValueError(
+                    f"Disk '{disk_id}': 'normal' must be a non-zero vector"
+                )
+            n = n / norm
+            up = perpendicular_to(n.tolist())
+            c = np.asarray(center, dtype=float)
+            to_world = mi.ScalarTransform4f.look_at(
+                origin=c.tolist(), target=(c + n).tolist(), up=up
+            ) @ mi.ScalarTransform4f.scale(radius)
 
         obj_dict = {
             "type": "disk",
-            "to_world": (
-                mi.ScalarTransform4f.translate(center)
-                @ mi.ScalarTransform4f.scale(radius)
-            ),
+            "to_world": to_world,
             "bsdf": {
                 "type": "diffuse",
                 "reflectance": {"type": "uniform", "value": 1.0},
             },
             "id": disk_id,
         }
-        logger.info(f"{obj_dict = }")
+        logger.debug(f"{obj_dict = }")
 
         kdict[disk_id] = obj_dict
 

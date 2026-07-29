@@ -1,8 +1,43 @@
 from __future__ import annotations
 
+import math
 from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
+
+
+def zenith_azimuth_to_unit_vector(zenith_deg: float, azimuth_deg: float) -> List[float]:
+    """Convert zenith/azimuth angles to a unit vector in scene coordinates.
+
+    Scene coordinates are x=East, y=North, z=Up. Zenith 0 points at +z (up),
+    90 lies in the horizontal plane, and 180 points at -z (down). Azimuth is
+    measured from East towards North (0=East, 90=North),.
+    """
+    zen_rad = math.radians(zenith_deg)
+    az_rad = math.radians(azimuth_deg)
+    return [
+        math.sin(zen_rad) * math.cos(az_rad),
+        math.sin(zen_rad) * math.sin(az_rad),
+        math.cos(zen_rad),
+    ]
+
+
+def perpendicular_to(vector: List[float]) -> List[float]:
+    """Return a unit vector perpendicular to ``vector``."""
+    v = [float(c) for c in vector]
+    norm = math.sqrt(sum(c * c for c in v))
+    if norm == 0.0:
+        raise ValueError("Cannot build a perpendicular to the zero vector")
+    v = [c / norm for c in v]
+
+    ref = [0.0, 0.0, 1.0] if abs(v[2]) < 0.9 else [1.0, 0.0, 0.0]
+    cross = [
+        v[1] * ref[2] - v[2] * ref[1],
+        v[2] * ref[0] - v[0] * ref[2],
+        v[0] * ref[1] - v[1] * ref[0],
+    ]
+    cross_norm = math.sqrt(sum(c * c for c in cross))
+    return [c / cross_norm for c in cross]
 
 
 class BaseViewing(BaseModel):

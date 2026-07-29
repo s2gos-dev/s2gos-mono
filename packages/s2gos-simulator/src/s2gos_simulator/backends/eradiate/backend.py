@@ -36,8 +36,8 @@ from ...config import (
     RectangleTarget,
     SimulationConfig,
 )
+from ...flux_processor import FluxProcessor
 from ...hdrf_processor import HDRFProcessor
-from ...irradiance_processor import IrradianceProcessor
 from ...processors.sensor_processor import SensorProcessor
 
 logger = logging.getLogger(__name__)
@@ -114,12 +114,14 @@ class EradiateBackend(SimulationBackend):
         Returns:
             List of measurement type strings
         """
+        # These are compared against MeasurementConfig.type discriminators.
         return [
             "hdrf",
             "hcrf",
             "brf",
             "bhr",
-            "boa_irradiance",
+            "flux",
+            "irradiance",  # legacy tag for FluxConfig
             "pixel_hdrf",
             "pixel_brf",
             "pixel_bhr",
@@ -257,7 +259,7 @@ class EradiateBackend(SimulationBackend):
         brf_proc = BRFProcessor(self)
         bhr_proc = BHRProcessor(self)
         hdrf_proc = HDRFProcessor(self)
-        irr_proc = IrradianceProcessor(self)
+        irr_proc = FluxProcessor(self)
 
         # Separate BRF and BHR measurements from others (they have special workflows)
         brf_configs = brf_proc.get_brf_configs()
@@ -278,7 +280,7 @@ class EradiateBackend(SimulationBackend):
         )  # None means "all sensors"
 
         requires_hdrf = hdrf_proc.requires_hdrf()
-        requires_irr = irr_proc.requires_irradiance()
+        requires_irr = irr_proc.requires_flux()
 
         all_results = {}
 
@@ -341,7 +343,7 @@ class EradiateBackend(SimulationBackend):
         """Run radiance simulation with atmosphere (used for plain sensor runs).
 
         This is NOT used for BRF (no atmosphere), that is handled by `_run_brf_workflow`.
-        NOT used for BOA irradiance measurements, that is handled by `IrradianceProcessor`
+        NOT used for BOA irradiance measurements, that is handled by `FluxProcessor`
         Atmosphere is built from scene description via `create_experiment(atmosphere="auto")`.
 
         Args:
@@ -377,6 +379,8 @@ class EradiateBackend(SimulationBackend):
             raw_dataset.attrs["output_dir"] = str(output_dir)
 
             sensor_config = self.eradiate_translator.get_sensor_by_id(measure_id)
+            result_id = sensor_config.id if sensor_config else measure_id
+
             if sensor_config:
                 post_processed_dataset = self.sensor_processor.process_sensor_result(
                     raw_dataset, sensor_config, output_dir=output_dir
@@ -384,20 +388,20 @@ class EradiateBackend(SimulationBackend):
 
                 if post_processed_dataset is not raw_dataset:
                     self.result_processor.save_result(
-                        f"{measure_id}_raw_eradiate", raw_dataset, output_dir
+                        f"{result_id}_raw_eradiate", raw_dataset, output_dir
                     )
 
                 success = self.result_processor.save_result(
-                    measure_id, post_processed_dataset, output_dir
+                    result_id, post_processed_dataset, output_dir
                 )
                 if success:
-                    all_saved_results[measure_id] = post_processed_dataset
+                    all_saved_results[result_id] = post_processed_dataset
             else:
                 success = self.result_processor.save_result(
-                    measure_id, raw_dataset, output_dir
+                    result_id, raw_dataset, output_dir
                 )
                 if success:
-                    all_saved_results[measure_id] = raw_dataset
+                    all_saved_results[result_id] = raw_dataset
 
         logger.debug(f"Successfully saved results: {list(all_saved_results.keys())}")
 
@@ -408,23 +412,23 @@ class EradiateBackend(SimulationBackend):
         scene_description: SceneDescription,
         scene_dir: UPath,
         output_dir: UPath,
-        irradiance_processor: IrradianceProcessor,
+        flux_processor: FluxProcessor,
         hdrf_processor: HDRFProcessor,
         sensor_ids: Optional[set] = None,
         **kwargs,
     ) -> xr.Dataset:
-        """Execute combined workflow for BOA Irradiance, HDRF/HCRF measurements.
+        """Execute combined workflow for flux density and HDRF/HCRF measurements.
 
         Runs two simulations with atmosphere:
         1. Radiance simulation for all sensors
-        2. BOA irradiance simulation using white reference disk(s)
+        2. Flux density simulation using white reference disk(s)
         Then derives HDRF/HCRF from the ratio (see HDRFProcessor).
 
         Args:
             scene_description: Scene description
             scene_dir: Scene directory path
             output_dir: Output directory
-            irradiance_processor: IrradianceProcessor instance
+            flux_processor: FluxProcessor instance
             sensor_ids: Optional set of sensor IDs to include. If None, all sensors
                 are included. Use this to exclude BRF sensors when running alongside
                 BRF workflow.
@@ -433,20 +437,29 @@ class EradiateBackend(SimulationBackend):
         Returns:
             Combined results dataset
         """
-        logger.info("=" * 60)
-        logger.info("Running radiance simulation Irradiance Measurements")
-        logger.info("=" * 60)
-        sensor_results = self._run_standard_simulation(
-            scene_description,
-            scene_dir,
-            output_dir / "radiance",
-            include_irradiance_measures=False,
-            sensor_ids=sensor_ids,
-            **kwargs,
+        has_sensors_to_render = (
+            bool(self.simulation_config.sensors)
+            if sensor_ids is None
+            else bool(sensor_ids)
         )
+        if has_sensors_to_render:
+            logger.info("=" * 60)
+            logger.info("Running radiance simulation")
+            logger.info("=" * 60)
+            sensor_results = self._run_standard_simulation(
+                scene_description,
+                scene_dir,
+                output_dir / "radiance",
+                include_irradiance_measures=False,
+                sensor_ids=sensor_ids,
+                **kwargs,
+            )
+        else:
+            logger.info("No sensors configured; skipping radiance simulation")
+            sensor_results = {}
 
-        irr_results, _ = irradiance_processor.execute_irradiance_measurements(
-            scene_description, scene_dir, output_dir / "boa_irradiance"
+        irr_results, _ = flux_processor.execute_flux_measurements(
+            scene_description, scene_dir, output_dir / "flux"
         )
 
         combined_results = {**sensor_results, **irr_results}
@@ -567,7 +580,7 @@ class EradiateBackend(SimulationBackend):
         atmosphere: Optional[str] = "auto",
         sensor_ids: Optional[set] = None,
         measures: Optional[list] = None,
-        irradiance_disk_coords: Optional[Dict[str, tuple]] = None,
+        disk_coords_map: Optional[Dict[str, tuple]] = None,
     ):
         """Create Eradiate experiment from scene description.
 
@@ -585,7 +598,7 @@ class EradiateBackend(SimulationBackend):
                 translate_sensors() is bypassed and these measures are used directly.
                 include_irradiance_measures and sensor_ids are ignored.
                 Use this when the caller owns measure construction (e.g. BHR distant_flux).
-            irradiance_disk_coords: Optional mapping of IrradianceConfig ID to
+            disk_coords_map: Optional mapping of FluxConfig ID to
                 (x, y, z) disk coordinates. Passed through to translate_sensors()
                 when measures is None.
 
@@ -654,7 +667,7 @@ class EradiateBackend(SimulationBackend):
                 scene_dir,
                 include_irradiance_measures,
                 sensor_ids,
-                irradiance_disk_coords=irradiance_disk_coords,
+                disk_coords_map=disk_coords_map,
             )
 
         logger.debug(

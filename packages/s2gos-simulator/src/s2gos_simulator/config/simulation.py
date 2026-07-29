@@ -21,9 +21,9 @@ from .illumination import (
 )
 from .measurements import (
     BRFConfig,
+    FluxConfig,
     HCRFConfig,
     HDRFConfig,
-    IrradianceConfig,
     MeasurementConfig,
     PixelBRFConfig,
     PixelHDRFConfig,
@@ -132,11 +132,14 @@ class SimulationConfig(BaseModel):
 
         Ensures that:
         - Measurement IDs are unique
-        - reference_irradiance_id references an existing measurement
-        - The referenced measurement is an IrradianceConfig
+        - irradiance_measurement_id references an existing measurement
+        - The referenced measurement is a FluxConfig
+        - That FluxConfig faces upward
         """
         measurement_ids = set()
-        irradiance_ids = set()
+        flux_ids = set()
+        upward_flux_ids = set()
+        flux_by_id = {}
 
         for measurement in self.measurements:
             m_id = getattr(measurement, "id", None)
@@ -145,24 +148,39 @@ class SimulationConfig(BaseModel):
                     raise ValueError(f"Duplicate measurement ID: '{m_id}'")
                 measurement_ids.add(m_id)
 
-                if isinstance(measurement, IrradianceConfig):
-                    irradiance_ids.add(m_id)
+                if isinstance(measurement, FluxConfig):
+                    flux_ids.add(m_id)
+                    flux_by_id[m_id] = measurement
+                    if measurement.is_upward:
+                        upward_flux_ids.add(m_id)
 
         errors = []
         for measurement in self.measurements:
             ref_id = getattr(measurement, "irradiance_measurement_id", None)
             if ref_id is not None:
                 m_id = getattr(measurement, "id", "unknown")
+                kind = type(measurement).__name__
 
                 if ref_id not in measurement_ids:
                     errors.append(
-                        f"Measurement '{m_id}' references unknown measurement "
-                        f"'{ref_id}' as irradiance_measurement_id"
+                        f"{kind} '{m_id}' references unknown measurement "
+                        f"'{ref_id}' as irradiance_measurement_id. Available: "
+                        f"{sorted(flux_ids) if flux_ids else 'none'}"
                     )
-                elif ref_id not in irradiance_ids:
+                elif ref_id not in flux_ids:
                     errors.append(
-                        f"Measurement '{m_id}' references '{ref_id}' as irradiance, "
-                        f"but it is not an IrradianceConfig"
+                        f"{kind} '{m_id}' references '{ref_id}' as irradiance, "
+                        f"but it is not a FluxConfig"
+                    )
+                elif ref_id not in upward_flux_ids:
+                    # HDRF/HCRF divide radiance by this reference, which is only
+                    # defined against a horizontal plane.
+                    errors.append(
+                        f"{kind} '{m_id}' references '{ref_id}' as irradiance, but "
+                        f"that flux measurement is not upward-facing "
+                        f"(normal_zenith={flux_by_id[ref_id].normal_zenith}). "
+                        f"HDRF/HCRF require a horizontal, upward-facing flux "
+                        f"reference (normal_zenith=0)."
                     )
 
         if errors:
@@ -173,9 +191,6 @@ class SimulationConfig(BaseModel):
     def _validate_sensor_references(self):
         """Validate that measurements reference existing sensors and measurements."""
         sensor_ids = {s.id for s in self.sensors}
-        measurement_ids = {
-            getattr(m, "id", None) for m in self.measurements if getattr(m, "id", None)
-        }
 
         errors = []
         for measurement in self.measurements:
@@ -186,29 +201,6 @@ class SimulationConfig(BaseModel):
                         errors.append(
                             f"HDRF '{measurement.id}' references unknown sensor "
                             f"'{measurement.radiance_sensor_id}'"
-                        )
-                if measurement.irradiance_measurement_id:
-                    if measurement.irradiance_measurement_id not in measurement_ids:
-                        errors.append(
-                            f"HDRF '{measurement.id}' references unknown measurement "
-                            f"'{measurement.irradiance_measurement_id}'"
-                        )
-                    # Validate that referenced measurement is IrradianceConfig
-                    ref_measurement = next(
-                        (
-                            m
-                            for m in self.measurements
-                            if getattr(m, "id", None)
-                            == measurement.irradiance_measurement_id
-                        ),
-                        None,
-                    )
-                    if ref_measurement and not isinstance(
-                        ref_measurement, IrradianceConfig
-                    ):
-                        errors.append(
-                            f"HDRF '{measurement.id}' references '{measurement.irradiance_measurement_id}' "
-                            f"as irradiance, but it is not an IrradianceConfig"
                         )
 
             # Check HCRF references
@@ -225,29 +217,6 @@ class SimulationConfig(BaseModel):
                         errors.append(
                             f"HCRF '{measurement.id}' references sensor "
                             f"'{measurement.radiance_sensor_id}' which is not a camera (no FOV)"
-                        )
-                if measurement.irradiance_measurement_id:
-                    if measurement.irradiance_measurement_id not in measurement_ids:
-                        errors.append(
-                            f"HCRF '{measurement.id}' references unknown measurement "
-                            f"'{measurement.irradiance_measurement_id}'"
-                        )
-                    # Validate it's IrradianceConfig
-                    ref_measurement = next(
-                        (
-                            m
-                            for m in self.measurements
-                            if getattr(m, "id", None)
-                            == measurement.irradiance_measurement_id
-                        ),
-                        None,
-                    )
-                    if ref_measurement and not isinstance(
-                        ref_measurement, IrradianceConfig
-                    ):
-                        errors.append(
-                            f"HCRF '{measurement.id}' references '{measurement.irradiance_measurement_id}' "
-                            f"as irradiance, but it is not an IrradianceConfig"
                         )
 
             # Check BRF sensor references (atmosphere-less BRF)
@@ -295,39 +264,6 @@ class SimulationConfig(BaseModel):
             raise ValueError(
                 "Sensor reference validation failed:\n  - " + "\n  - ".join(errors)
             )
-
-    @model_validator(mode="after")
-    def validate_hdrf_hcrf_requires_irradiance(self):
-        """Validate that HDRF/HCRF measurements have corresponding irradiance measurements.
-
-        In reference mode, HDRF/HCRF must reference an existing IrradianceConfig.
-        In auto-generation mode, the backend will create the irradiance measurement automatically.
-        """
-        # Get all irradiance measurement IDs
-        irradiance_ids = {
-            m.id for m in self.measurements if isinstance(m, IrradianceConfig)
-        }
-
-        errors = []
-        for measurement in self.measurements:
-            if isinstance(measurement, (HDRFConfig, HCRFConfig)):
-                # In reference mode, must reference existing irradiance measurement
-                if measurement.irradiance_measurement_id:
-                    if measurement.irradiance_measurement_id not in irradiance_ids:
-                        errors.append(
-                            f"{measurement.__class__.__name__} '{measurement.id}' references "
-                            f"irradiance_measurement_id='{measurement.irradiance_measurement_id}' "
-                            f"which doesn't exist. Available: {sorted(irradiance_ids) if irradiance_ids else 'none'}"
-                        )
-                # In auto-gen mode, backend will create irradiance measurement
-                # (no validation needed here, as it happens during backend execution)
-
-        if errors:
-            raise ValueError(
-                "HDRF/HCRF validation failed:\n  - " + "\n  - ".join(errors)
-            )
-
-        return self
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""

@@ -96,12 +96,12 @@ def compute_brf(
 def _compute_h_reflectance(
     reflectance_type: Literal["hdrf", "hcrf"],
     radiance: xr.DataArray,
-    boa_irradiance: xr.DataArray,
+    flux_density: xr.DataArray,
     measurement_id: str,
     extra_attrs: Optional[dict] = None,
 ) -> xr.Dataset:
     """Shared implementation for HDRF and HCRF (same formula, different geometry)."""
-    L, E = align_and_broadcast_datasets(radiance, boa_irradiance)
+    L, E = align_and_broadcast_datasets(radiance, flux_density)
     result = (np.pi * L) / E
     attrs = {
         "measurement_type": reflectance_type,
@@ -116,7 +116,7 @@ def _compute_h_reflectance(
 
 def compute_hdrf(
     radiance: xr.DataArray,
-    boa_irradiance: xr.DataArray,
+    flux_density: xr.DataArray,
     measurement_id: str,
     extra_attrs: Optional[dict] = None,
 ) -> xr.Dataset:
@@ -124,13 +124,13 @@ def compute_hdrf(
     Hemispherical-Directional — single viewing direction, atmosphere present.
     """
     return _compute_h_reflectance(
-        "hdrf", radiance, boa_irradiance, measurement_id, extra_attrs
+        "hdrf", radiance, flux_density, measurement_id, extra_attrs
     )
 
 
 def compute_hcrf(
     radiance: xr.DataArray,
-    boa_irradiance: xr.DataArray,
+    flux_density: xr.DataArray,
     measurement_id: str,
     extra_attrs: Optional[dict] = None,
 ) -> xr.Dataset:
@@ -139,7 +139,7 @@ def compute_hcrf(
     Same formula as HDRF; distinction is in measurement geometry.
     """
     return _compute_h_reflectance(
-        "hcrf", radiance, boa_irradiance, measurement_id, extra_attrs
+        "hcrf", radiance, flux_density, measurement_id, extra_attrs
     )
 
 
