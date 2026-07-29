@@ -22,12 +22,12 @@ from ...config import (
     ConstantIllumination,
     DirectionalIllumination,
     DistantViewing,
+    FluxConfig,
     GroundInstrumentType,
     GroundSensor,
     HCRFConfig,
     HDRFConfig,
     HemisphericalViewing,
-    IrradianceConfig,
     LookAtViewing,
     RectangleTarget,
     SatelliteSensor,
@@ -42,6 +42,28 @@ except ImportError:
     ERADIATE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+# Offset between the reference disk and the hdistant ray origins, in meters.
+# Small enough to avoid self-intersection, and matched by
+# config.measurements.MIN_DOWNWARD_CLEARANCE_M, which keeps a downward-facing
+# collector's ray origins above the terrain.
+HDISTANT_RAY_OFFSET_M = 0.1
+
+
+def _hdistant_orientation(azimuth_deg: float) -> float:
+    """Pick a well-conditioned ``orientation`` for an hdistant measure.
+
+    HemisphericalDistantMeasure builds its film frame as
+    ``cross(direction, [cos(orientation), sin(orientation), 0])``, which
+    collapses to a zero vector — and a silently NaN ``to_world`` — whenever the
+    direction lies in the horizontal plane along the orientation azimuth.
+    Offsetting by 90° from the normal's azimuth makes that cross product a unit
+    vector for every zenith angle.
+
+    This only sets the film's azimuthal roll, which cannot affect a flux value
+    obtained by averaging over the whole hemisphere.
+    """
+    return (azimuth_deg + 90.0) % 360.0
 
 
 def _solar_irradiance_dict(illumination) -> Dict[str, Any]:
@@ -239,20 +261,21 @@ class EradiateTranslator:
         scene_dir: UPath,
         include_irradiance_measures: bool = True,
         sensor_ids: Optional[Set[str]] = None,
-        irradiance_disk_coords: Optional[Dict[str, tuple]] = None,
+        disk_coords_map: Optional[Dict[str, tuple]] = None,
     ) -> List[Dict[str, Any]]:
         """Translate generic sensors and measurements to Eradiate measures.
 
         Args:
             scene_description: Scene description with metadata
             scene_dir: Scene directory path
-            include_irradiance_measures: Whether to include irradiance measurements
+            include_irradiance_measures: Whether to include flux measurements
             sensor_ids: Optional set of sensor IDs to include. If None, all sensors
                 are included. Use this to filter sensors for specific workflows
                 (e.g., only BRF sensors for BRF workflow).
-            irradiance_disk_coords: Optional mapping of IrradianceConfig ID to
-                (x, y, z) disk coordinates. Required when include_irradiance_measures
-                is True and IrradianceConfig measurements are present.
+            disk_coords_map: Optional mapping of FluxConfig ID to (x, y, z)
+                reference disk coordinates. Required when
+                include_irradiance_measures is True and FluxConfig measurements
+                are present.
 
         Returns:
             List of Eradiate measure dictionaries
@@ -293,21 +316,19 @@ class EradiateTranslator:
                 raise ValueError(f"Unsupported sensor type: {type(sensor)}")
 
         if include_irradiance_measures:
-            coords_map = irradiance_disk_coords or {}
+            coords_map = disk_coords_map or {}
             for measurement in self.simulation_config.measurements:
-                if isinstance(measurement, IrradianceConfig):
+                if isinstance(measurement, FluxConfig):
                     disk_coords = coords_map.get(measurement.id)
                     if disk_coords is None:
-                        # Disk coords not yet available (e.g. called before irradiance
-                        # simulation has run, or from a workflow that doesn't use irradiance).
+                        # Disk coords not yet available (e.g. called before the flux
+                        # simulation has run, or from a workflow that doesn't use flux).
                         logger.debug(
-                            f"Skipping irradiance measure '{measurement.id}': "
+                            f"Skipping flux measure '{measurement.id}': "
                             f"no disk coordinates provided."
                         )
                         continue
-                    measures.append(
-                        self.create_irradiance_measure(measurement, disk_coords)
-                    )
+                    measures.append(self.create_flux_measure(measurement, disk_coords))
                 elif isinstance(
                     measurement, (HDRFConfig, HCRFConfig, BRFConfig, BHRConfig)
                 ):
@@ -604,44 +625,50 @@ class EradiateTranslator:
 
         return measure
 
-    def create_irradiance_measure(
-        self, irradiance_config, disk_coords: Tuple[float, float, float]
+    def create_flux_measure(
+        self, flux_config, disk_coords: Tuple[float, float, float]
     ) -> Dict[str, Any]:
-        """Create hdistant measure for BOA irradiance measurement.
+        """Create hdistant measure for a flux density measurement.
 
-        The target parameter is set to the white reference disk location.
+        The measure covers the hemisphere about the collector normal, and its
+        target is the white reference disk, which carries that same normal.
 
         Args:
-            irradiance_config: IrradianceConfig with measurement parameters
+            flux_config: FluxConfig with measurement parameters
             disk_coords: Pre-computed disk position (x, y, z) in scene coordinates
 
         Returns:
             Eradiate hdistant measure dictionary with target set to disk location
         """
-        if irradiance_config.location and irradiance_config.location.srf:
-            srf = self.translate_srf(irradiance_config.location.srf)
-            spp = irradiance_config.location.samples_per_pixel
+        if flux_config.location and flux_config.location.srf:
+            srf = self.translate_srf(flux_config.location.srf)
         else:
             srf = {
                 "type": "uniform",
                 "wmin": 380.0,
                 "wmax": 1680.0,
             }
-            spp = irradiance_config.samples_per_pixel or 512
+        # The config's own spp overrides the location's; None inherits it.
+        spp = flux_config.samples_per_pixel
+        if spp is None:
+            spp = flux_config.location.samples_per_pixel
 
         x, y, z = disk_coords
+        normal = flux_config.normal
 
         logger.debug(
-            f"Creating hdistant measure '{irradiance_config.id}' with target at "
-            f"({x:.2f}, {y:.2f}, {z:.2f}) m, spp={spp}, ray_offset=0.1m"
+            f"Creating hdistant measure '{flux_config.id}' with target at "
+            f"({x:.2f}, {y:.2f}, {z:.2f}) m, normal={normal}, spp={spp}, "
+            f"ray_offset={HDISTANT_RAY_OFFSET_M}m"
         )
 
         return {
             "type": "hdistant",
-            "id": sanitize_sensor_id(irradiance_config.id),
+            "id": sanitize_sensor_id(flux_config.id),
             "target": [x, y, z],  # Point at disk location
-            "direction": [0, 0, 1],  # Upward-looking hemisphere
-            "ray_offset": 0.1,  # Small offset to prevent self-intersection
+            "direction": normal,  # Hemisphere about the collector normal
+            "orientation": _hdistant_orientation(flux_config.normal_azimuth) * ureg.deg,
+            "ray_offset": HDISTANT_RAY_OFFSET_M,
             "srf": srf,
             "spp": spp,
         }
@@ -812,14 +839,14 @@ class EradiateTranslator:
 
     def generate_irradiance_measurement_for_hdrf(
         self, hdrf_config: HDRFConfig
-    ) -> IrradianceConfig:
+    ) -> FluxConfig:
         """Generate irradiance measurement for HDRF.
 
         Args:
             hdrf_config: HDRF configuration
 
         Returns:
-            Generated IrradianceConfig
+            Generated FluxConfig
         """
         irradiance_id = f"hdrf_irradiance_{hdrf_config.id}"
 
@@ -828,7 +855,7 @@ class EradiateTranslator:
             update={"srf": hdrf_config.srf}
         )
 
-        return IrradianceConfig(
+        return FluxConfig(
             id=irradiance_id,
             location=location_with_srf,
         )
@@ -857,14 +884,14 @@ class EradiateTranslator:
 
     def generate_irradiance_measurement_for_hcrf(
         self, hcrf_config: HCRFConfig
-    ) -> IrradianceConfig:
+    ) -> FluxConfig:
         """Generate irradiance measurement for HCRF.
 
         Args:
             hcrf_config: HCRF configuration
 
         Returns:
-            Generated IrradianceConfig
+            Generated FluxConfig
         """
         irradiance_id = f"hcrf_irradiance_{hcrf_config.id}"
 
@@ -873,7 +900,7 @@ class EradiateTranslator:
             update={"srf": hcrf_config.srf}
         )
 
-        return IrradianceConfig(
+        return FluxConfig(
             id=irradiance_id,
             location=location_with_srf,
         )
@@ -907,7 +934,7 @@ class EradiateTranslator:
             Sensor configuration or None
         """
         for sensor in self.simulation_config.sensors:
-            if sensor.id == sensor_id:
+            if sensor_id in (sensor.id, sanitize_sensor_id(sensor.id)):
                 return sensor
         return None
 

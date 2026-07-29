@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Annotated, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -9,7 +10,12 @@ from .viewing import (
     AngularFromOriginViewing,
     DistantViewing,
     LookAtViewing,
+    zenith_azimuth_to_unit_vector,
 )
+
+# Minimum clearance below a downward-facing flux collector, in meters. Also the
+# ray offset used by the hdistant disk measures (see eradiate_translator).
+MIN_DOWNWARD_CLEARANCE_M = 0.1
 
 
 class HemisphericalMeasurementLocation(BaseModel):
@@ -131,24 +137,110 @@ class HemisphericalMeasurementLocation(BaseModel):
         return self
 
 
-class IrradianceConfig(BaseModel):
-    """Configuration for BOA irradiance measurement using white reference disk.
+class FluxConfig(BaseModel):
+    """Pointable spectral flux density at a point.
 
-    Measures downward hemispheric irradiance at bottom-of-atmosphere using the
-    white reference disk technique:
+    - Places a small white Lambertian disk (ρ=1.0) at the measurement location,
+      with its normal set by ``normal_zenith`` / ``normal_azimuth``
+    - Views it with an ``hdistant`` measure covering the hemisphere about that
+      same normal, so sampling the leaving radiance gives the total flux
+      incident on the collector plane.
 
-    - Places a small white Lambertian disk (ρ=1.0) at the measurement location
-    - By sampling the incident radiance we indirectly get the total incident flux (E = π × L)
+    The defaults point the collector straight up, giving downwelling (BOA)
+    irradiance — the only behaviour available before the pointing fields
+    existed. ``normal_zenith=180`` points it straight down, measuring outgoing
+    (reflected) flux; intermediate values describe a tilted plane.
     """
 
-    type: Literal["irradiance"] = Field(
-        "irradiance", description="Measurement type (always 'irradiance')"
+    type: Literal["flux", "irradiance"] = Field(
+        "flux", description="Measurement type ('flux'; 'irradiance' is a legacy alias)"
     )
-    id: str = Field(description="Unique identifier for this irradiance measurement")
+    id: str = Field(description="Unique identifier for this flux measurement")
     location: HemisphericalMeasurementLocation = Field(
         ..., description="Geographic or scene location for the measurement"
     )
-    samples_per_pixel: int = Field(512, description="Monte Carlo samples per pixel")
+    normal_zenith: float = Field(
+        0.0,
+        ge=0.0,
+        le=180.0,
+        description=(
+            "Zenith angle of the collector normal in degrees "
+            "(0=facing up, 90=edge-on, 180=facing down)"
+        ),
+    )
+    normal_azimuth: float = Field(
+        0.0,
+        ge=0.0,
+        lt=360.0,
+        description=(
+            "Azimuth angle of the collector normal in degrees (0=East, 90=North). "
+            "Has no effect when normal_zenith is 0 or 180."
+        ),
+    )
+    samples_per_pixel: Optional[int] = Field(
+        None,
+        ge=1,
+        description=(
+            "Monte Carlo samples per pixel. Overrides "
+            "location.samples_per_pixel; None inherits it."
+        ),
+    )
+
+    @property
+    def normal(self) -> List[float]:
+        """Unit normal of the collector plane (x=East, y=North, z=Up)."""
+        return zenith_azimuth_to_unit_vector(self.normal_zenith, self.normal_azimuth)
+
+    @property
+    def is_upward(self) -> bool:
+        """True when the collector faces straight up (horizontal plane)."""
+        return self.normal_zenith == 0.0
+
+    @property
+    def required_clearance_m(self) -> float:
+        """Clearance the collector needs below it, in meters.
+
+        The ``hdistant`` measure offsets its ray origins by
+        MIN_DOWNWARD_CLEARANCE_M along the sampled direction.
+        """
+        lowest_z = math.cos(math.radians(min(180.0, self.normal_zenith + 90.0)))
+        return MIN_DOWNWARD_CLEARANCE_M * max(0.0, -lowest_z)
+
+    @model_validator(mode="after")
+    def validate_downward_clearance(self):
+        """Require enough clearance below the collector for its ray origins."""
+        required = self.required_clearance_m
+        if (
+            required > 0.0
+            and self.location.terrain_relative_height
+            and self.location.height_offset_m <= required
+        ):
+            raise ValueError(
+                f"Flux measurement '{self.id}' is tilted "
+                f"(normal_zenith={self.normal_zenith}) but sits only "
+                f"{self.location.height_offset_m} m above the terrain; "
+                f"location.height_offset_m must exceed {required:.3f} m so that "
+                f"measurement rays start above the surface."
+            )
+        return self
+
+    @classmethod
+    def upward(
+        cls, id: str, location: HemisphericalMeasurementLocation, **kwargs
+    ) -> "FluxConfig":
+        """Collector facing straight up: incoming (downwelling) flux density."""
+        return cls(id=id, location=location, normal_zenith=0.0, **kwargs)
+
+    @classmethod
+    def downward(
+        cls, id: str, location: HemisphericalMeasurementLocation, **kwargs
+    ) -> "FluxConfig":
+        """Collector facing straight down: outgoing (reflected) flux density."""
+        return cls(id=id, location=location, normal_zenith=180.0, **kwargs)
+
+
+# Deprecated alias kept so existing notebooks and scripts keep importing.
+IrradianceConfig = FluxConfig
 
 
 class BRFConfig(BaseModel):
@@ -223,7 +315,7 @@ class HDRFConfig(BaseModel):
         None, description="ID of sensor providing radiance measurement"
     )
     irradiance_measurement_id: Optional[str] = Field(
-        None, description="ID of IrradianceConfig providing BOA irradiance"
+        None, description="ID of an upward-facing FluxConfig providing BOA irradiance"
     )
 
     # Mode 2: Auto-generation mode
@@ -403,7 +495,7 @@ class HCRFConfig(BaseModel):
         description="ID of camera sensor providing conical radiance (must have FOV)",
     )
     irradiance_measurement_id: Optional[str] = Field(
-        None, description="ID of IrradianceConfig providing BOA irradiance"
+        None, description="ID of an upward-facing FluxConfig providing BOA irradiance"
     )
 
     # Mode 2: Auto-generation mode
@@ -500,7 +592,7 @@ class BHRConfig(HemisphericalMeasurementLocation):
 
 MeasurementConfig = Annotated[
     Union[
-        IrradianceConfig,
+        FluxConfig,
         BRFConfig,
         HDRFConfig,
         HCRFConfig,

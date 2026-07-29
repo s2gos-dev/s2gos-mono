@@ -1,13 +1,18 @@
-"""BOA irradiance measurement using reference disk technique.
+"""Flux density (plane irradiance) measurement using the reference disk technique.
 
-Measures downward irradiance at BOA by:
-1. Placing a small reference disk with Lambertian reflectance (ρ=1.0) at target location
-3. Converting measured radiance to irradiance: E = π × L_mean
+Measures the spectral flux density incident on a collector plane by:
+1. Placing a small reference disk with Lambertian reflectance (ρ=1.0) at the
+   target location, oriented along the collector normal
+2. Viewing it with an hdistant measure covering the hemisphere about that normal
+3. Converting the measured radiance to flux density: E = π × L_mean
+
+With the default upward-facing normal this is bottom-of-atmosphere downwelling
+irradiance; pointed downward it measures outgoing (reflected) flux.
 """
 
 import logging
 from dataclasses import replace
-from typing import Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import xarray as xr
@@ -26,34 +31,42 @@ def insert_reference_disk(
     z: float,
     disk_id: str,
     radius: float = REFERENCE_DISK_RADIUS_M,
+    normal: Optional[List[float]] = None,
 ) -> tuple:
     """Return a copy of scene_description with a white Lambertian disk inserted.
 
     The disk has ρ=1.0 (white Lambertian material implied by type="disk").
-    Used for BOA irradiance (HDRF workflow) and BHR reference simulations.
+    Used for flux density (HDRF workflow) and BHR reference simulations.
+
+    Args:
+        normal: Optional collector normal. When omitted the disk keeps Mitsuba's
+            default +z orientation, which is what BHR and upward-facing flux
+            measurements expect.
 
     Returns:
         (modified scene, (x, y, z)) — coordinates passed through for convenience.
     """
     disk = {"object_id": disk_id, "type": "disk", "center": [x, y, z], "radius": radius}
+    if normal is not None:
+        disk["normal"] = list(normal)
     new_objects = (scene_description.objects or []).copy()
     new_objects.insert(0, disk)
     return replace(scene_description, objects=new_objects), (x, y, z)
 
 
-class IrradianceProcessor:
-    """Processor for BOA irradiance measurements using reference disk technique."""
+class FluxProcessor:
+    """Processor for flux density measurements using the reference disk technique."""
 
     def __init__(self, backend):
         self.backend = backend
         self.simulation_config = backend.simulation_config
 
-    def requires_irradiance(self) -> bool:
-        """Check if any irradiance measurements are configured."""
-        from .config import IrradianceConfig
+    def requires_flux(self) -> bool:
+        """Check if any flux measurements are configured."""
+        from .config import FluxConfig
 
         return any(
-            isinstance(m, IrradianceConfig) for m in self.simulation_config.measurements
+            isinstance(m, FluxConfig) for m in self.simulation_config.measurements
         )
 
     def _to_scene_coords(
@@ -106,9 +119,13 @@ class IrradianceProcessor:
         scene_dir: UPath,
         location,
         height_offset_m: float,
-        disk_id: str = "boa_irradiance_disk",
+        disk_id: str = "flux_reference_disk",
+        normal: Optional[List[float]] = None,
     ) -> Tuple[SceneDescription, Tuple[float, float, float]]:
         """Create scene with white Lambertian disk (ρ=1.0) at target location.
+
+        Args:
+            normal: Optional collector normal; see :func:`insert_reference_disk`.
 
         Returns modified scene and disk coordinates (x, y, z).
         """
@@ -148,14 +165,18 @@ class IrradianceProcessor:
             else:
                 z = location.target_z
 
-        logger.info(f"Created reference disk at ({x:.1f}, {y:.1f}, {z:.1f})")
-        return insert_reference_disk(scene_description, x, y, z, disk_id=disk_id)
+        logger.info(
+            f"Created reference disk at ({x:.1f}, {y:.1f}, {z:.1f}), normal={normal}"
+        )
+        return insert_reference_disk(
+            scene_description, x, y, z, disk_id=disk_id, normal=normal
+        )
 
-    def convert_radiance_to_irradiance(
+    def radiance_to_flux_density(
         self,
         radiance: xr.DataArray,
     ) -> xr.DataArray:
-        """Convert disk radiance to BOA irradiance: E = π × L_mean.
+        """Convert disk radiance to flux density: E = π × L_mean.
 
         Averages over hemisphere sampling dimensions (from hdistant measure),
         preserves wavelength dimension.
@@ -163,27 +184,31 @@ class IrradianceProcessor:
         hemisphere_dims = [d for d in radiance.dims if d != "w"]
         logger.debug(f"Radiance dims: {radiance.dims}, shape: {radiance.shape}")
         L_mean = radiance.mean(dim=hemisphere_dims) if hemisphere_dims else radiance
-        E_boa = np.pi * L_mean  # E = π × L for Lambertian ρ=1.0
+        E = np.pi * L_mean  # E = π × L for Lambertian ρ=1.0
 
-        logger.info(f"BOA irradiance: mean={float(E_boa.mean()):.3e} W/m²/nm")
+        logger.info(f"Flux density: mean={float(E.mean()):.3e} W/m²/nm")
 
-        E_boa.attrs.update(
+        E.attrs.update(
             {
-                "quantity": "boa_irradiance",
+                "quantity": "flux_density",
+                "standard_name": "spectral_flux_density",
                 "units": "W m^-2 nm^-1",
-                "conversion": "E = π × mean(L) (where L is from perfect white disk)",
+                "conversion": (
+                    "E = π × mean(L) over the hemisphere about the sensor normal "
+                    "(L is from a perfect white disk)"
+                ),
             }
         )
 
-        return E_boa
+        return E
 
-    def execute_irradiance_measurements(
+    def execute_flux_measurements(
         self,
         scene_description: SceneDescription,
         scene_dir: UPath,
         output_dir: UPath,
     ) -> tuple[Dict[str, xr.Dataset], Dict[str, tuple[float, float, float]]]:
-        """Execute irradiance measurements.
+        """Execute flux density measurements.
 
         Returns:
             Tuple of (results, disk_coords) — disk_coords maps measurement ID
@@ -192,24 +217,24 @@ class IrradianceProcessor:
         import eradiate
         from s2gos_utils.io.paths import mkdir
 
+        from .backends.eradiate.geometry_utils import sanitize_sensor_id
+
         logger.info("=" * 60)
-        logger.info("BOA Irradiance Measurements")
+        logger.info("Flux Density Measurements")
         logger.info("=" * 60)
         mkdir(output_dir)
 
         results = {}
         disk_coords: Dict[str, tuple[float, float, float]] = {}
-        # Filter for IrradianceConfig instances from unified measurements list
-        from .config import IrradianceConfig
+        # Filter for FluxConfig instances from unified measurements list
+        from .config import FluxConfig
 
-        irradiance_configs = [
-            m
-            for m in self.simulation_config.measurements
-            if isinstance(m, IrradianceConfig)
+        flux_configs = [
+            m for m in self.simulation_config.measurements if isinstance(m, FluxConfig)
         ]
 
         disk_scenes = {}
-        for config in irradiance_configs:
+        for config in flux_configs:
             logger.info(f"\n[{config.id}] Creating reference disk...")
             disk_scene, coords = self.create_reference_disk_scene(
                 scene_description,
@@ -217,15 +242,21 @@ class IrradianceProcessor:
                 config.location,
                 config.location.height_offset_m,
                 disk_id=f"disk_{config.id}",
+                normal=config.normal,
             )
             disk_coords[config.id] = coords
             disk_scenes[config.id] = disk_scene
 
-        for config in irradiance_configs:
+        for config in flux_configs:
             disk_scene = disk_scenes[config.id]
 
+            # Only this config's disk is present in this scene, so only its
+            # measure may be created — otherwise the others would target points
+            # in empty air.
             experiment = self.backend.create_experiment(
-                disk_scene, scene_dir, irradiance_disk_coords=disk_coords
+                disk_scene,
+                scene_dir,
+                disk_coords_map={config.id: disk_coords[config.id]},
             )
 
             measure_map = {
@@ -233,23 +264,25 @@ class IrradianceProcessor:
                 for i, m in enumerate(experiment.measures)
             }
 
-            if config.id not in measure_map:
+            # Measure IDs are sanitized during translation (dots → underscores).
+            measure_id = sanitize_sensor_id(config.id)
+            if measure_id not in measure_map:
                 raise RuntimeError(
-                    f"Measure '{config.id}' not found. Available: {list(measure_map.keys())}"
+                    f"Measure '{measure_id}' not found. Available: {list(measure_map.keys())}"
                 )
 
-            measure_idx = measure_map[config.id]
+            measure_idx = measure_map[measure_id]
             eradiate.run(experiment, measures=measure_idx)
 
-            result = experiment.results[config.id]
+            result = experiment.results[measure_id]
             if "radiance" not in result:
                 raise RuntimeError(
                     f"No 'radiance' in results. Available: {list(result.data_vars)}"
                 )
 
-            E_boa = self.convert_radiance_to_irradiance(result["radiance"])
+            E = self.radiance_to_flux_density(result["radiance"])
 
-            dataset_vars = {"boa_irradiance": E_boa}
+            dataset_vars = {"flux_density": E}
             if "irradiance" in result:
                 E_toa = result["irradiance"]
                 toa_dims = [d for d in E_toa.dims if d != "w"]
@@ -261,6 +294,27 @@ class IrradianceProcessor:
                 dataset_vars["toa_irradiance"] = E_toa
 
             result_ds = xr.Dataset(dataset_vars)
+
+            # hdistant's viewing_angles ignore both `direction` and `orientation`,
+            # so they describe the default +z frame and are wrong for any tilted
+            # collector. Drop them rather than ship misleading coordinates.
+            result_ds = result_ds.drop_vars(
+                [c for c in ("vza", "vaa") if c in result_ds.coords]
+            )
+
+            x, y, z = disk_coords[config.id]
+            result_ds.attrs.update(
+                {
+                    "normal_zenith_deg": config.normal_zenith,
+                    "normal_azimuth_deg": config.normal_azimuth,
+                    "normal_vector": list(config.normal),
+                    "azimuth_convention": "east_referenced (0=East, 90=North)",
+                    "disk_x": x,
+                    "disk_y": y,
+                    "disk_z": z,
+                    "disk_radius_m": REFERENCE_DISK_RADIUS_M,
+                }
+            )
 
             output_file = output_dir / f"{config.id}.zarr"
             from s2gos_utils.io.paths import expand_mapper

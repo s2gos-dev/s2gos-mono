@@ -17,7 +17,7 @@ from s2gos_utils.scene import SceneDescription
 from upath import UPath
 
 from .config import BHRConfig
-from .irradiance_processor import insert_reference_disk
+from .flux_processor import insert_reference_disk
 
 logger = logging.getLogger(__name__)
 

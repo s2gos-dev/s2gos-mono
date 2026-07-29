@@ -14,6 +14,7 @@ from .config import (
     ConstantIllumination,
     DirectionalIllumination,
     DistantViewing,
+    FluxConfig,
     GroundInstrumentType,
     GroundSensor,
     HCRFConfig,
@@ -60,6 +61,7 @@ __all__ = [
     "create_chime_sensor",
     "create_hypstar_sensor",
     # Measurement Configs
+    "FluxConfig",
     "IrradianceConfig",
     "HDRFConfig",
     "HCRFConfig",
