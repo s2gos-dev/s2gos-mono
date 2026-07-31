@@ -1,12 +1,4 @@
-"""The S2GOS free demo: browse precalculated results.
-
-Pick a site, a season and an instrument; get back the result dataset, its image and its
-metadata. **Nothing is simulated here.** Every result was rendered offline with Eradiate
-and is looked up in the :data:`RESULTS` table below, which is the one place to edit when
-a run lands or the results move (including to remote object storage).
-
-:func:`plot_bands` and :func:`true_color` draw a banded result in a notebook.
-"""
+"""The S2GOS free demo: browse precalculated results."""
 
 import logging
 import os
@@ -32,89 +24,93 @@ _Site = Literal["PNP", "Gobabeb", "Frascati", "Pisa", "Jaén"]
 _Season = Literal["December", "June"]
 _Instrument = Literal["msi", "hypstar", "RGB camera"]
 
+
+def _msi(folder: str, prefix: str) -> dict:
+    """The four MSI band stores of one run."""
+    return {f"B{b}": f"{folder}/MSI/{prefix}_s2-{b}.zarr" for b in (2, 3, 4, 8)}
+
+
+def _camera(folder: str) -> dict:
+    """The store and rendered image of one camera run."""
+    return {
+        "dataset": f"{folder}/camera/aerial_camera.zarr",
+        "image": f"{folder}/camera/aerial_camera_rgb.png",
+    }
+
+
+#: Every wired result, keyed by the exact (site, season, instrument) the form submits.
+#: Paths are relative to RESULTS_BASE, laid out as ``<site>/<season>/<instrument>/``.
+#: Acquisition times are the observation dates in ``examples/run.sh``.
 RESULTS: dict[tuple[str, str, str], dict] = {
-    # examples/gobabeb_rgb_demo.py:184
-    ("gobabeb", "june", "rgb_camera"): {
-        "dataset": "gobabeb/rgb_camera/gobabeb_sim_camera.zarr",
-        "image": "gobabeb/rgb_camera/camera_rgb.png",
-        "title": "Gobabeb - top-down RGB camera",
-        "acquired": "2024-12-21T09:00",
-    },
-    ("gobabeb", "december", "msi"): {
-        "bands": {
-            "B2": "gobabeb/january/sim_output/gobabeb_sentinel2_s2-2.zarr",
-            "B3": "gobabeb/january/sim_output/gobabeb_sentinel2_s2-3.zarr",
-            "B4": "gobabeb/january/sim_output/gobabeb_sentinel2_s2-4.zarr",
-            "B8": "gobabeb/january/sim_output/gobabeb_sentinel2_s2-8.zarr",
-        },
+    ("Gobabeb", "December", "msi"): {
+        "bands": _msi("gobabeb/december", "gobabeb_sentinel2"),
         "title": "Gobabeb - Sentinel-2 MSI",
         "acquired": "2024-12-21T13:00",
     },
-    ("gobabeb", "december", "hypstar"): {
-        "dataset": "gobabeb/january/sim_output/hypstar.zarr",
-        "title": "Gobabeb - Sentinel-2 MSI",
+    ("Gobabeb", "December", "hypstar"): {
+        "dataset": "gobabeb/december/hypstar/hypstar_series_01_hcrf_series_01.zarr",
+        "title": "Gobabeb - HYPSTAR HCRF",
         "acquired": "2024-12-21T13:00",
     },
-    ("pnp", "december", "msi"): {
-        "bands": {
-            "B2": "pnp/sim_output/pnp_sentinel2_s2-2.zarr",
-            "B3": "pnp/sim_output/pnp_sentinel2_s2-3.zarr",
-            "B4": "pnp/sim_output/pnp_sentinel2_s2-4.zarr",
-            "B8": "pnp/sim_output/pnp_sentinel2_s2-8.zarr",
-        },
+    ("Gobabeb", "December", "RGB camera"): {
+        **_camera("gobabeb/december"),
+        "title": "Gobabeb - oblique aerial RGB camera",
+        "acquired": "2024-12-21T13:00",
+    },
+    ("Jaén", "December", "msi"): {
+        "bands": _msi("jaen/december", "jaen_sentinel2"),
+        "title": "Jaén - Sentinel-2 MSI",
+        "acquired": "2024-12-21T13:00",
+    },
+    ("Jaén", "December", "RGB camera"): {
+        **_camera("jaen/december"),
+        "title": "Jaén - oblique aerial RGB camera",
+        "acquired": "2024-12-21T13:00",
+    },
+    ("PNP", "December", "msi"): {
+        "bands": _msi("pnp/december", "pnp_sentinel2"),
         "title": "Patagonia NP - Sentinel-2 MSI",
-        "acquired": "2024-12-21T14:00",
+        "acquired": "2024-12-21T15:00",
     },
-    ("pnp", "june", "rgb_camera"): {
-        "dataset": "pnp/rgb_camera/pnp_demo_june_camera.zarr",
-        "image": "pnp/rgb_camera/camera_rgb.png",
-        "title": "Patagonia NP - top-down RGB camera",
-        "acquired": "2024-06-21T17:00",
+    ("PNP", "December", "RGB camera"): {
+        **_camera("pnp/december"),
+        "title": "Patagonia NP - oblique aerial RGB camera",
+        "acquired": "2024-12-21T15:00",
+    },
+    ("PNP", "June", "msi"): {
+        "bands": _msi("pnp/june", "pnp_sentinel2"),
+        "title": "Patagonia NP - Sentinel-2 MSI",
+        "acquired": "2024-12-21T15:00",
+    },
+    ("PNP", "June", "RGB camera"): {
+        **_camera("pnp/june"),
+        "title": "Patagonia NP - oblique aerial RGB camera",
+        "acquired": "2024-06-21T15:00",
+    },
+    ("Pisa", "June", "RGB camera"): {
+        **_camera("pisa/june"),
+        "title": "Pisa - oblique aerial RGB camera",
+        "acquired": "2024-06-21T09:00",
     },
 }
 
 
-def resolve(relative: str) -> PathRef:
-    return PathRef(str(to_upath(RESULTS_BASE) / relative), cid=RESULTS_CID)
-
-
-def _key(value: str) -> str:
-    """Fold one site/season/instrument to its lookup form.
-
-    The form submits the display labels ("Gobabeb", "RGB camera") while the table is
-    keyed however it was typed, so both sides go through this: a key differing only in
-    case would otherwise miss at request time with nothing to hint at why.
-    """
-    return str(value).strip().casefold().replace(" ", "_").replace("-", "_")
-
-
-def _build_index(table: dict | None = None) -> dict[tuple[str, str, str], dict]:
-    """A results table re-keyed for lookup, rejecting rows that collapse together."""
-    index: dict[tuple[str, str, str], dict] = {}
-    for key, entry in (RESULTS if table is None else table).items():
-        folded = tuple(_key(part) for part in key)
-        if folded in index:
-            # At import, so a broken table stops the server rather than one request.
-            raise ValueError(
-                f"RESULTS has two rows for {'/'.join(folded)}; keys must differ by more "
-                "than case or spacing."
-            )
-        index[folded] = entry
-    return index
-
-
-_INDEX = _build_index()
+def resolve(relative: str, media_type: str | None = None) -> PathRef:
+    """A table path against RESULTS_BASE, optionally tagged with its media type."""
+    return PathRef(
+        str(to_upath(RESULTS_BASE) / relative), cid=RESULTS_CID, type=media_type
+    )
 
 
 def lookup(site: str, season: str, instrument: str) -> dict:
-    """The :data:`RESULTS` entry for one combination, matched case-insensitively.
+    """The RESULTS entry for one combination.
 
     Raises:
         ValueError: if the combination is not wired, listing those that are.
     """
-    entry = _INDEX.get((_key(site), _key(season), _key(instrument)))
+    entry = RESULTS.get((site, season, instrument))
     if entry is None:
-        wired = ", ".join(f"{s}/{e}/{i}" for s, e, i in sorted(_INDEX))
+        wired = ", ".join(f"{s}/{e}/{i}" for s, e, i in sorted(RESULTS))
         raise ValueError(
             f"No precalculated result for {site}/{season}/{instrument}. "
             f"Available: {wired}."
@@ -122,29 +118,14 @@ def lookup(site: str, season: str, instrument: str) -> dict:
     return entry
 
 
-def availability():
-    """The :data:`RESULTS` table as a ``pandas.DataFrame``, for display in a notebook."""
-    import pandas as pd
-
-    return pd.DataFrame(
-        [
-            dict(zip(("site", "season", "instrument"), key))
-            | {
-                "acquired": entry["acquired"],
-                "title": entry["title"],
-                "has_image": bool(entry.get("image")),
-            }
-            for key, entry in sorted(RESULTS.items())
-        ]
-    )
-
-
 @registry.process(
     id="free-demo",
     title="S2GOS Free Demo",
     outputs={
         "dataset": Field(description="Result dataset (Zarr), openable with xarray."),
-        "image": Field(description="Rendered image, or null if the run has none."),
+        "image": Field(
+            description="Rendered image. Only the RGB camera produces one; null otherwise."
+        ),
         "metadata": Field(description="What was requested, and what was served."),
     },
 )
@@ -177,11 +158,10 @@ def free_demo(
     """Serve one precalculated result.
 
     Returns:
-        dataset: `PathRef` to the Zarr store, or `{band: PathRef}` for a banded run
-            such as MSI -- one store per band, since the bands do not share a
-            wavelength grid. Use `plot_bands`/`true_color` on those.
-        image: `PathRef` to the rendered image, or None when the run has none.
-        metadata: What was requested, what was served, and the store's own facts.
+        dataset: a `PathRef` to the Zarr store, or `{band: PathRef}` for MSI, whose
+            bands each get their own store.
+        image: a `PathRef` to the rendered image, or None when the run has none.
+        metadata: what was requested, what was served, and the store's own facts.
 
     Raises:
         ValueError: if the combination is not wired; the message lists those that are.
@@ -196,11 +176,15 @@ def free_demo(
         else _checked_ref(entry, entry["dataset"])
     )
 
-    image_ref: PathRef | None = resolve(entry["image"]) if entry.get("image") else None
+    image_ref: PathRef | None = (
+        resolve(entry["image"], "image/png") if entry.get("image") else None
+    )
     if image_ref is not None and _is_local(image_ref) and not exists(image_ref):
         logger.warning("Image missing, continuing without it: %s", image_ref.href)
         image_ref = None
 
+    # Facts common to every band are read from one store; B4 by preference, only so that
+    # the same one is reported run to run.
     reference = (
         refs
         if isinstance(refs, PathRef)
@@ -211,9 +195,9 @@ def free_demo(
     ds = open_dataset(reference)
     try:
         metadata = {
-            "site": str(site),
-            "season": str(season),
-            "instrument": str(instrument),
+            "site": site,
+            "season": season,
+            "instrument": instrument,
             "title": entry["title"],
             "acquired": entry["acquired"],
             **_dataset_facts(ds),
@@ -240,18 +224,22 @@ def _checked_ref(entry: dict, relative: str) -> PathRef:
     return ref
 
 
-def _band_centre(ref) -> float:
-    """A band's SRF-weighted centre wavelength in nm, from the store's ``w_srf``."""
-    ds = open_dataset(ref)
+def _read(ref, *names) -> tuple:
+    """Named variables from one store, as plain arrays, leaving nothing open."""
+    ds = open_dataset(_as_ref(ref))
     try:
-        return float(np.asarray(ds["w_srf"]).ravel()[0])
+        return tuple(np.asarray(ds[name], dtype=float) for name in names)
     finally:
         ds.close()
 
 
+def _band_centre(ref) -> float:
+    """A band's SRF-weighted centre wavelength in nm, from the store's ``w_srf``."""
+    return float(_read(ref, "w_srf")[0].ravel()[0])
+
+
 def _is_local(ref) -> bool:
-    """Whether ``exists()`` means anything here -- https answers False regardless (see
-    the note in ``s2gos_utils.io.resolver``), so checking would spuriously fail."""
+    """Whether ``exists()`` is meaningful for this ref: http(s) always answers False."""
     return to_upath(ref).protocol not in ("http", "https")
 
 
@@ -278,11 +266,8 @@ def _first(ds, name: str) -> float | None:
 
 
 def _as_ref(value):
-    """Accept a ``PathRef``, or an OGC Link (object or dict) as returned over HTTP.
-
-    A job's results arrive as `Link` objects, which carry the path but are not path-like,
-    so opening one directly raises `TypeError` deep inside fsspec.
-    """
+    """Coerce to a ``PathRef``. A job's results arrive as OGC ``Link``s, object or dict,
+    which carry the path but are not path-like."""
     if value is None or isinstance(value, PathRef):
         return value
     if isinstance(value, dict):
@@ -292,12 +277,7 @@ def _as_ref(value):
 
 
 def _caption(metadata: dict) -> str:
-    """One line of acquisition facts, for the foot of a figure.
-
-    The bands come from ``metadata["bands"]`` rather than from the store's own spectral
-    facts: those describe the reference band alone and would read as if the whole run
-    were ten wavelengths of B4.
-    """
+    """One line of acquisition facts, for the foot of a figure."""
     sza, saa = metadata.get("sza"), metadata.get("saa")
     bands = metadata.get("bands") or {}
     bits = [
@@ -326,54 +306,55 @@ def _annotate(fig, metadata: dict, subtitle: str = ""):
 _BAND_COLOURS = {"B2": "#1f77b4", "B3": "#2ca02c", "B4": "#d62728", "B8": "#7f2704"}
 
 
-def _band_refs(outputs: dict) -> dict:
-    """The ``{band: ref}`` mapping, from a whole result or from the mapping itself.
+def _unwrap(outputs, name: str) -> tuple:
+    """The named output and its metadata, given any of: the client's ``JobResults``,
+    its ``.root`` dict, a plain ``free_demo()`` result dict, or just the one output
+    named here.
 
-    Both are natural things to reach for -- `plot_bands(outputs)` and
-    `plot_bands(results.root["dataset"])` -- so accept either rather than making the
-    caller remember which.
+    Every plotter takes any of these, so callers never need to remember which form a
+    particular plotter wants.
     """
-    dataset = outputs["dataset"] if "dataset" in outputs else outputs
-    if not isinstance(dataset, dict) or not dataset:
+    root = getattr(outputs, "root", None)
+    if isinstance(root, dict):
+        outputs = root
+    if isinstance(outputs, dict) and "metadata" in outputs:
+        return outputs.get(name), outputs["metadata"]
+    return outputs, {}
+
+
+def _band_refs(dataset) -> dict:
+    """Coerce a ``{band: ref}`` mapping, rejecting anything that is not banded."""
+    if not isinstance(dataset, dict) or not dataset or "href" in dataset:
         raise ValueError(
-            "plot_bands() and true_color() need a banded result -- a {band: reference} "
-            "mapping, as an msi run returns, or a whole result containing one. This one "
-            "wires a single store, so there are no bands to plot."
+            "plot_bands() and true_color() need a banded result: a {band: reference} "
+            "mapping, as an msi run returns. This one wires a single store."
         )
     return {band: _as_ref(ref) for band, ref in dataset.items()}
 
 
-def _band_metadata(outputs: dict) -> dict:
-    """The metadata that goes with a result, or an empty dict for a bare mapping."""
-    return (outputs.get("metadata") or {}) if "dataset" in outputs else {}
-
-
-def _band_maps(outputs: dict) -> list[tuple[str, float, "np.ndarray"]]:
+def _band_maps(outputs) -> list[tuple[str, float, "np.ndarray"]]:
     """``(band, centre_nm, brf_srf map)`` per band, in wavelength order."""
-    centres = _band_metadata(outputs).get("bands") or {}
+    dataset, metadata = _unwrap(outputs, "dataset")
+    centres = metadata.get("bands") or {}
     maps = []
-    for band, ref in _band_refs(outputs).items():
-        ds = open_dataset(ref)
-        try:
-            centre = centres.get(band) or float(np.asarray(ds["w_srf"]).ravel()[0])
-            values = np.asarray(ds["brf_srf"].squeeze(drop=True), dtype=float)
-            maps.append((band, centre, _north_up(values)))
-        finally:
-            ds.close()
+    for band, ref in _band_refs(dataset).items():
+        w_srf, brf = _read(ref, "w_srf", "brf_srf")
+        centre = centres.get(band) or float(w_srf.ravel()[0])
+        maps.append((band, centre, _north_up(brf.squeeze())))
     return sorted(maps, key=lambda row: row[1])
 
 
-def plot_bands(outputs: dict, figsize=None, columns: int = 2):
+def plot_bands(outputs, figsize=None, columns: int = 2):
     """Draw the ``brf_srf`` map of every band, one panel per band.
 
     Args:
-        outputs: A whole ``free-demo`` result, or just its ``{band: ref}`` mapping.
+        outputs: A free-demo result -- JobResults, its .root dict, or just the dataset mapping.
         figsize: Figure size in inches. Defaults to 5 inches per panel.
         columns: Panels per row.
     """
     import matplotlib.pyplot as plt
 
-    metadata = _band_metadata(outputs)
+    _, metadata = _unwrap(outputs, "dataset")
     maps = _band_maps(outputs)
 
     ncols = min(columns, len(maps))
@@ -403,12 +384,8 @@ def plot_bands(outputs: dict, figsize=None, columns: int = 2):
 
 
 def _north_up(array):
-    """Flip a ``y_index``-indexed map for display.
-
-    Row 0 of a result grid is the *southern* edge while ``imshow`` draws row 0 at the
-    top, so a map handed over as-is comes out upside down. Checked against the rendered
-    PNGs: flipped correlates at r=0.92 (Gobabeb) and r=0.99 (PNP), unflipped at ~0.
-    """
+    """Flip a ``y_index``-indexed map for display: row 0 is the southern edge of the
+    grid, while ``imshow`` draws row 0 at the top."""
     return array[::-1]
 
 
@@ -433,22 +410,6 @@ def _adj(a, tx: float = _MID_R, ty: float = 1.0, max_c: float = _MAX_R):
     )
 
 
-def _adj_gamma(b):
-    """The script's ``adjGamma``: gamma with a small offset, renormalised to [0, 1]."""
-    off_pow = _G_OFF**_GAMMA
-    off_range = (1.0 + _G_OFF) ** _GAMMA - off_pow
-    return (np.power(b + _G_OFF, _GAMMA) - off_pow) / off_range
-
-
-def _srgb(c):
-    """Linear light to sRGB (the script's ``sRGB``)."""
-    return np.where(
-        c <= 0.0031308,
-        12.92 * c,
-        1.055 * np.power(np.clip(c, 0.0, None), 0.41666666666) - 0.055,
-    )
-
-
 def _composite(refs: dict):
     """Stack B4/B3/B2 ``brf_srf`` into a ``(y, x, 3)`` sRGB array in [0, 1].
 
@@ -465,36 +426,40 @@ def _composite(refs: dict):
             f"{sorted(refs)} and is missing {missing}."
         )
 
-    channels = []
-    for band in ("B4", "B3", "B2"):
-        ds = open_dataset(refs[band])
-        try:
-            reflectance = np.asarray(ds["brf_srf"].squeeze(drop=True), dtype=float)
-            channels.append(reflectance - _RAYLEIGH[band])
-        finally:
-            ds.close()
+    channels = [
+        _read(refs[band], "brf_srf")[0].squeeze() - _RAYLEIGH[band]
+        for band in ("B4", "B3", "B2")
+    ]
 
-    rgb = _adj_gamma(_adj(_north_up(np.stack(channels, axis=-1))))
+    rgb = _adj(_north_up(np.stack(channels, axis=-1)))
+    # adjGamma: gamma with a small offset, renormalised to [0, 1].
+    off_pow = _G_OFF**_GAMMA
+    rgb = (np.power(rgb + _G_OFF, _GAMMA) - off_pow) / (
+        (1.0 + _G_OFF) ** _GAMMA - off_pow
+    )
     # satEnh: pull each channel away from the pixel's own mean.
-    average = rgb.mean(axis=-1, keepdims=True) * (1.0 - _SAT)
-    rgb = np.clip(average + rgb * _SAT, 0.0, 1.0)
-    return np.clip(_srgb(rgb), 0.0, 1.0)
+    rgb = np.clip(
+        rgb.mean(axis=-1, keepdims=True) * (1.0 - _SAT) + rgb * _SAT, 0.0, 1.0
+    )
+    # sRGB: linear light to display. The clip inside the original transfer function is
+    # dropped -- the line above already left every value in [0, 1].
+    display = np.where(
+        rgb <= 0.0031308, 12.92 * rgb, 1.055 * np.power(rgb, 0.41666666666) - 0.055
+    )
+    return np.clip(display, 0.0, 1.0)
 
 
-def true_color(outputs: dict, figsize=(8, 8)):
-    """Draw a true-colour composite of a banded result: B4/B3/B2 as red/green/blue,
-    rendered with Sentinel Hub's L1C-optimized tone mapping.
-
-    Draws into a new figure and returns nothing, for the reason given in `plot_bands`.
+def true_color(outputs, figsize=(8, 8)):
+    """Draw a banded result as a true-colour composite: B4/B3/B2 as red/green/blue.
 
     Args:
-        outputs: A whole ``free-demo`` result, or just its ``{band: ref}`` mapping.
+        outputs: A free-demo result -- JobResults, its .root dict, or just the dataset mapping.
         figsize: Figure size in inches.
     """
     import matplotlib.pyplot as plt
 
-    metadata = _band_metadata(outputs)
-    rgb = _composite(_band_refs(outputs))
+    dataset, metadata = _unwrap(outputs, "dataset")
+    rgb = _composite(_band_refs(dataset))
 
     fig, ax = plt.subplots(figsize=figsize, layout="constrained")
     ax.imshow(rgb)
@@ -502,12 +467,73 @@ def true_color(outputs: dict, figsize=(8, 8)):
     _annotate(fig, metadata, "true colour (B4/B3/B2)")
 
 
+def _valid_hcrf(hcrf):
+    """Blank samples above 1.0. In a saturated water-vapour band the surface irradiance
+    goes to zero and ``HCRF = pi * L / E_boa`` runs away, reaching 222 at Gobabeb; NaN
+    breaks the drawn line there rather than flattening the rest of the spectrum."""
+    return np.where(hcrf > 1.0, np.nan, hcrf)
+
+
+def plot_hypstar(outputs, figsize=(9, 4.5)):
+    """Draw a HYPSTAR result: hemispherical-conical reflectance against wavelength.
+
+    Args:
+        outputs: A free-demo result -- JobResults, its .root dict, or just the dataset reference.
+        figsize: Figure size in inches.
+    """
+    import matplotlib.pyplot as plt
+
+    dataset, metadata = _unwrap(outputs, "dataset")
+    if isinstance(dataset, dict) and "href" not in dataset:
+        raise ValueError(
+            f"plot_hypstar() needs a single-store result; this one is banded "
+            f"({sorted(dataset)}). Use plot_bands() or true_color() instead."
+        )
+    w, hcrf = _read(_as_ref(dataset), "w", "hcrf")
+
+    fig, ax = plt.subplots(figsize=figsize, layout="constrained")
+    ax.plot(w.ravel(), _valid_hcrf(hcrf.squeeze()), color="#1f77b4", lw=1.2)
+    ax.set_xlabel("Wavelength (nm)")
+    ax.set_ylabel("HCRF")
+    ax.set_xlim(w.min(), w.max())
+    ax.set_ylim((0.0, 0.8))
+    ax.grid(alpha=0.3, linestyle="--")
+    _annotate(fig, metadata, "HCRF spectrum")
+
+
+def show_rgb_image(outputs, figsize=(12, 6.75)):
+    """Draw the rendered image of an RGB camera result.
+
+    Args:
+        outputs: A free-demo result -- JobResults, its .root dict, or just the image reference.
+        figsize: Figure size in inches, 16:9 to match the camera film.
+    """
+    import matplotlib.pyplot as plt
+
+    image, metadata = _unwrap(outputs, "image")
+    ref = _as_ref(image)
+    if ref is None:
+        raise ValueError(
+            "show_rgb_image() needs a whole free-demo result or its image reference, "
+            "and only the RGB camera runs render an image."
+        )
+
+    with to_upath(ref).open("rb") as stream:
+        picture = plt.imread(stream, format="png")
+
+    fig, ax = plt.subplots(figsize=figsize, layout="constrained")
+    ax.imshow(picture)
+    ax.axis("off")
+    _annotate(fig, metadata, "rendered image")
+
+
 __all__ = [
     "RESULTS",
-    "availability",
     "free_demo",
     "lookup",
     "plot_bands",
+    "plot_hypstar",
     "resolve",
+    "show_rgb_image",
     "true_color",
 ]
