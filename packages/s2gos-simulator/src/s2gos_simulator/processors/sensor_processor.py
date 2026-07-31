@@ -51,33 +51,29 @@ class SensorProcessor:
             output_dir: Output directory with credentials (avoids re-constructing from attrs)
 
         Returns:
-            Post-processed dataset
+            Post-processed dataset. The input dataset itself is returned unchanged
+            when no post-processing step applies, so callers can detect a no-op with
+            an identity check.
         """
         from ..config import SpectralResponse
 
-        radiance = dataset["radiance"]
+        original_radiance = dataset["radiance"]
+        radiance = original_radiance
         pp = getattr(sensor, "post_processing", None)
 
-        if pp is not None:
-            if getattr(pp, "apply_circular_mask", False):
-                fov = getattr(sensor, "fov", None)
-                if fov is not None:
-                    radiance = self._apply_circular_fov_mask(radiance, fov)
-                else:
-                    logger.warning(
-                        f"Circular mask enabled but sensor '{sensor.id}' has no fov. Skipping."
-                    )
+        radiance = self._apply_fov_mask_step(radiance, sensor, pp)
 
-            if getattr(pp, "generate_rgb_image", False):
-                from upath import UPath
+        if pp is not None and getattr(pp, "generate_rgb_image", False):
+            from upath import UPath
 
-                if output_dir is None:
-                    output_dir = UPath(dataset.attrs.get("output_dir", "./output"))
-                self._generate_rgb_image(radiance, sensor.id, output_dir, pp)
+            if output_dir is None:
+                output_dir = UPath(dataset.attrs.get("output_dir", "./output"))
+            self._generate_rgb_image(radiance, sensor.id, output_dir, pp)
 
-            if getattr(pp, "spatial_averaging", True):
-                radiance = self._apply_spatial_averaging(radiance)
+        radiance = self._apply_averaging_step(radiance, pp)
+        spatial_changed = radiance is not original_radiance
 
+        spectral_changed = False
         srf = getattr(sensor, "srf", None)
         if isinstance(srf, SpectralResponse) and srf.type == "gaussian":
             if pp is None or getattr(pp, "apply_srf", True):
@@ -88,8 +84,57 @@ class SensorProcessor:
                 radiance = self._apply_gaussian_srf_from_config(
                     radiance, srf, target_wavelengths
                 )
+                spectral_changed = True
 
-        return self._build_result(dataset, radiance)
+        if not (spatial_changed or spectral_changed):
+            logger.debug(
+                f"No post-processing applied to sensor '{sensor.id}', "
+                "returning simulation result unchanged"
+            )
+            return dataset
+
+        return self._build_result(
+            dataset, radiance, sensor, pp, spectral_changed=spectral_changed
+        )
+
+    def _apply_fov_mask_step(self, data: xr.DataArray, sensor, pp) -> xr.DataArray:
+        """Apply the circular FOV mask if the sensor is configured for it.
+
+        Returns the input object unchanged when the step does not apply, so callers
+        can detect a no-op with an identity check.
+        """
+        if pp is None or not getattr(pp, "apply_circular_mask", False):
+            return data
+
+        fov = getattr(sensor, "fov", None)
+        if fov is None:
+            logger.warning(
+                f"Circular mask enabled but sensor '{sensor.id}' has no fov. Skipping."
+            )
+            return data
+
+        return self._apply_circular_fov_mask(data, fov)
+
+    def _apply_averaging_step(self, data: xr.DataArray, pp) -> xr.DataArray:
+        """Apply spatial averaging if the sensor is configured for it.
+
+        Returns the input object unchanged when the step does not apply, so callers
+        can detect a no-op with an identity check.
+        """
+        if pp is None or not getattr(pp, "spatial_averaging", True):
+            return data
+
+        return self._apply_spatial_averaging(data)
+
+    def _apply_spatial_ops(self, data: xr.DataArray, sensor, pp) -> xr.DataArray:
+        """Apply the configured spatial operations (FOV mask, then averaging).
+
+        Used to keep the extra simulation variables consistent with the processed
+        radiance. RGB generation is deliberately not part of this: it is a
+        radiance-only side effect that must run between the two steps.
+        """
+        data = self._apply_fov_mask_step(data, sensor, pp)
+        return self._apply_averaging_step(data, pp)
 
     def _resolve_target_wavelengths(self, srf_config, radiance: xr.DataArray):
         """Determine target wavelengths for SRF convolution.
@@ -104,13 +149,46 @@ class SensorProcessor:
         return radiance.w.values
 
     def _build_result(
-        self, original_dataset: xr.Dataset, processed_radiance: xr.DataArray
+        self,
+        original_dataset: xr.Dataset,
+        processed_radiance: xr.DataArray,
+        sensor=None,
+        pp=None,
+        spectral_changed: bool = False,
     ) -> xr.Dataset:
-        """Assemble output dataset, propagating available variables at new wavelength grid."""
+        """Assemble output dataset, propagating available variables at new wavelength grid.
+
+        Args:
+            original_dataset: Raw simulation result
+            processed_radiance: Post-processed radiance
+            sensor: Sensor that produced the result (needed to replay spatial ops)
+            pp: PostProcessingOptions of that sensor (may be None)
+            spectral_changed: Whether the wavelength grid changed
+
+        Returns:
+            Post-processed dataset
+        """
         result = {"radiance": processed_radiance}
+
         for key in ["irradiance", "toa_irradiance"]:
             if key in original_dataset:
                 result[key] = original_dataset[key].interp(w=processed_radiance.w)
+
+        extras = [name for name in original_dataset.data_vars if name not in result]
+
+        if spectral_changed:
+            if extras:
+                logger.debug(
+                    f"Dropping variables not integrated onto the target wavelength "
+                    f"grid: {extras}"
+                )
+        else:
+            for name in extras:
+                variable = original_dataset[name]
+                if any(d in variable.dims for d in ("x_index", "y_index")):
+                    variable = self._apply_spatial_ops(variable, sensor, pp)
+                result[name] = variable
+
         return xr.Dataset(result, attrs=original_dataset.attrs)
 
     def _apply_gaussian_srf_from_config(
