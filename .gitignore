@@ -101,3 +101,6 @@ tmp/
 
 # mkdocs build output
 site/
+# pixi environments
+.pixi/*
+!.pixi/config.toml
