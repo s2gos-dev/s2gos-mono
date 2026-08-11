@@ -3,11 +3,13 @@
 import logging
 import os
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import numpy as np
 from pydantic import Field
+from s2gos_utils.coordinates import CoordinateSystem
 from s2gos_utils.io import PathRef, exists, open_dataset, to_upath
+from shapely import to_wkt
 
 from s2gos_apps.registry import registry
 
@@ -95,6 +97,27 @@ RESULTS: dict[tuple[str, str, str], dict] = {
 }
 
 
+# Each site's area of interest, as ``(centre latitude, centre longitude, size in km)``.
+SITE_AOI: dict[str, tuple[float, float, float]] = {
+    "PNP": (-46.9097, -72.4500, 10.0),
+    "Gobabeb": (-23.6015417, 15.1258696, 10.0),
+    "Frascati": (41.8210, 12.5700, 20.0),
+    "Pisa": (43.7320, 10.3500, 15.0),
+    "Jaén": (37.78802, -3.778123, 10.0),
+}
+
+
+# The polygon the GUI's map shows for each site: the *same* square the scene was generated
+# over, from the same function the generator derives it with.
+AOI_WKT: dict[str, str] = {
+    site: to_wkt(
+        CoordinateSystem(lat, lon).create_scene_polygon(size_km),
+        rounding_precision=6,
+    )
+    for site, (lat, lon, size_km) in SITE_AOI.items()
+}
+
+
 def resolve(relative: str, media_type: str | None = None) -> PathRef:
     """A table path against RESULTS_BASE, optionally tagged with its media type."""
     return PathRef(
@@ -118,6 +141,21 @@ def lookup(site: str, season: str, instrument: str) -> dict:
     return entry
 
 
+def _aoi_field(site: str) -> Any:
+    """A read-only map showing one site's AOI, shown only while that site is picked."""
+    return Field(
+        title="Area of interest",
+        description=f"The {site} AOI. Fixed in the free demo.",
+        json_schema_extra={
+            "format": "wkt",
+            "x-ui-widget": "map",
+            "x-ui-order": 15,  # between site (10) and season (20)
+            "x-ui-disabled": True,
+            "x-ui-visible": f"site === '{site}'",
+        },
+    )
+
+
 @registry.process(
     id="free-demo",
     title="S2GOS Free Demo",
@@ -138,6 +176,13 @@ def free_demo(
             json_schema_extra={"x-ui-order": 10},
         ),
     ] = "Gobabeb",
+    # One map per site, exactly one of them visible. They exist to give the form spatial
+    # context; the body ignores what is submitted and answers from AOI_WKT instead.
+    aoi_pnp: Annotated[str, _aoi_field("PNP")] = AOI_WKT["PNP"],
+    aoi_gobabeb: Annotated[str, _aoi_field("Gobabeb")] = AOI_WKT["Gobabeb"],
+    aoi_frascati: Annotated[str, _aoi_field("Frascati")] = AOI_WKT["Frascati"],
+    aoi_pisa: Annotated[str, _aoi_field("Pisa")] = AOI_WKT["Pisa"],
+    aoi_jaen: Annotated[str, _aoi_field("Jaén")] = AOI_WKT["Jaén"],
     season: Annotated[
         _Season,
         Field(
@@ -155,18 +200,7 @@ def free_demo(
         ),
     ] = "msi",
 ) -> tuple[PathRef | dict, PathRef | None, dict]:
-    """Serve one precalculated result.
-
-    Returns:
-        dataset: a `PathRef` to the Zarr store, or `{band: PathRef}` for MSI, whose
-            bands each get their own store.
-        image: a `PathRef` to the rendered image, or None when the run has none.
-        metadata: what was requested, what was served, and the store's own facts.
-
-    Raises:
-        ValueError: if the combination is not wired; the message lists those that are.
-        FileNotFoundError: if a wired result is not present at `RESULTS_BASE`.
-    """
+    """Serve precalculated results for varios AOIs, instruments and seasons."""
     entry = lookup(site, season, instrument)
 
     bands = entry.get("bands")
@@ -198,6 +232,7 @@ def free_demo(
             "site": site,
             "season": season,
             "instrument": instrument,
+            "aoi_wkt": AOI_WKT.get(site),
             "title": entry["title"],
             "acquired": entry["acquired"],
             **_dataset_facts(ds),
@@ -528,7 +563,9 @@ def show_rgb_image(outputs, figsize=(12, 6.75)):
 
 
 __all__ = [
+    "AOI_WKT",
     "RESULTS",
+    "SITE_AOI",
     "free_demo",
     "lookup",
     "plot_bands",
