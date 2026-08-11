@@ -9,7 +9,7 @@ authors = [
 ]
 description = "Synthetic scene generator for the ESA DTE-S2GOS service."
 name = "s2gos-generator"
-requires-python = ">=3.10,<3.12"
+requires-python = ">=3.10,<3.13"
 version = "0.2.0"
 dependencies = [
     "s2gos-utils",
@@ -54,7 +54,7 @@ channels = ["conda-forge"]
 platforms = ["linux-64"]
 
 [tool.pixi.dependencies]
-python = ">=3.10,<3.12"
+python = ">=3.10,<3.13"
 
 [tool.pixi.pypi-dependencies]
 s2gos_generator = { path = ".", editable = true }
