@@ -78,6 +78,48 @@ class TerrainQuery:
         )
         return None
 
+    def min_elevation(self, raise_on_error: bool = False) -> Optional[float]:
+        """Return the minimum terrain elevation in meters.
+
+        Reads the target scene DEM and returns the minimum elevation.
+        Used to measure the atmosphere ground altitude so below-sea-level altitudes
+        stay inside the plane-parallel medium volume.
+
+        Args:
+            raise_on_error: If True, re-raise on read failure instead of
+                returning None.
+
+        Returns:
+            Min elevation in meters, or None if the DEM cannot be read.
+        """
+        dem_path = self.find_dem_file()
+        if dem_path is None:
+            msg = (
+                f"DEM file not found in {self.scene_dir / 'data'}; "
+                f"cannot compute minimum elevation."
+            )
+            if raise_on_error:
+                raise FileNotFoundError(msg)
+            logger.warning(msg)
+            return None
+        try:
+            from s2gos_utils.io.paths import expand_mapper
+
+            with xr.open_zarr(expand_mapper(dem_path)) as dem_ds:
+                if "elevation" in dem_ds.data_vars:
+                    var_name = "elevation"
+                else:
+                    var_name = list(dem_ds.data_vars.keys())[0]
+                z_min = float(dem_ds[var_name].min().values)
+            logger.debug(f"DEM minimum elevation: {z_min:.2f} m ({dem_path})")
+            return z_min
+        except Exception as e:
+            msg = f"Failed to read minimum elevation from {dem_path}: {e}"
+            if raise_on_error:
+                raise
+            logger.warning(msg)
+            return None
+
     def query_elevation_at_scene_coords(
         self,
         x: float,
