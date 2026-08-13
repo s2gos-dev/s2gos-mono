@@ -25,6 +25,124 @@ try:
 except ImportError:
     ERADIATE_AVAILABLE = False
 
+def _resolve_ground_altitude(
+    scene_description: SceneDescription,
+    scene_dir,
+    toa_altitude: float,
+) -> float:
+    """Adjust the atmosphere ground altitude.
+
+    Adjusts the plane-parallel medium volume floor so below-sea-level terrain
+    stays inside it. Above-sea-level scenes clamp to 0.0 and are not affected.
+
+    We have a 10% pad in case buffer has a lower altitude than the DEM:
+        z_min = scene DEM minimum elevation
+        z0    = z_min - 0.10 * |z_min|      (10% depth pad)
+        z0    = min(0.0, z0)                no changes if the min z is above sea level
+    at -0.01 * toa_altitude (see PlaneParallelGeometry.atmosphere_shape).
+
+    Args:
+        scene_description: Scene description.
+        scene_dir: Scene directory containing data/dem_*.zarr.
+        toa_altitude: Top-of-atmosphere altitude in meters.
+
+    Returns:
+        Ground altitude in meters (<= 0.0).
+    """
+    from s2gos_simulator.terrain_query import TerrainQuery
+
+    z_min = TerrainQuery(scene_description, scene_dir).min_elevation()
+    if z_min is None:
+        logger.warning(
+            "Could not determine scene minimum elevation; "
+            "defaulting ground_altitude to 0.0 m."
+        )
+        return 0.0
+
+    z0 = z_min - 0.10 * abs(z_min)
+    z0 = min(0.0, z0)
+
+    floor_ = -0.01 * toa_altitude
+    if z0 <= floor_:
+        raise ValueError(
+            f"Resolved ground_altitude ({z0:.1f} m) is at or below the "
+            f"plane-parallel atmosphere cuboid floor ({floor_:.1f} m = "
+            f"-0.01 * toa_altitude, see PlaneParallelGeometry.atmosphere_shape). "
+            f"Below-sea terrain would leave the medium shape. "
+            f"Raise toa_altitude (currently {toa_altitude:.0f} m) so that "
+            f"-0.01 * toa < {z0:.1f} m."
+        )
+
+    logger.info(
+        f"Resolved ground_altitude = {z0:.1f} m "
+        f"(scene z_min = {z_min:.1f} m, toa = {toa_altitude:.0f} m)."
+    )
+    return z0
+
+def _build_thermoprops(identifier, altitude_max, altitude_step, ground_altitude):
+    """Build a thermophysical profile, extended below MSL when needed.
+
+    Above sea level (ground_altitude None or >= 0) this returns the legacy
+    ``{"identifier", "z"}`` dict, identical to the previous behaviour.
+
+    Below sea level (ground_altitude < 0) the joseki ``{identifier, z}`` dict
+    path cannot be used: it forwards to ``joseki.make`` which rejects negative
+    altitudes. Instead we build the profile as an ``xr.Dataset`` — make the
+    native profile, linearly extrapolate p/t/n/x_* down to ground_altitude,
+    then resample onto a grid pinned at ground_altitude and reaching >= toa.
+    ``MolecularAtmosphere`` accepts the resulting dataset directly.
+
+    The interp grid is constructed so its bottom is exactly ground_altitude
+    (required: PlaneParallelGeometry raises if zgrid bottom != ground_altitude)
+    and its top is >= altitude_max (required: check_geometry_atmosphere raises
+    if the profile does not cover the zgrid top).
+
+    Args:
+        identifier: joseki atmosphere identifier (e.g. 'afgl_1986-us_standard').
+        altitude_max: profile/geometry top in meters.
+        altitude_step: vertical step in meters.
+        ground_altitude: resolved ground altitude in meters (<= 0), or None.
+
+    Returns:
+        dict for the legacy path, or an xr.Dataset for the extended path.
+    """
+    if ground_altitude is None or ground_altitude >= 0.0:
+        num_steps = int((altitude_max - 0.0) / altitude_step) + 1
+        return {
+            "identifier": identifier,
+            "z": np.linspace(0.0, altitude_max, num_steps) * ureg.m,
+        }
+
+    # Below-MSL: build and extend as an xr.Dataset.
+    import joseki
+    from joseki.units import ureg as jureg
+    from joseki.profiles.core import extrapolate, interp
+
+    ds = joseki.make(identifier)
+
+    # Extra levels strictly below 0, down to ground_altitude.
+    z_extra = np.arange(ground_altitude, 0.0, altitude_step) * jureg.m
+    ds = extrapolate(ds, z_extra=z_extra, direction="down")
+
+    # Native profile top (m), after downward extrapolation (joseki z is in km).
+    z_units = ds["z"].attrs.get("units", "m")
+    native_top_m = float(ds["z"].values.max()) * (1000.0 if z_units == "km" else 1.0)
+    grid_top = min(altitude_max, native_top_m)
+
+    # Regularly-spaced grid (eradiate's ZGrid requires equal steps), pinned
+    # exactly at both ends: bottom = ground_altitude, top = grid_top. Using
+    # linspace guarantees regular spacing and lands on native data (no NaN).
+    # Number of intervals ~ target step, at least 1.
+    n_intervals = max(1, int(round((grid_top - ground_altitude) / altitude_step)))
+    z_new = np.linspace(ground_altitude, grid_top, n_intervals + 1)
+    ds = interp(ds, z_new=z_new * jureg.m)
+
+    logger.info(
+        f"Extended thermoprops below MSL: floor={ground_altitude:.1f} m, "
+        f"top={z_new[-1]:.1f} m ({len(z_new)} levels, "
+        f"step~{(z_new[1]-z_new[0]):.1f} m)."
+    )
+    return ds
 
 class AtmosphereBuilder:
     """Builder for creating Eradiate atmosphere configurations from scene descriptions."""
@@ -33,26 +151,29 @@ class AtmosphereBuilder:
         """Initialize atmosphere builder."""
         pass
 
-    def create_geometry_from_atmosphere(self, scene_description: SceneDescription):
+    def create_geometry_from_atmosphere(self, scene_description: SceneDescription, scene_dir):
         """Create geometry with bounds matching the atmosphere configuration.
 
         Args:
             scene_description: Scene description containing atmosphere config
+            scene_dir: Scene directory (for DEM-based ground altitude resolution)
 
         Returns:
-            Geometry dictionary with TOA altitude
+            Geometry dictionary with TOA and ground altitudes
         """
         atmosphere = scene_description.atmosphere
         toa = atmosphere["toa"]
+        ground_altitude = _resolve_ground_altitude(scene_description, scene_dir, toa)
 
         geometry = {
             "type": "plane_parallel",
             "toa_altitude": toa,
+            "ground_altitude": ground_altitude,
         }
-
+        
         return geometry
 
-    def create_atmosphere_from_config(self, scene_description: SceneDescription):
+    def create_atmosphere_from_config(self, scene_description: SceneDescription, ground_altitude=None):
         """Create atmosphere based on scene description format.
 
         Args:
@@ -64,6 +185,8 @@ class AtmosphereBuilder:
         Raises:
             ValueError: If atmosphere type is unknown or not specified
         """
+        self._ground_altitude = ground_altitude
+
         atmosphere = scene_description.atmosphere
         atmosphere_type = atmosphere["type"] if "type" in atmosphere else None
 
@@ -97,15 +220,16 @@ class AtmosphereBuilder:
             thermoprops_id = mol_dict.get(
                 "thermoprops_identifier", "afgl_1986-us_standard"
             )
-            altitude_min = mol_dict["altitude_min"]
             altitude_max = mol_dict["altitude_max"]
             altitude_step = mol_dict["altitude_step"]
-            num_steps = int((altitude_max - altitude_min) / altitude_step) + 1
+            ground_altitude = getattr(self, "_ground_altitude", None)
 
-            thermoprops = {
-                "identifier": thermoprops_id,
-                "z": np.linspace(altitude_min, altitude_max, num_steps) * ureg.m,
-            }
+            thermoprops = _build_thermoprops(
+                identifier=thermoprops_id,
+                altitude_max=altitude_max,
+                altitude_step=altitude_step,
+                ground_altitude=ground_altitude,
+            )
 
         absorption_data = mol_dict.get("absorption_database") or get_default_absdb()
 
@@ -244,7 +368,7 @@ class AtmosphereBuilder:
 
         return atmosphere
 
-    def create_simple_mono_atmosphere(self):
+    def create_simple_mono_atmosphere(self, ground_altitude=None):
         """Create simple molecular atmosphere for mono mode debugging.
 
         Uses US Standard atmosphere with GECKO absorption database.
@@ -253,16 +377,13 @@ class AtmosphereBuilder:
         Returns:
             MolecularAtmosphere object
         """
-        # Simple US Standard atmosphere
-        altitude_min = 0.0
-        altitude_max = 120000.0
-        altitude_step = 1000.0
-        num_steps = int((altitude_max - altitude_min) / altitude_step) + 1
-
-        thermoprops = {
-            "identifier": "afgl_1986-us_standard",
-            "z": np.linspace(altitude_min, altitude_max, num_steps) * ureg.m,
-        }
+        # US Standard atmosphere, extended below MSL when ground_altitude < 0.
+        thermoprops = _build_thermoprops(
+            identifier="afgl_1986-us_standard",
+            altitude_max=120000.0,
+            altitude_step=1000.0,
+            ground_altitude=ground_altitude,
+        )
 
         atmosphere = MolecularAtmosphere(
             thermoprops=thermoprops,

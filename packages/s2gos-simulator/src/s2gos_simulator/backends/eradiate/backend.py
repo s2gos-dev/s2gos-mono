@@ -50,6 +50,9 @@ try:
 except ImportError:
     ERADIATE_AVAILABLE = False
 
+# import mitsuba as mi
+
+# mi.set_log_level(mi.LogLevel.Debug)
 
 class EradiateBackend(SimulationBackend):
     """Enhanced Eradiate backend with modular architecture.
@@ -630,6 +633,21 @@ class EradiateBackend(SimulationBackend):
 
         self.surface_builder.add_scene_objects(kdict, scene_description, scene_dir)
 
+        # Resolve ground altitude, the same value feeds both the
+        # atmosphere profile floor and the geometry medium-volume floor.
+        from s2gos_simulator.backends.eradiate.atmosphere_builder import (
+            _resolve_ground_altitude,
+        )
+
+        toa = (
+            120000.0
+            if self._eradiate_mode == "mono"
+            else scene_description.atmosphere["toa"]
+        )
+        ground_altitude = _resolve_ground_altitude(
+            scene_description, scene_dir, toa
+        )
+
         # Create atmosphere (or use None for BRF measurements)
         if atmosphere == "auto":
             # TODO: This needs to be more fleshed out and tested
@@ -638,10 +656,12 @@ class EradiateBackend(SimulationBackend):
                 logger.info(
                     "  Using simple mono atmosphere (GECKO + US Standard) for fast debugging"
                 )
-                atmosphere_obj = self.atmosphere_builder.create_simple_mono_atmosphere()
+                atmosphere_obj = self.atmosphere_builder.create_simple_mono_atmosphere(
+                    ground_altitude=ground_altitude
+                )
             else:
                 atmosphere_obj = self.atmosphere_builder.create_atmosphere_from_config(
-                    scene_description
+                    scene_description, ground_altitude=ground_altitude
                 )
         else:
             atmosphere_obj = atmosphere  # None for BRF
@@ -661,22 +681,20 @@ class EradiateBackend(SimulationBackend):
             f"Experiment measures: {[m.get('id', i) for i, m in enumerate(measures)]}"
         )
 
-        # For mono mode with simple atmosphere, use fixed TOA
-        if self._eradiate_mode == "mono":
-            geometry = {
-                "type": "plane_parallel",
-                "toa_altitude": 120000.0,
-            }
-        else:
-            geometry = self.atmosphere_builder.create_geometry_from_atmosphere(
-                scene_description
-            )
+        # Geometry reuses the already-resolved toa and ground_altitude
+        # (single source of truth for both mono and ckd).
+        geometry = {
+            "type": "plane_parallel",
+            "toa_altitude": toa,
+            "ground_altitude": ground_altitude,
+        }
 
         self.surface_builder.validate_material_ids(kdict, scene_description)
 
         return AtmosphereExperiment(
             geometry=geometry,
             atmosphere=atmosphere_obj,
+            # atmosphere=None,
             surface=None,  # We set this up through the expert interface (kdict, kpmap)
             illumination=illumination,
             measures=measures,
