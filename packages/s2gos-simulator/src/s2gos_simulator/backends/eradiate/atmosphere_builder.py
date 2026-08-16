@@ -9,7 +9,7 @@ from s2gos_utils.scene import SceneDescription
 logger = logging.getLogger(__name__)
 
 try:
-    from eradiate.radprops import get_default_absdb
+    from eradiate.radprops import absdb_factory, get_default_absdb
     from eradiate.scenes.atmosphere import (
         ExponentialParticleDistribution,
         GaussianParticleDistribution,
@@ -144,6 +144,67 @@ def _build_thermoprops(identifier, altitude_max, altitude_step, ground_altitude)
     )
     return ds
 
+def _clamp_pressure_to_absdb(thermoprops, absorption_data):
+    """Cap profile pressure at the absorption database's tabulated ceiling.
+
+    Below MSL the deepest layers can have a pressure above the absorption
+    database's maximum tabulated pressure. Eradiate's default out-of-bounds
+    rule then returns sigma_a = 0 (absorption) for those layers, this translates into
+    zero absorption in the highest pressure. This caps only the pressure ``p`` given to 
+    the absorption lookup; ``n`` and ``t`` are untouched. Rayleigh scattering and the 
+    lookup's temperature axis stay exact.
+
+    Only xr.Dataset thermoprops are considered (the below-MSL path). The legacy
+    dict path (above MSL) never exceeds the ceiling and is returned unchanged.
+    Within a Dataset, only layers actually above the ceiling are modified, so
+    every other scene stays identical.
+
+    Args:
+        thermoprops: dict (above-MSL, passed through) or xr.Dataset (below-MSL).
+        absorption_data: the resolved absorption database object.
+
+    Returns:
+        The thermoprops, with ``p`` capped if and only if it exceeded the
+        ceiling; otherwise the original object unchanged.
+    """
+    # Legacy dict path (above MSL): nothing to clamp.
+    if not hasattr(thermoprops, "data_vars") or "p" not in thermoprops:
+        return thermoprops
+
+    # Read the ceiling from the db metadata; bail out safely if not as expected.
+    try:
+        stop = absorption_data.metadata["pressure_grid"]["parameters"]["stop"]
+        if stop.get("units") not in ("pascal", "Pa", None):
+            logger.warning(
+                f"Absorption DB pressure ceiling has unexpected units "
+                f"{stop.get('units')!r}; skipping pressure clamp."
+            )
+            return thermoprops
+        ceiling = float(stop["value"])
+    except (AttributeError, KeyError, TypeError) as exc:
+        logger.warning(
+            f"Could not read absorption DB pressure ceiling ({exc!r}); "
+            f"skipping pressure clamp."
+        )
+        return thermoprops
+
+    p = thermoprops["p"]
+    p_max = float(p.values.max())
+    if p_max <= ceiling:
+        return thermoprops  # no layer over the ceiling -> bit-identical
+
+    n_over = int((p.values > ceiling).sum())
+    clamped = thermoprops.copy()
+    clamped["p"] = p.clip(max=ceiling)
+    clamped["p"].attrs = dict(p.attrs)  # preserve units metadata
+    logger.info(
+        f"Capped absorption-lookup pressure at DB ceiling {ceiling:.0f} Pa: "
+        f"{n_over} layer(s) exceeded it (deepest was {p_max:.0f} Pa, "
+        f"{100 * (p_max / ceiling - 1):.2f}% over). n and t unchanged."
+    )
+    return clamped
+
+
 class AtmosphereBuilder:
     """Builder for creating Eradiate atmosphere configurations from scene descriptions."""
 
@@ -230,8 +291,12 @@ class AtmosphereBuilder:
                 altitude_step=altitude_step,
                 ground_altitude=ground_altitude,
             )
-
+        
+        
         absorption_data = mol_dict.get("absorption_database") or get_default_absdb()
+        if isinstance(absorption_data, str):
+            absorption_data = absdb_factory.create(absorption_data)
+        thermoprops = _clamp_pressure_to_absdb(thermoprops, absorption_data)
 
         atmosphere = MolecularAtmosphere(
             thermoprops=thermoprops,
@@ -384,7 +449,9 @@ class AtmosphereBuilder:
             altitude_step=1000.0,
             ground_altitude=ground_altitude,
         )
-
+        absorption_data = absdb_factory.create("gecko")
+        thermoprops = _clamp_pressure_to_absdb(thermoprops, absorption_data)
+        
         atmosphere = MolecularAtmosphere(
             thermoprops=thermoprops,
             absorption_data="gecko",
