@@ -288,10 +288,10 @@ def create_s2gos_scene(
 
                     dem_data = xr.open_zarr(expand_mapper(dem_path))
                     if "elevation" in dem_data.data_vars:
-                        bg_elevation = float(dem_data["elevation"].mean().values)
+                        bg_elevation = float(dem_data["elevation"].min().values) - 0.5
                     else:
                         var_name = list(dem_data.data_vars.keys())[0]
-                        bg_elevation = float(dem_data[var_name].mean().values)
+                        bg_elevation = float(dem_data[var_name].min().values) - 0.5
             except Exception as e:
                 logging.warning(
                     f"Could not calculate average elevation from {buffer_dem_file}: {e}"

@@ -78,7 +78,7 @@ class BackgroundConfig(BaseModel):
     resolution_m: float = Field(
         200.0, gt=0.0, description="Background resolution in meters"
     )
-    elevation: float = Field(0.0, description="Background elevation in meters")
+    elevation: float = Field(None, description="Background elevation in meters")
 
 
 class SceneLocation(BaseModel):
