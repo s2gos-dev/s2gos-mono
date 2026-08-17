@@ -109,19 +109,19 @@ class RoadsConfig(BaseModel):
     }
     RAILWAY_TYPE_TABLE: ClassVar[dict[str, RailwayDefaults]] = {
         "rail": RailwayDefaults(
-            track_count=1, track_width_m=4.5, default_material="ballast"
+            track_count=1, track_width_m=4.5, default_material="gravel_road"
         ),
         "light_rail": RailwayDefaults(
-            track_count=1, track_width_m=3.5, default_material="ballast"
+            track_count=1, track_width_m=3.5, default_material="gravel_road"
         ),
         "tram": RailwayDefaults(
             track_count=1, track_width_m=2.5, default_material="asphalt"
         ),
         "narrow_gauge": RailwayDefaults(
-            track_count=1, track_width_m=3.0, default_material="ballast"
+            track_count=1, track_width_m=3.0, default_material="gravel_road"
         ),
         "subway": RailwayDefaults(
-            track_count=1, track_width_m=4.0, default_material="ballast"
+            track_count=1, track_width_m=4.0, default_material="gravel_road"
         ),
     }
 
@@ -170,7 +170,7 @@ class RoadsConfig(BaseModel):
     default_shoulder_m: float = Field(0.5, ge=0.0)
 
     railway_types: Optional[list[str]] = Field(
-        None, description="Railway types to include"
+        default_factory=lambda: ["rail"], description="Railway types to include"
     )
 
     railway_overrides: dict[str, RailwayOverride] = Field(
@@ -178,7 +178,7 @@ class RoadsConfig(BaseModel):
         description="Per-highway-type overrides for geometry and material.",
     )
     default_track_width_m: float = Field(3.0, gt=0.0)
-    default_railway_material: str = Field("snow")
+    default_railway_material: str = Field("gravel_road")
 
     mesh_gradient_threshold: float = Field(
         0.02,
