@@ -197,10 +197,10 @@ def _roads():
     """A single 4 m wide asphalt road running along the y-axis (x in [-2, 2])."""
     from shapely.geometry import LineString
 
-    from s2gos_generator.processors.roads import Road
+    from s2gos_generator.processors.ways import Way
 
     centerline = LineString([(0.0, -1000.0), (0.0, 1000.0)])
-    return [Road(centerline=centerline, width=4.0, material="asphalt")]
+    return [Way(centerline=centerline, width=4.0, material="asphalt")]
 
 
 class TestFilterByRoads:

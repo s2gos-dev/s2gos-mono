@@ -148,10 +148,10 @@ section covers only the **data and credentials** each one needs from your enviro
 
 See [Buildings](concepts.md#buildings) for what the feature does.
 
-### Roads
+### Ways
 
-Enable per run with a [`RoadsConfig`][s2gos_generator.core.config.roads.RoadsConfig] on the
-scene config. Road centrelines come from one of two sources:
+Enable per run with a [`WaysConfig`][s2gos_generator.core.config.ways.WaysConfig] on the
+scene config. Way centrelines come from one of two sources:
 
 - `source="overpass"` — fetched live from OpenStreetMap over the public
   [Overpass API](https://overpass-api.de/). No credentials or local data required.
@@ -165,7 +165,7 @@ a built-in per-highway-type table and configurable defaults.
     © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
 
 Enabling roads also engages the [adaptive terrain mesh](#adaptive-terrain-mesh) so roads sit on
-well-resolved, flattened geometry. See [Roads](concepts.md#roads) for what the feature does.
+well-resolved, flattened geometry. See [Ways](concepts.md#ways) for what the feature does.
 
 ### Adaptive terrain mesh
 

@@ -34,8 +34,8 @@ def build_material_index_map(ctx: SceneResourceContext) -> dict[str, int]:
     )
 
     overlay_candidates = set(r.material_name for r in ctx.config.material_regions)
-    if ctx.config.roads is not None and ctx.config.roads.enabled:
-        roads_cfg = ctx.config.roads
+    if ctx.config.ways is not None and ctx.config.ways.enabled:
+        roads_cfg = ctx.config.ways
         overlay_candidates.add(roads_cfg.default_material)
         overlay_candidates.update(roads_cfg.DEFAULT_SURFACE_MATERIALS.values())
         overlay_candidates.update(

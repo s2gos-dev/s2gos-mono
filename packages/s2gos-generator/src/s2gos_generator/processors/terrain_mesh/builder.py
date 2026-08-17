@@ -12,7 +12,7 @@ from .adaptive_grid import AdaptiveGrid
 from .error_pyramid import DemErrorPyramid
 from .terraforming import (
     TerraformOperation,
-    apply_road_flatten_batch,
+    apply_way_flatten_batch,
     make_refinement_predicate,
     make_roughness_predicate,
 )
@@ -140,7 +140,7 @@ def grid_to_terrain_mesh(
     vertices, faces = grid.to_mesh(elevation_fn=elevation_fn)
 
     if flatten and operations:
-        vertices = apply_road_flatten_batch(vertices, operations, elevation_fn)
+        vertices = apply_way_flatten_batch(vertices, operations, elevation_fn)
 
     if handle_nans:
         valid = ~np.isnan(vertices[:, 2])

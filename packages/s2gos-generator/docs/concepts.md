@@ -13,7 +13,7 @@ The broad stages are:
 3. **Texture generation** — Maps landcover classes to material definitions, producing selection textures for each mesh.
 4. **Scene description output** — Assembles all resources into a [`SceneDescription`][s2gos_utils.scene.description.SceneDescription] YAML that ties meshes, textures, materials, and atmosphere together for use by the simulator.
 
-Additional optional resources — [buildings](#buildings), [roads](#roads), [spectral material matching](#spectral-material-matching), vegetation placement, user assets, HAMSTER albedo data, and XML scene imports — are included in the DAG when enabled and run at the appropriate point in the dependency graph.
+Additional optional resources — [buildings](#buildings), [roads](#ways), [spectral material matching](#spectral-material-matching), vegetation placement, user assets, HAMSTER albedo data, and XML scene imports — are included in the DAG when enabled and run at the appropriate point in the dependency graph.
 
 !!! note 
     The pipeline is under active development. The set of available resources and their configuration options continues to grow.
@@ -76,10 +76,10 @@ from the footprint's straight skeleton; the rest stay flat-topped.
 
 See [Buildings configuration](configuration.md#buildings) for usage.
 
-## Roads
+## Ways
 
-When [`RoadsConfig`][s2gos_generator.core.config.roads.RoadsConfig] is supplied,
-road geometry is rasterised into the target texture (and preview). Road centrelines
+When [`WaysConfig`][s2gos_generator.core.config.ways.WaysConfig] is supplied,
+road geometry is rasterised into the target texture (and preview). Way centrelines
 come either from [OpenStreetMap](https://www.openstreetmap.org/) via the
 [Overpass API](https://overpass-api.de/) (`source="overpass"`) or from a local JSON
 file (`source="file"`). Each road's width and surface material are resolved from
@@ -91,7 +91,7 @@ Because a flat road painted over bumpy terrain looks wrong, enabling roads also
 drives the [adaptive terrain mesh](#adaptive-terrain-mesh): the terrain under and
 beside each road is refined and flattened perpendicular to the centreline.
 
-See [Roads configuration](configuration.md#roads) for usage.
+See [Roads configuration](configuration.md#ways) for usage.
 
 ## Adaptive terrain mesh
 

@@ -21,7 +21,7 @@ class TerraformOperation(Protocol):
     - ``influence_zone``: the spatial region this operation may alter.
     - ``apply()``: modifies ``vertices`` in-place and returns the array.
     - ``apply_to_subset()``: same, but for a pre-filtered vertex subset (used
-      by :func:`apply_road_flatten_batch` for the STRtree fast path).
+      by :func:`apply_way_flatten_batch` for the STRtree fast path).
     """
 
     @property
@@ -54,7 +54,7 @@ class TerraformOperation(Protocol):
     ) -> None:
         """Apply modification for a pre-filtered subset of vertices (in-place).
 
-        Called by :func:`apply_road_flatten_batch` to avoid re-creating shapely
+        Called by :func:`apply_way_flatten_batch` to avoid re-creating shapely
         points per operation when many operations share the same vertex array.
 
         Args:
@@ -67,7 +67,7 @@ class TerraformOperation(Protocol):
         ...
 
 
-class RoadFlattenOperation:
+class WayFlattenOperation:
     """Flatten terrain cross-slope under a single road segment.
 
     For each vertex inside the influence zone the elevation is blended toward
@@ -102,7 +102,7 @@ class RoadFlattenOperation:
         vertices: np.ndarray,
         elevation_fn: Callable[[np.ndarray], np.ndarray],
     ) -> np.ndarray:
-        """Apply flattening.  For single-op use; prefer :func:`apply_road_flatten_batch`
+        """Apply flattening.  For single-op use; prefer :func:`apply_way_flatten_batch`
         when applying multiple operations to avoid recreating shapely points per road."""
         xy = vertices[:, :2]
         points = shapely.points(xy[:, 0], xy[:, 1])
@@ -126,7 +126,7 @@ class RoadFlattenOperation:
     ) -> None:
         """Apply flattening for a pre-filtered subset of vertices (in-place).
 
-        Called by both :meth:`apply` and :func:`apply_road_flatten_batch`.
+        Called by both :meth:`apply` and :func:`apply_way_flatten_batch`.
         """
         nearest_xy, alpha, mask_apply = self._geometry_and_alpha(
             vertex_indices, inside_points
@@ -170,16 +170,16 @@ class RoadFlattenOperation:
         return nearest_xy, alpha, alpha > 0
 
 
-def apply_road_flatten_batch(
+def apply_way_flatten_batch(
     vertices: np.ndarray,
-    operations: list[RoadFlattenOperation],
+    operations: list[WayFlattenOperation],
     elevation_fn: Callable[[np.ndarray], np.ndarray],
 ) -> np.ndarray:
     """Apply road-flatten operations efficiently with a single batched elevation sample.
 
     Args:
         vertices:     (N, 3) mesh vertex array — modified in-place.
-        operations:   List of :class:`RoadFlattenOperation` to apply.
+        operations:   List of :class:`WayFlattenOperation` to apply.
         elevation_fn: ``(M, 2) XY -> (M,) Z`` elevation sampler.
 
     Returns:
@@ -355,8 +355,8 @@ class GradientFilter:
         buffer_m: float,
         threshold: float,
         thin_road_skip_m: float = 0.0,
-    ) -> list[RoadFlattenOperation]:
-        """Build a :class:`RoadFlattenOperation` for each segment above threshold.
+    ) -> list[WayFlattenOperation]:
+        """Build a :class:`WayFlattenOperation` for each segment above threshold.
 
         Args:
             centerlines: Per-road centerline geometries.
@@ -367,9 +367,9 @@ class GradientFilter:
                 skipped (excluded from flattening). Set to 0.0 to disable.
 
         Returns:
-            Filtered list of :class:`RoadFlattenOperation` objects.
+            Filtered list of :class:`WayFlattenOperation` objects.
         """
-        operations: list[RoadFlattenOperation] = []
+        operations: list[WayFlattenOperation] = []
         n_filtered = 0
 
         for cl, hw in zip(centerlines, half_widths):
@@ -377,7 +377,7 @@ class GradientFilter:
             if too_thin or not self.exceeds_threshold(cl, threshold):
                 n_filtered += 1
             else:
-                operations.append(RoadFlattenOperation(cl, hw, buffer_m))
+                operations.append(WayFlattenOperation(cl, hw, buffer_m))
 
         if n_filtered:
             logging.info(

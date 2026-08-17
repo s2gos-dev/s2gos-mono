@@ -29,7 +29,7 @@ from .atmosphere import (
 from .buildings import BuildingsConfig
 from .material_match import SpectralMatchingConfig
 from .mesh_refinement import MeshRefinementConfig
-from .roads import HighwayOverride, RoadsConfig
+from .ways import HighwayOverride, WaysConfig
 from .scene import (
     BackgroundConfig,
     BufferConfig,
@@ -91,7 +91,7 @@ __all__ = [
     "MeshRefinementConfig",
     # roads
     "HighwayOverride",
-    "RoadsConfig",
+    "WaysConfig",
     # buildings
     "BuildingsConfig",
     # scene

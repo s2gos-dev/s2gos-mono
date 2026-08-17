@@ -65,7 +65,7 @@ nav:
       - Exceptions: api/exceptions.md
     - Processors:
       - Spectral: api/processors_spectral.md
-      - Roads: api/processors_roads.md
+      - Ways: api/processors_ways.md
       - Texture: api/processors_texture.md
       - Snow: api/processors_snow.md
       - Terrain Data: api/processors_terrain_data.md

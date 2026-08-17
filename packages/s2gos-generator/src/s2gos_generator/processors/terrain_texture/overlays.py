@@ -90,10 +90,10 @@ def apply_region_materials(
     return texture_2d, modified
 
 
-def apply_roads(
+def apply_ways(
     texture_2d: np.ndarray,
     landcover_path: Path,
-    road_polygons_by_material: dict,
+    way_polygons_by_material: dict,
     road_material_indices: dict[str, int],
     texture_resolution_m: Optional[float] = None,
     area_name: str = "target",
@@ -104,8 +104,8 @@ def apply_roads(
         texture_2d: 2-D uint8 array to modify (may be resized if texture_resolution_m
             is finer than the landcover resolution)
         landcover_path: Path to landcover zarr (for resolution/bounds)
-        road_polygons_by_material: Merged road polygon per material name
-            (from ``ctx.road_polygons_by_material``)
+        way_polygons_by_material: Merged road polygon per material name
+            (from ``ctx.way_polygons_by_material``)
         road_material_indices: Mapping of material_name to texture index
         texture_resolution_m: Target texture resolution (from
             ``ctx.config.texture_resolution_m``); upsamples when finer than native
@@ -120,7 +120,7 @@ def apply_roads(
     from rasterio.features import rasterize
     from rasterio.transform import from_bounds
 
-    road_geoms = road_polygons_by_material
+    road_geoms = way_polygons_by_material
     if not road_geoms:
         return texture_2d, None
 
@@ -192,7 +192,7 @@ def apply_roads(
     return texture_2d, (union_mask if union_mask.any() else None)
 
 
-def apply_roads_to_preview(
+def apply_ways_to_preview(
     preview_path: Path,
     road_mask: np.ndarray,
     debug_color: tuple[int, int, int] = (50, 50, 50),

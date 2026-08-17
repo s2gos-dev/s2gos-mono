@@ -23,7 +23,7 @@ def _filter_by_roads(
 
     Args:
         instances: Vegetation placement dicts with a ``"position"`` (x, y).
-        roads: ``Road`` segments (centerline + full width in metres).
+        roads: ``Way`` segments (centerline + full width in metres).
         enabled: When False, ``instances`` is returned unchanged.
         buffer_m: Extra clearance in metres beyond each road's half-width.
     """
@@ -47,7 +47,7 @@ def _filter_by_roads(
     filtered = [inst for inst, k in zip(instances, keep) if k]
     excl_count = len(instances) - len(filtered)
     logging.info(
-        "Road filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
+        "Way filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
         len(filtered),
         excl_count,
         100.0 * excl_count / len(instances) if instances else 0.0,

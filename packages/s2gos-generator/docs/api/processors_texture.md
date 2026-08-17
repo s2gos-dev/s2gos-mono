@@ -10,5 +10,5 @@ material-region and road overlays. See [Texture generation](../concepts.md#gener
 ## Region & road overlays
 
 ::: s2gos_generator.processors.terrain_texture.overlays.apply_region_materials
-::: s2gos_generator.processors.terrain_texture.overlays.apply_roads
-::: s2gos_generator.processors.terrain_texture.overlays.apply_roads_to_preview
+::: s2gos_generator.processors.terrain_texture.overlays.apply_ways
+::: s2gos_generator.processors.terrain_texture.overlays.apply_ways_to_preview

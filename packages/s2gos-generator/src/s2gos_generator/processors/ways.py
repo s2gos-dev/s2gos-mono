@@ -1,4 +1,4 @@
-"""Road and railways algorithms: OSM/Overpass fetching, parsing, width/material resolution,
+"""Way and railways algorithms: OSM/Overpass fetching, parsing, width/material resolution,
 sidecar (de)serialization, and terrain-flatten operation building."""
 
 import json
@@ -23,7 +23,7 @@ OVERPASS_RETRY_DELAY_S = 15
 OVERPASS_RETRYABLE_STATUS = (429, 500, 502, 503, 504)
 
 
-class RoadsFetchError(RuntimeError):
+class WaysFetchError(RuntimeError):
     """Raised when the Overpass API fails on every retry attempt."""
 
 
@@ -67,7 +67,7 @@ def _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east) -> Optional[di
                 )
                 time.sleep(OVERPASS_RETRY_DELAY_S)
             else:
-                raise RoadsFetchError(
+                raise WaysFetchError(
                     f"Overpass API request failed ({type(exc).__name__}): {exc}"
                 )
         except urllib.error.URLError as exc:
@@ -81,7 +81,7 @@ def _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east) -> Optional[di
                 )
                 time.sleep(OVERPASS_RETRY_DELAY_S)
             else:
-                raise RoadsFetchError(
+                raise WaysFetchError(
                     f"Overpass API request failed ({type(exc).__name__}): {exc}"
                 )
 
@@ -257,7 +257,7 @@ def _get_railway_material(
 
 
 @dataclass(slots=True)
-class Road:
+class Way:
     """A single road segment in scene coordinates."""
 
     centerline: LineString
@@ -265,15 +265,15 @@ class Road:
     material: str
 
 
-def parse_roads(
+def parse_ways(
     osm_data: dict,
     roads_cfg,
     coordinate_system,
     scene_bounds,
-) -> list[Road]:
-    """Parse OSM road ways into Road segments, clipped to scene bounds."""
+) -> list[Way]:
+    """Parse OSM road ways into Way segments, clipped to scene bounds."""
     elements = osm_data.get("elements", [])
-    roads: list[Road] = []
+    roads: list[Way] = []
 
     # Config values pulled into locals before the per-element loop.
     highway_overrides = roads_cfg.highway_overrides
@@ -360,16 +360,16 @@ def parse_roads(
                 default_railway_material,
             )
         # A road that re-enters the AOI after leaving produces a MultiLineString.
-        # Decompose into one Road per component so RoadFlattenOperation always
+        # Decompose into one Way per component so WayFlattenOperation always
         # receives a plain LineString
         if isinstance(clipped_cl, MultiLineString):
             for component in clipped_cl.geoms:
                 if not component.is_empty:
                     roads.append(
-                        Road(centerline=component, width=width, material=material)
+                        Way(centerline=component, width=width, material=material)
                     )
         else:
-            roads.append(Road(centerline=clipped_cl, width=width, material=material))
+            roads.append(Way(centerline=clipped_cl, width=width, material=material))
 
     return roads
 
@@ -401,18 +401,18 @@ def fetch_osm_data(
     return None
 
 
-def roads_to_sidecar(roads: list[Road]) -> dict:
+def ways_to_sidecar(roads: list[Way]) -> dict:
     """Serialize road segments to the roads-sidecar structure."""
-    roads_by_material: dict[str, list[Road]] = {}
+    roads_by_material: dict[str, list[Way]] = {}
     for road in roads:
         roads_by_material.setdefault(road.material, []).append(road)
 
     return {
         "version": 1,
-        "road_layers": [
+        "way_layers": [
             {
                 "material_name": material,
-                "roads": [
+                "ways": [
                     {"centerline": mapping(r.centerline), "width": r.width}
                     for r in road_list
                 ],
@@ -422,7 +422,7 @@ def roads_to_sidecar(roads: list[Road]) -> dict:
     }
 
 
-def roads_from_sidecar(data: dict) -> list[Road]:
+def ways_from_sidecar(data: dict) -> list[Way]:
     """Reconstruct road segments from the roads-sidecar structure.
 
     Returns an empty list for an unrecognised schema version.
@@ -432,12 +432,12 @@ def roads_from_sidecar(data: dict) -> list[Road]:
         logging.warning("Unknown road sidecar version %s; skipping roads", version)
         return []
 
-    roads: list[Road] = []
-    for layer in data.get("road_layers", []):
+    roads: list[Way] = []
+    for layer in data.get("way_layers", []):
         material = layer["material_name"]
-        for r in layer.get("roads", []):
+        for r in layer.get("ways", []):
             roads.append(
-                Road(
+                Way(
                     centerline=shape(r["centerline"]),
                     width=r["width"],
                     material=material,
@@ -446,8 +446,8 @@ def roads_from_sidecar(data: dict) -> list[Road]:
     return roads
 
 
-def build_road_terraform_operations(
-    roads: list[Road],
+def build_way_terraform_operations(
+    roads: list[Way],
     dem_data,
     *,
     transition_buffer_m: float,

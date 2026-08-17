@@ -5,7 +5,7 @@ import pytest
 import xarray as xr
 from shapely.geometry import box
 
-from s2gos_generator.processors.terrain_texture import apply_roads
+from s2gos_generator.processors.terrain_texture import apply_ways
 
 
 def _write_landcover(path):
@@ -25,7 +25,7 @@ def test_apply_roads_paints_material_at_south_row_zero(tmp_path):
     road_polygons = {"asphalt": box(-5.0, -4.0, 35.0, 4.0)}
     texture = np.zeros((4, 4), dtype=np.uint8)
 
-    out, union_mask = apply_roads(texture, lc_path, road_polygons, {"asphalt": 7})
+    out, union_mask = apply_ways(texture, lc_path, road_polygons, {"asphalt": 7})
 
     assert out.shape == (4, 4)
     assert (out[0, :] == 7).all()  # southern road -> row 0
@@ -49,7 +49,7 @@ def test_apply_roads_paints_nothing(tmp_path, road_polys, index_map):
     lc_path = _write_landcover(tmp_path / "lc.zarr")
     texture = np.zeros((4, 4), dtype=np.uint8)
 
-    out, union_mask = apply_roads(texture, lc_path, road_polys, index_map)
+    out, union_mask = apply_ways(texture, lc_path, road_polys, index_map)
     assert union_mask is None
     assert (out == 0).all()
 

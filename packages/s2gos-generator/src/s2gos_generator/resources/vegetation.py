@@ -85,7 +85,7 @@ def process_target_vegetation(
     road_exclusion = ctx.config.vegetation_placement.road_exclusion
     vegetation_instances = _filter_by_roads(
         vegetation_instances,
-        ctx.roads,
+        ctx.ways,
         enabled=road_exclusion.enabled,
         buffer_m=road_exclusion.buffer_m,
     )

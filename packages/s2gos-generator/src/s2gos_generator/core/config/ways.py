@@ -1,4 +1,4 @@
-"""Road infrastructure configuration."""
+"""Way infrastructure configuration."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ class RailwayOverride(BaseModel):
     default_material: Optional[str] = None
 
 
-class RoadsConfig(BaseModel):
+class WaysConfig(BaseModel):
     """Configuration for road infrastructure in scenes."""
 
     ROAD_TYPE_TABLE: ClassVar[dict[str, HighwayDefaults]] = {

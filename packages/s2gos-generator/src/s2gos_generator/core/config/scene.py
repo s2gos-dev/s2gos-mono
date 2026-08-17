@@ -26,7 +26,7 @@ from .atmosphere import (
 from .buildings import BuildingsConfig
 from .material_match import SpectralMatchingConfig
 from .mesh_refinement import MeshRefinementConfig
-from .roads import RoadsConfig
+from .ways import WaysConfig
 from .vegetation import VegetationExclusionZone, VegetationPlacementConfig
 from ..._version import get_version
 from ...dataset import IndexedGeoTiff, Zarr, dataset_factory
@@ -253,9 +253,9 @@ class SceneGenConfig(BaseModel):
         None,
         description="HAMSTER albedo data configuration for baresoil. See [HamsterConfig][s2gos_generator.core.config.assets.HamsterConfig].",
     )
-    roads: Optional[RoadsConfig] = Field(
+    ways: Optional[WaysConfig] = Field(
         None,
-        description="Road infrastructure configuration (None disables roads). See [RoadsConfig][s2gos_generator.core.config.roads.RoadsConfig].",
+        description="Way infrastructure configuration (None disables roads). See [WaysConfig][s2gos_generator.core.config.ways.WaysConfig].",
     )
     spectral_matching: Optional[SpectralMatchingConfig] = Field(
         None,
