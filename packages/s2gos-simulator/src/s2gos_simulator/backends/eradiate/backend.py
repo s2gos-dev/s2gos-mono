@@ -54,6 +54,7 @@ except ImportError:
 
 # mi.set_log_level(mi.LogLevel.Debug)
 
+
 class EradiateBackend(SimulationBackend):
     """Enhanced Eradiate backend with modular architecture.
 
@@ -644,9 +645,7 @@ class EradiateBackend(SimulationBackend):
             if self._eradiate_mode == "mono"
             else scene_description.atmosphere["toa"]
         )
-        ground_altitude = _resolve_ground_altitude(
-            scene_description, scene_dir, toa
-        )
+        ground_altitude = _resolve_ground_altitude(scene_description, scene_dir, toa)
 
         # Create atmosphere (or use None for BRF measurements)
         if atmosphere == "auto":

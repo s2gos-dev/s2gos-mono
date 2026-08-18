@@ -25,6 +25,7 @@ try:
 except ImportError:
     ERADIATE_AVAILABLE = False
 
+
 def _resolve_ground_altitude(
     scene_description: SceneDescription,
     scene_dir,
@@ -79,6 +80,7 @@ def _resolve_ground_altitude(
     )
     return z0
 
+
 def _build_thermoprops(identifier, altitude_max, altitude_step, ground_altitude):
     """Build a thermophysical profile, extended below MSL when needed.
 
@@ -115,8 +117,8 @@ def _build_thermoprops(identifier, altitude_max, altitude_step, ground_altitude)
 
     # Below-MSL: build and extend as an xr.Dataset.
     import joseki
-    from joseki.units import ureg as jureg
     from joseki.profiles.core import extrapolate, interp
+    from joseki.units import ureg as jureg
 
     ds = joseki.make(identifier)
 
@@ -140,9 +142,10 @@ def _build_thermoprops(identifier, altitude_max, altitude_step, ground_altitude)
     logger.info(
         f"Extended thermoprops below MSL: floor={ground_altitude:.1f} m, "
         f"top={z_new[-1]:.1f} m ({len(z_new)} levels, "
-        f"step~{(z_new[1]-z_new[0]):.1f} m)."
+        f"step~{(z_new[1] - z_new[0]):.1f} m)."
     )
     return ds
+
 
 def _clamp_pressure_to_absdb(thermoprops, absorption_data):
     """Cap profile pressure at the absorption database's tabulated ceiling.
@@ -150,8 +153,8 @@ def _clamp_pressure_to_absdb(thermoprops, absorption_data):
     Below MSL the deepest layers can have a pressure above the absorption
     database's maximum tabulated pressure. Eradiate's default out-of-bounds
     rule then returns sigma_a = 0 (absorption) for those layers, this translates into
-    zero absorption in the highest pressure. This caps only the pressure ``p`` given to 
-    the absorption lookup; ``n`` and ``t`` are untouched. Rayleigh scattering and the 
+    zero absorption in the highest pressure. This caps only the pressure ``p`` given to
+    the absorption lookup; ``n`` and ``t`` are untouched. Rayleigh scattering and the
     lookup's temperature axis stay exact.
 
     Only xr.Dataset thermoprops are considered (the below-MSL path). The legacy
@@ -212,7 +215,9 @@ class AtmosphereBuilder:
         """Initialize atmosphere builder."""
         pass
 
-    def create_geometry_from_atmosphere(self, scene_description: SceneDescription, scene_dir):
+    def create_geometry_from_atmosphere(
+        self, scene_description: SceneDescription, scene_dir
+    ):
         """Create geometry with bounds matching the atmosphere configuration.
 
         Args:
@@ -231,10 +236,12 @@ class AtmosphereBuilder:
             "toa_altitude": toa,
             "ground_altitude": ground_altitude,
         }
-        
+
         return geometry
 
-    def create_atmosphere_from_config(self, scene_description: SceneDescription, ground_altitude=None):
+    def create_atmosphere_from_config(
+        self, scene_description: SceneDescription, ground_altitude=None
+    ):
         """Create atmosphere based on scene description format.
 
         Args:
@@ -291,8 +298,7 @@ class AtmosphereBuilder:
                 altitude_step=altitude_step,
                 ground_altitude=ground_altitude,
             )
-        
-        
+
         absorption_data = mol_dict.get("absorption_database") or get_default_absdb()
         if isinstance(absorption_data, str):
             absorption_data = absdb_factory.create(absorption_data)
@@ -451,7 +457,7 @@ class AtmosphereBuilder:
         )
         absorption_data = absdb_factory.create("gecko")
         thermoprops = _clamp_pressure_to_absdb(thermoprops, absorption_data)
-        
+
         atmosphere = MolecularAtmosphere(
             thermoprops=thermoprops,
             absorption_data="gecko",

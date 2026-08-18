@@ -11,18 +11,18 @@ from unittest.mock import patch
 
 import numpy as np
 import pytest
+from s2gos_utils.scene.description import SceneDescription
 
 from s2gos_simulator.backends.eradiate.atmosphere_builder import (
     AtmosphereBuilder,
     _build_thermoprops,
     _resolve_ground_altitude,
 )
-from s2gos_utils.scene.description import SceneDescription
-
 
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
 
 def _scene(toa=75000.0):
     """Minimal in-memory SceneDescription with an atmosphere dict."""
@@ -34,9 +34,7 @@ def _scene(toa=75000.0):
     )
 
 
-PATCH_TARGET = (
-    "s2gos_simulator.terrain_query.TerrainQuery"
-)
+PATCH_TARGET = "s2gos_simulator.terrain_query.TerrainQuery"
 
 
 def _patch_min_elevation(value):
@@ -47,6 +45,7 @@ def _patch_min_elevation(value):
 # --------------------------------------------------------------------------- #
 # _resolve_ground_altitude
 # --------------------------------------------------------------------------- #
+
 
 def test_above_sea_clamps_to_zero():
     """Positive terrain -> ground_altitude is exactly 0.0 (bit-identical path)."""
@@ -94,6 +93,7 @@ def test_no_dem_falls_back_to_zero():
 # --------------------------------------------------------------------------- #
 # _build_thermoprops
 # --------------------------------------------------------------------------- #
+
 
 def test_thermoprops_above_sea_returns_legacy_dict():
     """ground_altitude None -> legacy {identifier, z} dict, floored at 0."""
@@ -151,13 +151,15 @@ def test_thermoprops_below_sea_returns_extended_dataset():
 # Stash isolation across builder reuse
 # --------------------------------------------------------------------------- #
 
+
 def test_ground_altitude_stash_no_leak_across_scenes():
     """A second config call without ground_altitude must not read a stale stash."""
     ab = AtmosphereBuilder()
     # First scene: a below-sea value stashed. Use a homogeneous atmosphere so the
     # call returns without needing a real molecular profile build.
     sd_first = SceneDescription(
-        name="s1", resolution_m=30.0,
+        name="s1",
+        resolution_m=30.0,
         location={"center_lat": 0.0, "center_lon": 0.0},
         atmosphere={"toa": 75000.0, "type": "homogeneous", "boa": 0.0},
     )
@@ -169,7 +171,8 @@ def test_ground_altitude_stash_no_leak_across_scenes():
 
     # Second scene: no ground_altitude passed -> stash must reset to None.
     sd_second = SceneDescription(
-        name="s2", resolution_m=30.0,
+        name="s2",
+        resolution_m=30.0,
         location={"center_lat": 0.0, "center_lon": 0.0},
         atmosphere={"toa": 75000.0, "type": "homogeneous", "boa": 0.0},
     )
@@ -184,13 +187,14 @@ def test_ground_altitude_stash_no_leak_across_scenes():
 # End-to-end geometry/atmosphere compatibility (the real gate)
 # --------------------------------------------------------------------------- #
 
+
 def test_below_sea_passes_check_geometry_atmosphere():
     """The extended profile must satisfy eradiate's compatibility gate at z0."""
     eradiate = pytest.importorskip("eradiate")
     eradiate.set_mode("ckd")
+    from eradiate.experiments._helpers import check_geometry_atmosphere
     from eradiate.scenes.atmosphere import MolecularAtmosphere
     from eradiate.scenes.geometry import PlaneParallelGeometry
-    from eradiate.experiments._helpers import check_geometry_atmosphere
     from eradiate.units import unit_registry as ureg
 
     z0 = -500.0
@@ -202,11 +206,14 @@ def test_below_sea_passes_check_geometry_atmosphere():
         ground_altitude=z0,
     )
     atm = MolecularAtmosphere(
-        thermoprops=tp, absorption_data="monotropa",
-        has_absorption=True, has_scattering=True,
+        thermoprops=tp,
+        absorption_data="monotropa",
+        has_absorption=True,
+        has_scattering=True,
     )
     geom = PlaneParallelGeometry(
-        toa_altitude=toa * ureg.m, ground_altitude=z0 * ureg.m,
+        toa_altitude=toa * ureg.m,
+        ground_altitude=z0 * ureg.m,
     )
     # Raises on incompatibility; passing == no exception.
     check_geometry_atmosphere(geom, atm)
