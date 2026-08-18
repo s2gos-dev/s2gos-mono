@@ -15,6 +15,7 @@ from typing import Dict, Optional, Sequence, Tuple
 
 import numpy as np
 import xarray as xr
+from urllib3 import Retry
 
 # Asset suffix for the 10 m bands in the Copernicus sentinel-2-l2a collection.
 _ASSET_SUFFIX = "_10m"
@@ -31,6 +32,9 @@ _RADIOMETRY_KEYS = frozenset({"raster:scale", "raster:offset"})
 # this fraction of the composite's remaining gap (a cheap 20 m SCL read decides
 # before any 10 m band read). Never applied to the first date.
 _SKIP_MIN_GAP_FILL = 0.25
+
+_STAC_PAGE_LIMIT = 100
+_STAC_TIMEOUT_S = (10, 60)
 
 
 class S2FetchError(RuntimeError):
@@ -195,8 +199,61 @@ def _load_date(da: xr.DataArray, date, retries: int = 4, base_delay: float = 2.0
         except Exception as exc:  # noqa: BLE001 — transient network failures
             last_exc = exc
             if attempt < retries - 1:
-                time.sleep(base_delay * 2**attempt)
+                delay = base_delay * 2**attempt
+                logging.info(
+                    "Spectral S2: read of %s failed (%s), retrying in %.0f s "
+                    "(attempt %d/%d)",
+                    _date_str(date),
+                    type(exc).__name__,
+                    delay,
+                    attempt + 1,
+                    retries,
+                )
+                time.sleep(delay)
     raise last_exc
+
+
+class _LoggingRetry(Retry):
+    """``Retry`` that logs each attempt instead of sleeping silently."""
+
+    def increment(self, method=None, url=None, response=None, error=None, **kwargs):
+        # Raises MaxRetryError once exhausted, so reaching the log means we retry.
+        nxt = super().increment(
+            method=method, url=url, response=response, error=error, **kwargs
+        )
+        logging.info(
+            "Spectral S2: STAC %s -> %s, retrying in %.0f s (%d attempt(s) left)",
+            url,
+            getattr(response, "status", None) or repr(error),
+            nxt.get_backoff_time(),
+            nxt.total,
+        )
+        return nxt
+
+
+def _stac_retry() -> Retry:
+    """Retry policy for CDSE STAC requests."""
+    return _LoggingRetry(
+        total=3,
+        backoff_factor=1.0,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=None,  # None means every method
+        respect_retry_after_header=False,
+    )
+
+
+def _open_catalog(stac_url: str):
+    """Open the STAC catalog with retries that survive CDSE rate limiting."""
+    import pystac_client
+    from pystac_client.stac_api_io import StacApiIO
+
+    catalog = pystac_client.Client.open(
+        stac_url,
+        stac_io=StacApiIO(max_retries=_stac_retry()),
+        timeout=_STAC_TIMEOUT_S,
+    )
+    catalog.add_conforms_to("ITEM_SEARCH")
+    return catalog
 
 
 def _scl_valid_mask(scl: xr.DataArray, exclude: Sequence[int]) -> xr.DataArray:
@@ -393,11 +450,9 @@ def fetch_s2_reflectance(
     bands = list(bands)
 
     import odc.stac
-    import pystac_client
     from shapely.geometry import mapping
 
-    catalog = pystac_client.Client.open(stac_url)
-    catalog.add_conforms_to("ITEM_SEARCH")
+    catalog = _open_catalog(stac_url)
 
     search = catalog.search(
         collections="sentinel-2-l2a",
@@ -407,6 +462,7 @@ def fetch_s2_reflectance(
             "op": "<",
             "args": [{"property": "eo:cloud_cover"}, max_cloud_cover],
         },
+        limit=_STAC_PAGE_LIMIT,
     )
     items = search.item_collection()
     if len(items) == 0:
