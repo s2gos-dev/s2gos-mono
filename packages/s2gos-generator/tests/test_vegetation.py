@@ -7,7 +7,7 @@ from s2gos_generator.processors.vegetation import (
     _batch_elevation_lookup,
     _calculate_max_instances_per_pixel,
     _filter_by_exclusion_zones,
-    _filter_by_roads,
+    _filter_by_ways,
     _generate_pixel_vegetation_positions,
 )
 
@@ -193,45 +193,45 @@ class TestFilterByExclusionZones:
         assert result[0] is outside
 
 
-def _roads():
-    """A single 4 m wide asphalt road running along the y-axis (x in [-2, 2])."""
+def _ways():
+    """A single 4 m wide asphalt way running along the y-axis (x in [-2, 2])."""
     from shapely.geometry import LineString
 
     from s2gos_generator.processors.ways import Way
 
     centerline = LineString([(0.0, -1000.0), (0.0, 1000.0)])
-    return [Way(centerline=centerline, width=4.0, material="asphalt")]
+    return [Way(centerline=centerline, width=4.0, material="asphalt", kind="road")]
 
 
-class TestFilterByRoads:
-    def test_excludes_positions_on_roads_keeps_others(self):
-        on_road = _instance(0.0, 10.0)
+class TestFilterByWays:
+    def test_excludes_positions_on_ways_keeps_others(self):
+        on_way = _instance(0.0, 10.0)
         edge = _instance(2.0, 10.0)  # exactly on the edge -> boundary-safe exclusion
-        off_road = _instance(50.0, 10.0)
+        off_way = _instance(50.0, 10.0)
 
-        result = _filter_by_roads(
-            [on_road, edge, off_road], _roads(), enabled=True, buffer_m=0.0
+        result = _filter_by_ways(
+            [on_way, edge, off_way], _ways(), enabled=True, buffer_m=0.0
         )
-        assert result == [off_road]
+        assert result == [off_way]
 
     def test_buffer_widens_exclusion(self):
         near = _instance(5.0, 0.0)  # 3 m outside the [-2,2] strip
         # No buffer keeps it; a 5 m buffer pulls it into the exclusion zone.
-        kept = _filter_by_roads([near], _roads(), enabled=True, buffer_m=0.0)
-        excluded = _filter_by_roads([near], _roads(), enabled=True, buffer_m=5.0)
+        kept = _filter_by_ways([near], _ways(), enabled=True, buffer_m=0.0)
+        excluded = _filter_by_ways([near], _ways(), enabled=True, buffer_m=5.0)
         assert kept == [near]
         assert excluded == []
 
     def test_noop_when_disabled(self):
-        instances = [_instance(0.0, 0.0)]  # squarely on the road
+        instances = [_instance(0.0, 0.0)]  # squarely on the way
         assert (
-            _filter_by_roads(instances, _roads(), enabled=False, buffer_m=0.0)
+            _filter_by_ways(instances, _ways(), enabled=False, buffer_m=0.0)
             is instances
         )
 
-    def test_noop_when_no_roads(self):
+    def test_noop_when_no_ways(self):
         instances = [_instance(0.0, 0.0)]
-        assert _filter_by_roads(instances, [], enabled=True, buffer_m=0.0) is instances
+        assert _filter_by_ways(instances, [], enabled=True, buffer_m=0.0) is instances
 
 
 class TestBatchElevationLookup:

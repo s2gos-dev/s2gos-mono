@@ -1,4 +1,4 @@
-"""Way infrastructure resource — fetches OSM road data and saves a sidecar."""
+"""Way infrastructure resource — fetches OSM way (road and railway) data and saves a sidecar."""
 
 import json
 import logging
@@ -15,29 +15,29 @@ from ..processors.ways import (
 
 
 def process_target_ways(ctx: SceneResourceContext) -> Optional[Path]:
-    """Fetch/load road data, parse it to segments, and save the sidecar JSON."""
-    roads_cfg = ctx.config.ways
-    if roads_cfg is None or not roads_cfg.enabled:
+    """Fetch/load way data, parse it to segments, and save the sidecar JSON."""
+    ways_cfg = ctx.config.ways
+    if ways_cfg is None or not ways_cfg.enabled:
         return None
 
     bbox_west, bbox_south, bbox_east, bbox_north = ctx.target_aoi_polygon.bounds
 
     try:
         osm_data = fetch_osm_data(
-            roads_cfg, bbox_south, bbox_west, bbox_north, bbox_east
+            ways_cfg, bbox_south, bbox_west, bbox_north, bbox_east
         )
     except WaysFetchError as exc:
-        logging.error("Way fetch failed, skipping roads: %s", exc)
+        logging.error("Way fetch failed, skipping ways: %s", exc)
         return None
     if osm_data is None:
-        logging.warning("No road data available — skipping roads")
+        logging.warning("No way data available — skipping ways")
         return None
 
     parsed = parse_ways(
-        osm_data, roads_cfg, ctx.coordinate_system, ctx.target_scene_bounds
+        osm_data, ways_cfg, ctx.coordinate_system, ctx.target_scene_bounds
     )
     if not parsed:
-        logging.info("No roads found in AOI — skipping")
+        logging.info("No ways found in AOI — skipping")
         return None
 
     sidecar_path = ctx.data_dir / "ways.json"
@@ -45,9 +45,9 @@ def process_target_ways(ctx: SceneResourceContext) -> Optional[Path]:
         json.dump(ways_to_sidecar(parsed), f)
     ctx.assets.ways_file = sidecar_path
 
-    materials = sorted({r.material for r in parsed})
+    materials = sorted({w.material for w in parsed})
     logging.info(
-        "Roads sidecar saved: %s (%d segments, %d materials: %s)",
+        "Ways sidecar saved: %s (%d segments, %d materials: %s)",
         sidecar_path,
         len(parsed),
         len(materials),

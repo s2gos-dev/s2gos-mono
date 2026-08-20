@@ -44,7 +44,7 @@ def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
                     dem_data,
                     transition_buffer_m=refinement_cfg.transition_buffer_m,
                     gradient_threshold=ctx.config.ways.mesh_gradient_threshold,
-                    thin_road_skip_m=ctx.config.ways.mesh_thin_road_skip_m,
+                    thin_way_skip_m=ctx.config.ways.mesh_thin_way_skip_m,
                 )
             )
 

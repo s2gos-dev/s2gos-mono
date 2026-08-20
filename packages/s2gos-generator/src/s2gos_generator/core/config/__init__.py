@@ -29,7 +29,7 @@ from .atmosphere import (
 from .buildings import BuildingsConfig
 from .material_match import SpectralMatchingConfig
 from .mesh_refinement import MeshRefinementConfig
-from .ways import HighwayOverride, WaysConfig
+from .ways import RailwayOverride, RoadOverride, WaysConfig
 from .scene import (
     BackgroundConfig,
     BufferConfig,
@@ -89,8 +89,9 @@ __all__ = [
     "load_assets_from_xml",
     # mesh_refinement
     "MeshRefinementConfig",
-    # roads
-    "HighwayOverride",
+    # ways
+    "RoadOverride",
+    "RailwayOverride",
     "WaysConfig",
     # buildings
     "BuildingsConfig",

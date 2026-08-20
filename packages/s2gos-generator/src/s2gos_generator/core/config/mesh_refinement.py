@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class MeshRefinementConfig(BaseModel):
     """Adaptive quadtree mesh refinement configuration.
 
-    When enabled, the terrain mesh is refined under feature polygons (e.g. roads)
+    When enabled, the terrain mesh is refined under feature polygons (e.g. ways)
     and a surrounding transition buffer.  Feature vertices are optionally flattened
     after refinement.
 

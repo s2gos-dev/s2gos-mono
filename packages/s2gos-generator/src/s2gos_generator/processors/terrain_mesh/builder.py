@@ -173,7 +173,7 @@ def build_refined_mesh(
     Args:
         dem_data:   DEM elevation DataArray.
         operations: List of :class:`TerraformOperation` to apply; pass ``None``
-                    or an empty list to skip road-influence refinement and flattening.
+                    or an empty list to skip way-influence refinement and flattening.
         config:     :class:`MeshRefinementConfig` (``decimation_depth``,
                     ``decimation_tolerance_m``, ``max_depth``, ``flatten``, …).
         handle_nans: Remove faces whose vertices contain NaN elevations.

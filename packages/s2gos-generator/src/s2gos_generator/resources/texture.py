@@ -130,9 +130,9 @@ def _generate_texture(
         )
         dirty |= changed
 
-    road_mask: Optional[np.ndarray] = None
+    way_mask: Optional[np.ndarray] = None
     if ctx.dependency_outputs.get("target_ways") is not None and area_name == "target":
-        texture_2d, road_mask = apply_ways(
+        texture_2d, way_mask = apply_ways(
             texture_2d,
             landcover_path,
             ctx.way_polygons_by_material,
@@ -140,14 +140,14 @@ def _generate_texture(
             ctx.config.texture_resolution_m,
             area_name,
         )
-        if road_mask is not None:
+        if way_mask is not None:
             dirty = True
 
     if dirty:
         Image.fromarray(texture_2d, mode="L").save(selection_texture_path)
 
-    if road_mask is not None and preview_texture_path is not None:
-        apply_ways_to_preview(preview_texture_path, road_mask)
+    if way_mask is not None and preview_texture_path is not None:
+        apply_ways_to_preview(preview_texture_path, way_mask)
 
     return selection_texture_path, preview_texture_path
 

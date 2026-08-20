@@ -1,4 +1,4 @@
-"""Test road painting onto the selection texture (processors/texture.py)."""
+"""Test way painting onto the selection texture (processors/texture.py)."""
 
 import numpy as np
 import pytest
@@ -19,37 +19,37 @@ def _write_landcover(path):
     return path
 
 
-def test_apply_roads_paints_material_at_south_row_zero(tmp_path):
+def test_apply_ways_paints_material_at_south_row_zero(tmp_path):
     lc_path = _write_landcover(tmp_path / "lc.zarr")
 
-    road_polygons = {"asphalt": box(-5.0, -4.0, 35.0, 4.0)}
+    way_polygons = {"asphalt": box(-5.0, -4.0, 35.0, 4.0)}
     texture = np.zeros((4, 4), dtype=np.uint8)
 
-    out, union_mask = apply_ways(texture, lc_path, road_polygons, {"asphalt": 7})
+    out, union_mask = apply_ways(texture, lc_path, way_polygons, {"asphalt": 7})
 
     assert out.shape == (4, 4)
-    assert (out[0, :] == 7).all()  # southern road -> row 0
+    assert (out[0, :] == 7).all()  # southern way -> row 0
     assert (out[1:, :] == 0).all()  # rest untouched
     assert union_mask is not None
     assert np.array_equal(union_mask, out == 7)
 
 
 @pytest.mark.parametrize(
-    "road_polys,index_map",
+    "way_polys,index_map",
     [
-        ({}, {"asphalt": 7}),  # no road geometry at all
+        ({}, {"asphalt": 7}),  # no way geometry at all
         (
             {"asphalt": box(-5.0, -4.0, 35.0, 4.0)},
             {"concrete": 3},
         ),  # material absent from index map
     ],
-    ids=["no-road-geoms", "material-not-in-index"],
+    ids=["no-way-geoms", "material-not-in-index"],
 )
-def test_apply_roads_paints_nothing(tmp_path, road_polys, index_map):
+def test_apply_ways_paints_nothing(tmp_path, way_polys, index_map):
     lc_path = _write_landcover(tmp_path / "lc.zarr")
     texture = np.zeros((4, 4), dtype=np.uint8)
 
-    out, union_mask = apply_ways(texture, lc_path, road_polys, index_map)
+    out, union_mask = apply_ways(texture, lc_path, way_polys, index_map)
     assert union_mask is None
     assert (out == 0).all()
 

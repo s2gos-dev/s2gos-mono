@@ -151,19 +151,19 @@ class SceneResourceContext:
                 data = json.load(f)
             return ways_from_sidecar(data)
         except (json.JSONDecodeError, KeyError) as exc:
-            logging.warning("Failed to load roads from sidecar: %s", exc)
+            logging.warning("Failed to load ways from sidecar: %s", exc)
             return []
 
     @property
     def ways(self) -> list:
-        """All road segments, lazily loaded from the roads sidecar."""
+        """All way segments, lazily loaded from the ways sidecar."""
         if self._ways is None:
             self._ways = self._load_ways_from_sidecar()
         return self._ways
 
     @property
     def way_polygons_by_material(self) -> dict:
-        """Merged road footprints per material, derived from the roads list.
+        """Merged way footprints per material, derived from the ways list.
 
         Computed once and cached. Each value is the unary_union of all buffered
         centerlines for that material — the geometry the texture painter needs,
@@ -173,9 +173,9 @@ class SceneResourceContext:
             from shapely.ops import unary_union
 
             by_mat: dict[str, list] = {}
-            for road in self.ways:
-                poly = road.centerline.buffer(road.width / 2, cap_style="flat")
-                by_mat.setdefault(road.material, []).append(poly)
+            for way in self.ways:
+                poly = way.centerline.buffer(way.width / 2, cap_style="flat")
+                by_mat.setdefault(way.material, []).append(poly)
             self._way_polygons_by_material = {
                 mat: unary_union(polys) for mat, polys in by_mat.items()
             }

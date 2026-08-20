@@ -55,7 +55,7 @@ nav:
     - Configuration:
       - Scene: api/scene_config.md
       - Atmosphere: api/atmosphere.md
-      - Buildings & Roads: api/buildings_roads.md
+      - Buildings & Ways: api/buildings_ways.md
       - Vegetation: api/vegetation.md
       - Assets & Regions: api/assets.md
       - Adaptive Mesh: api/mesh_refinement.md

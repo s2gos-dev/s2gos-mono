@@ -1,4 +1,4 @@
-"""Tests for road-driven terrain flattening (processors/terrain_mesh/terraforming.py)."""
+"""Tests for way-driven terrain flattening (processors/terrain_mesh/terraforming.py)."""
 
 import numpy as np
 import pytest
@@ -46,14 +46,14 @@ class TestGradientFilter:
         ops = gf.build_operations([_CENTERLINE], [3.0], 10.0, threshold=0.0)
         assert len(ops) == 1
 
-    def test_thin_road_skip_excludes_narrow_segments(self):
+    def test_thin_way_skip_excludes_narrow_segments(self):
         gf = GradientFilter(_RAMP, _X, _Y)
         # half_width 1.0 -> width 2.0, below the 5 m skip threshold -> dropped.
         narrow = gf.build_operations(
-            [_CENTERLINE], [1.0], 10.0, threshold=0.0, thin_road_skip_m=5.0
+            [_CENTERLINE], [1.0], 10.0, threshold=0.0, thin_way_skip_m=5.0
         )
         wide = gf.build_operations(
-            [_CENTERLINE], [5.0], 10.0, threshold=0.0, thin_road_skip_m=5.0
+            [_CENTERLINE], [5.0], 10.0, threshold=0.0, thin_way_skip_m=5.0
         )
         assert narrow == []
         assert len(wide) == 1
@@ -64,7 +64,7 @@ def _flat_to_zero(xy):
     return np.zeros(len(xy))
 
 
-class TestRoadFlatten:
+class TestWayFlatten:
     def test_alpha_blend_full_transition_and_outside(self):
         # Vertical centerline at x=0; distance from it is |x|. half_width 5, buffer 10.
         op = WayFlattenOperation(

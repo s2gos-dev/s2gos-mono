@@ -9,18 +9,18 @@ Scene generation follows a DAG (directed acyclic graph) pipeline with automatic 
 The broad stages are:
 
 1. **Data extraction** — Clips source data (DEM, landcover) to the target and optionally buffer/background extents.
-2. **Mesh generation** — Converts elevation data into 3D triangle meshes (PLY format), one per zone. The target mesh can be locally refined with an [adaptive quadtree grid](#adaptive-terrain-mesh) so that features such as roads sit on well-resolved, flattened terrain.
+2. **Mesh generation** — Converts elevation data into 3D triangle meshes (PLY format), one per zone. The target mesh can be locally refined with an [adaptive quadtree grid](#adaptive-terrain-mesh) so that features such as ways sit on well-resolved, flattened terrain.
 3. **Texture generation** — Maps landcover classes to material definitions, producing selection textures for each mesh.
 4. **Scene description output** — Assembles all resources into a [`SceneDescription`][s2gos_utils.scene.description.SceneDescription] YAML that ties meshes, textures, materials, and atmosphere together for use by the simulator.
 
-Additional optional resources — [buildings](#buildings), [roads](#ways), [spectral material matching](#spectral-material-matching), vegetation placement, user assets, HAMSTER albedo data, and XML scene imports — are included in the DAG when enabled and run at the appropriate point in the dependency graph.
+Additional optional resources — [buildings](#buildings), [ways](#ways), [spectral material matching](#spectral-material-matching), vegetation placement, user assets, HAMSTER albedo data, and XML scene imports — are included in the DAG when enabled and run at the appropriate point in the dependency graph.
 
 !!! note 
     The pipeline is under active development. The set of available resources and their configuration options continues to grow.
 
 The pipeline caches completed resources to disk. On subsequent runs, any resource whose configuration is unchanged and whose output files are still present is skipped automatically. Pass `use_cache=False` to [`run()`][s2gos_generator.core.pipeline.SceneGenerationPipeline.run] to force a full rebuild.
 
-Internally the code follows a two-layer split. **Resources** (`resources/`) are the thin DAG nodes: each reads its configuration, calls into the processor layer, persists artifacts, and records them on the shared context. **Processors** (`processors/`) are the pure algorithms and format (de)serialization behind those nodes — fetching and parsing roads, painting textures, matching spectra — free of pipeline state so they can be tested and reused in isolation. The [Processors API reference](api/processors_spectral.md) documents the public functions.
+Internally the code follows a two-layer split. **Resources** (`resources/`) are the thin DAG nodes: each reads its configuration, calls into the processor layer, persists artifacts, and records them on the shared context. **Processors** (`processors/`) are the pure algorithms and format (de)serialization behind those nodes — fetching and parsing ways, painting textures, matching spectra — free of pipeline state so they can be tested and reused in isolation. The [Processors API reference](api/processors_spectral.md) documents the public functions.
 
 The figure below shows a typical pipeline DAG for a scene with some optional resources enabled:
 
@@ -79,19 +79,19 @@ See [Buildings configuration](configuration.md#buildings) for usage.
 ## Ways
 
 When [`WaysConfig`][s2gos_generator.core.config.ways.WaysConfig] is supplied,
-road geometry is rasterised into the target texture (and preview). Way centrelines
+way (road and railway) geometry is rasterised into the target texture (and preview). Way centrelines
 come either from [OpenStreetMap](https://www.openstreetmap.org/) via the
 [Overpass API](https://overpass-api.de/) (`source="overpass"`) or from a local JSON
-file (`source="file"`). Each road's width and surface material are resolved from
-OpenStreetMap tags where present, falling back to a built-in per-highway-type table
-and configurable defaults. Any published output must attribute
+file (`source="file"`). Each way's width and surface material are resolved from
+OpenStreetMap tags where present, falling back to a built-in per-road-type (or
+per-railway-type) table and configurable defaults. Any published output must attribute
 © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
 
-Because a flat road painted over bumpy terrain looks wrong, enabling roads also
+Because a flat way painted over bumpy terrain looks wrong, enabling ways also
 drives the [adaptive terrain mesh](#adaptive-terrain-mesh): the terrain under and
-beside each road is refined and flattened perpendicular to the centreline.
+beside each way is refined and flattened perpendicular to the centreline.
 
-See [Roads configuration](configuration.md#ways) for usage.
+See [Ways configuration](configuration.md#ways) for usage.
 
 ## Adaptive terrain mesh
 
@@ -99,7 +99,7 @@ By default the target mesh is a regular grid at the DEM resolution. With
 [`MeshRefinementConfig`][s2gos_generator.core.config.mesh_refinement.MeshRefinementConfig]
 the mesh is instead built from an **adaptive quadtree**: cells are subdivided
 (up to `max_depth`, each level doubling resolution) under feature polygons such as
-roads and a surrounding transition buffer, so features sit on well-resolved
+ways and a surrounding transition buffer, so features sit on well-resolved
 geometry without paying that cost everywhere. Refined feature vertices can be
 flattened perpendicular to the feature centreline.
 

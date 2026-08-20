@@ -8,7 +8,7 @@ All notable changes to **s2gos-generator** are documented here.
 
 - **Building generation** — 3D buildings in the target zone from OpenBuildingMap tiles, with
   numeric or taxonomy-based heights, per-building materials, and optional pitched (hip) roofs.
-- **Way support** — roads rasterised into the target texture from OpenStreetMap or a local
+- **Road support** — roads rasterised into the target texture from OpenStreetMap or a local
   JSON file, with widths and surface materials derived from OSM tags.
 - **Adaptive terrain mesh** — quadtree refinement of the target mesh under features such as
   roads (with optional flattening), plus decimation of smooth terrain.

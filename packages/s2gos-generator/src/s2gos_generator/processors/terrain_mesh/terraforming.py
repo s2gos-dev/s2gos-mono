@@ -68,10 +68,10 @@ class TerraformOperation(Protocol):
 
 
 class WayFlattenOperation:
-    """Flatten terrain cross-slope under a single road segment.
+    """Flatten terrain cross-slope under a single way (road or railway) segment.
 
     For each vertex inside the influence zone the elevation is blended toward
-    the elevation of the nearest point on the road centerline:
+    the elevation of the nearest point on the way centerline:
 
     * Within ``half_width`` of the centerline -> fully flattened (alpha = 1).
     * Between ``half_width`` and ``half_width + buffer_m`` -> linearly blended.
@@ -103,7 +103,7 @@ class WayFlattenOperation:
         elevation_fn: Callable[[np.ndarray], np.ndarray],
     ) -> np.ndarray:
         """Apply flattening.  For single-op use; prefer :func:`apply_way_flatten_batch`
-        when applying multiple operations to avoid recreating shapely points per road."""
+        when applying multiple operations to avoid recreating shapely points per way."""
         xy = vertices[:, :2]
         points = shapely.points(xy[:, 0], xy[:, 1])
         inside_mask = shapely.intersects(self._influence_zone, points)
@@ -175,7 +175,7 @@ def apply_way_flatten_batch(
     operations: list[WayFlattenOperation],
     elevation_fn: Callable[[np.ndarray], np.ndarray],
 ) -> np.ndarray:
-    """Apply road-flatten operations efficiently with a single batched elevation sample.
+    """Apply way-flatten operations efficiently with a single batched elevation sample.
 
     Args:
         vertices:     (N, 3) mesh vertex array — modified in-place.
@@ -240,7 +240,7 @@ def make_refinement_predicate(
     """Return a vectorised predicate for :class:`AdaptiveGrid.refine`.
 
     Args:
-        influence_zone: Merged polygon/multipolygon covering all road buffers.
+        influence_zone: Merged polygon/multipolygon covering all way buffers.
 
     Returns:
         ``predicate(xmin, ymin, xmax, ymax) -> bool[N]``
@@ -312,9 +312,9 @@ def compute_gradient(
 
 
 class GradientFilter:
-    """Filter road segments by DEM gradient magnitude along the centerline.
+    """Filter way segments by DEM gradient magnitude along the centerline.
 
-    Roads whose max gradient is below ``threshold`` are skipped (flat terrain,
+    Ways whose max gradient is below ``threshold`` are skipped (flat terrain,
     flattening would be a no-op)
     Args:
         elev: 2-D elevation array, shape (ny, nx).
@@ -354,16 +354,16 @@ class GradientFilter:
         half_widths: list[float],
         buffer_m: float,
         threshold: float,
-        thin_road_skip_m: float = 0.0,
+        thin_way_skip_m: float = 0.0,
     ) -> list[WayFlattenOperation]:
         """Build a :class:`WayFlattenOperation` for each segment above threshold.
 
         Args:
-            centerlines: Per-road centerline geometries.
-            half_widths: Per-road half-widths in metres.
-            buffer_m:    Blend-zone width outside road edge.
+            centerlines: Per-way centerline geometries.
+            half_widths: Per-way half-widths in metres.
+            buffer_m:    Blend-zone width outside way edge.
             threshold:   Gradient threshold (m/m).  0.0 keeps all segments.
-            thin_road_skip_m: If > 0, roads narrower than this width (m) are
+            thin_way_skip_m: If > 0, ways narrower than this width (m) are
                 skipped (excluded from flattening). Set to 0.0 to disable.
 
         Returns:
@@ -373,7 +373,7 @@ class GradientFilter:
         n_filtered = 0
 
         for cl, hw in zip(centerlines, half_widths):
-            too_thin = thin_road_skip_m > 0 and hw * 2 < thin_road_skip_m
+            too_thin = thin_way_skip_m > 0 and hw * 2 < thin_way_skip_m
             if too_thin or not self.exceeds_threshold(cl, threshold):
                 n_filtered += 1
             else:
@@ -381,7 +381,7 @@ class GradientFilter:
 
         if n_filtered:
             logging.info(
-                "Gradient filter: %d/%d road segment(s) skipped "
+                "Gradient filter: %d/%d way segment(s) skipped "
                 "(max gradient < %.4f m/m)",
                 n_filtered,
                 len(centerlines),

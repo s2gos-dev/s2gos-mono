@@ -1,9 +1,9 @@
 # Way Processors
 
-Fetch and parse OpenStreetMap road geometry, (de)serialize the roads
-sidecar, and build the terrain-flatten operations that sit roads on well-resolved terrain.
+Fetch and parse OpenStreetMap way (road and railway) geometry, (de)serialize the ways
+sidecar, and build the terrain-flatten operations that sit ways on well-resolved terrain.
 For the concept and configuration, see [Ways](../concepts.md#ways) and
-[Buildings & Roads config](buildings_roads.md).
+[Buildings & Ways config](buildings_ways.md).
 
 ## Fetching & parsing
 

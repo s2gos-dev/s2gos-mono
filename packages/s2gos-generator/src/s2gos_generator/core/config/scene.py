@@ -223,8 +223,8 @@ class SceneGenConfig(BaseModel):
         gt=0.0,
         description=(
             "Texture resolution in meters per pixel. "
-            "When set finer than landcover_resolution_m, roads and landcover are rasterized "
-            "at higher pixel density, reducing road blockiness. "
+            "When set finer than landcover_resolution_m, ways and landcover are rasterized "
+            "at higher pixel density, reducing way blockiness. "
             "Defaults to native landcover resolution when None."
         ),
     )
@@ -255,7 +255,7 @@ class SceneGenConfig(BaseModel):
     )
     ways: Optional[WaysConfig] = Field(
         None,
-        description="Way infrastructure configuration (None disables roads). See [WaysConfig][s2gos_generator.core.config.ways.WaysConfig].",
+        description="Way infrastructure configuration (None disables ways). See [WaysConfig][s2gos_generator.core.config.ways.WaysConfig].",
     )
     spectral_matching: Optional[SpectralMatchingConfig] = Field(
         None,
