@@ -88,7 +88,9 @@ class TestRoadWidth:
     def test_osm_lanes_tag_wins_over_override_lane_count(self):
         # An explicit OSM lanes tag takes priority over override.lane_count.
         overrides = {"residential": RoadOverride(lane_count=4)}
-        assert self._width({"lanes": "2"}, "residential", overrides) == pytest.approx(7.0)
+        assert self._width({"lanes": "2"}, "residential", overrides) == pytest.approx(
+            7.0
+        )
 
 
 class TestRoadMaterial:
@@ -197,7 +199,9 @@ class TestRailwayMaterial:
         assert self._material({}, "tram") == "asphalt"  # tram table default
 
     def test_unknown_type_falls_back_to_default_material(self):
-        assert self._material({}, "unknown_type", default="gravel_road") == "gravel_road"
+        assert (
+            self._material({}, "unknown_type", default="gravel_road") == "gravel_road"
+        )
 
 
 class TestParseWays:
@@ -240,9 +244,7 @@ class TestParseWays:
 
     def test_railway_way_becomes_one_way(self):
         # railway=rail with no explicit tracks tag: 1 track * 4.5m default width.
-        ways = self._parse(
-            self._way([(45.0, 15.0), (45.002, 15.0)], railway="rail")
-        )
+        ways = self._parse(self._way([(45.0, 15.0), (45.002, 15.0)], railway="rail"))
         assert len(ways) == 1
         assert ways[0].material == "gravel_road"  # rail table default
         assert ways[0].width == pytest.approx(4.5)
@@ -472,7 +474,9 @@ class TestWaysSidecar:
                     "material_name": "asphalt",
                     "ways": [
                         {
-                            "centerline": mapping(LineString([(0.0, 0.0), (0.0, 100.0)])),
+                            "centerline": mapping(
+                                LineString([(0.0, 0.0), (0.0, 100.0)])
+                            ),
                             "width": 7.0,
                         }
                     ],

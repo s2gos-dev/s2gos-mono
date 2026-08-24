@@ -12,8 +12,8 @@ from .error_pyramid import DemErrorPyramid
 from .mesh_generator import MeshGenerator
 from .terraforming import (
     GradientFilter,
-    WayFlattenOperation,
     TerraformOperation,
+    WayFlattenOperation,
     apply_way_flatten_batch,
     compute_gradient,
     make_refinement_predicate,

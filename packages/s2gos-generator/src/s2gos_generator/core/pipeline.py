@@ -60,7 +60,6 @@ class SceneGenerationPipeline:
             process_target_landcover,
         )
         from ..resources.mesh import generate_buffer_mesh, generate_target_mesh
-        from ..resources.ways import process_target_ways
         from ..resources.scene import create_scene_description
         from ..resources.texture import (
             generate_background_texture,
@@ -68,6 +67,7 @@ class SceneGenerationPipeline:
             generate_target_texture,
         )
         from ..resources.vegetation import process_target_vegetation
+        from ..resources.ways import process_target_ways
 
         # Register resources with their dependencies
 

@@ -307,8 +307,7 @@ def parse_ways(
         if hw_type is None and rail_type is None:
             continue
         if hw_type is not None and (
-            ways_cfg.road_types is not None
-            and hw_type not in ways_cfg.road_types
+            ways_cfg.road_types is not None and hw_type not in ways_cfg.road_types
         ):
             continue
         if rail_type is not None and (

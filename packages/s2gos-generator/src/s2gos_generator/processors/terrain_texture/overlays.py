@@ -162,6 +162,14 @@ def apply_ways(
     for material_name, merged_poly in way_geoms.items():
         mat_idx = way_material_indices.get(material_name)
         if mat_idx is None:
+            logging.warning(
+                "Way material %r has no texture index — those segments keep the "
+                "underlying landcover material, even though the terrain under them "
+                "is still flattened and still excludes vegetation. Check that %r is "
+                "reachable from the way config and defined in the material library.",
+                material_name,
+                material_name,
+            )
             continue
 
         way_mask = rasterize(

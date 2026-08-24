@@ -156,9 +156,7 @@ class WaysConfig(BaseModel):
     )
     file_path: Optional[Path] = Field(None, description="Path to way data JSON file")
 
-    road_types: Optional[list[str]] = Field(
-        None, description="Road types to include"
-    )
+    road_types: Optional[list[str]] = Field(None, description="Road types to include")
 
     road_overrides: dict[str, RoadOverride] = Field(
         default_factory=dict,

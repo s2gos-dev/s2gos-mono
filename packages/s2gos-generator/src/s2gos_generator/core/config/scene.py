@@ -26,8 +26,8 @@ from .atmosphere import (
 from .buildings import BuildingsConfig
 from .material_match import SpectralMatchingConfig
 from .mesh_refinement import MeshRefinementConfig
-from .ways import WaysConfig
 from .vegetation import VegetationExclusionZone, VegetationPlacementConfig
+from .ways import WaysConfig
 from ..._version import get_version
 from ...dataset import IndexedGeoTiff, Zarr, dataset_factory
 

@@ -21,6 +21,26 @@ def landcover_material_to_index(material_config_path) -> dict[str, int]:
     }
 
 
+def way_material_candidates(ways_cfg) -> set[str]:
+    """Return every material name a way can end up painted with.
+
+    Six sources feed way material resolution (see ``processors/ways.py``
+    ``_get_road_material`` / ``_get_railway_material``), and a name reachable
+    through any of them must receive a texture index.
+    """
+    candidates = {ways_cfg.default_material, ways_cfg.default_railway_material}
+    candidates.update(ways_cfg.DEFAULT_SURFACE_MATERIALS.values())
+    candidates.update(d.default_material for d in ways_cfg.ROAD_TYPE_TABLE.values())
+    candidates.update(d.default_material for d in ways_cfg.RAILWAY_TYPE_TABLE.values())
+    for overrides in (ways_cfg.road_overrides, ways_cfg.railway_overrides):
+        candidates.update(
+            ov.default_material
+            for ov in overrides.values()
+            if ov.default_material is not None
+        )
+    return candidates
+
+
 def build_material_index_map(ctx: SceneResourceContext) -> dict[str, int]:
     """Build the complete {material_name: texture_index} map.
 
@@ -35,14 +55,7 @@ def build_material_index_map(ctx: SceneResourceContext) -> dict[str, int]:
 
     overlay_candidates = set(r.material_name for r in ctx.config.material_regions)
     if ctx.config.ways is not None and ctx.config.ways.enabled:
-        ways_cfg = ctx.config.ways
-        overlay_candidates.add(ways_cfg.default_material)
-        overlay_candidates.update(ways_cfg.DEFAULT_SURFACE_MATERIALS.values())
-        overlay_candidates.update(
-            ov.default_material
-            for ov in ways_cfg.road_overrides.values()
-            if ov.default_material is not None
-        )
+        overlay_candidates |= way_material_candidates(ctx.config.ways)
 
     assert landcover_map, "landcover_map must not be empty"
     next_index = max(landcover_map.values()) + 1
