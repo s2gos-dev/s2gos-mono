@@ -8,6 +8,7 @@ class MaterialType(str, Enum):
     RPV = "rpv"
     BILAMBERTIAN = "bilambertian"
     OCEAN_LEGACY = "ocean_legacy"
+    OCEAN_GRASP = "ocean_grasp"
 
 
 class BackgroundMaterial(str, Enum):

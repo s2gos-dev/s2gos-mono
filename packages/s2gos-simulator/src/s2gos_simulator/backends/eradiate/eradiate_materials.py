@@ -354,6 +354,32 @@ class EradiateMaterialAdapter:
         return {}
 
     @staticmethod
+    def create_ocean_grasp_kdict(material) -> dict:
+        """Generate Eradiate kernel dictionary for GRASP ocean material."""
+        if not ERADIATE_AVAILABLE:
+            raise ImportError("Eradiate is not available")
+
+        kdict = {
+            "type": "ocean_grasp",
+            "wavelength": getattr(material, "wavelength", 550.0),
+            "wind_speed": getattr(material, "wind_speed", 0.1),
+            "eta": getattr(material, "eta", 1.33),
+            "k": getattr(material, "k", 0.0),
+            "ext_ior": getattr(material, "ext_ior", 1.000277),
+            "water_body_reflectance": getattr(material, "water_body_reflectance", 0.0),
+            "component": getattr(material, "component", 0),
+        }
+        return kdict
+
+    @staticmethod
+    def create_ocean_grasp_kpmap(_material) -> dict:
+        """Generate Eradiate parameter map for GRASP ocean material."""
+        if not ERADIATE_AVAILABLE:
+            raise ImportError("Eradiate is not available")
+
+        return {}
+
+    @staticmethod
     def create_dielectric_kdict(material) -> dict:
         """Generate Eradiate kernel dictionary for dielectric material."""
         if not ERADIATE_AVAILABLE:
