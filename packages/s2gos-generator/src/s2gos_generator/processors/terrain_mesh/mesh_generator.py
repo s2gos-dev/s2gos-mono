@@ -121,7 +121,7 @@ class MeshGenerator:
 
         Args:
             dem_data: DEM elevation DataArray.
-            operations: ``list[TerraformOperation]`` — one per road segment,
+            operations: ``list[TerraformOperation]`` — one per way segment,
                 or ``None`` for a uniform mesh.
             refinement_config: MeshRefinementConfig instance.
             handle_nans: Whether to remove NaN-containing faces.

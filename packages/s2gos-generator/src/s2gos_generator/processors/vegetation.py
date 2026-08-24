@@ -12,30 +12,30 @@ from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import distance_transform_edt
 
 
-def _filter_by_roads(
+def _filter_by_ways(
     instances: List[Dict[str, Any]],
-    roads: list,
+    ways: list,
     *,
     enabled: bool,
     buffer_m: float,
 ) -> List[Dict[str, Any]]:
-    """Exclude vegetation positions that fall on or near roads.
+    """Exclude vegetation positions that fall on or near ways.
 
     Args:
         instances: Vegetation placement dicts with a ``"position"`` (x, y).
-        roads: ``Road`` segments (centerline + full width in metres).
+        ways: ``Way`` segments (centerline + full width in metres).
         enabled: When False, ``instances`` is returned unchanged.
-        buffer_m: Extra clearance in metres beyond each road's half-width.
+        buffer_m: Extra clearance in metres beyond each way's half-width.
     """
     import shapely
     from shapely.strtree import STRtree
 
-    if not enabled or not instances or not roads:
+    if not enabled or not instances or not ways:
         return instances
 
     polys = [
-        road.centerline.buffer(road.width / 2 + buffer_m, cap_style="flat")
-        for road in roads
+        way.centerline.buffer(way.width / 2 + buffer_m, cap_style="flat")
+        for way in ways
     ]
     tree = STRtree(polys)
     xy = np.array([[inst["position"][0], inst["position"][1]] for inst in instances])
@@ -47,7 +47,7 @@ def _filter_by_roads(
     filtered = [inst for inst, k in zip(instances, keep) if k]
     excl_count = len(instances) - len(filtered)
     logging.info(
-        "Road filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
+        "Way filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
         len(filtered),
         excl_count,
         100.0 * excl_count / len(instances) if instances else 0.0,

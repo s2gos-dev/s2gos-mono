@@ -60,7 +60,6 @@ class SceneGenerationPipeline:
             process_target_landcover,
         )
         from ..resources.mesh import generate_buffer_mesh, generate_target_mesh
-        from ..resources.roads import process_target_roads
         from ..resources.scene import create_scene_description
         from ..resources.texture import (
             generate_background_texture,
@@ -68,6 +67,7 @@ class SceneGenerationPipeline:
             generate_target_texture,
         )
         from ..resources.vegetation import process_target_vegetation
+        from ..resources.ways import process_target_ways
 
         # Register resources with their dependencies
 
@@ -75,8 +75,8 @@ class SceneGenerationPipeline:
         self.registry.register("target_dem", [], process_target_dem)
         self.registry.register("target_landcover", [], process_target_landcover)
 
-        if self.config.roads is not None and self.config.roads.enabled:
-            self.registry.register("target_roads", [], process_target_roads)
+        if self.config.ways is not None and self.config.ways.enabled:
+            self.registry.register("target_ways", [], process_target_ways)
 
         if self.config.buildings is not None and self.config.buildings.enabled:
             self.registry.register(
@@ -89,7 +89,7 @@ class SceneGenerationPipeline:
             "target_mesh",
             ["target_dem"],
             generate_target_mesh,
-            optional=["target_roads"],
+            optional=["target_ways"],
         )
 
         if self.config.spectral_matching is not None:
@@ -108,7 +108,7 @@ class SceneGenerationPipeline:
             "target_texture",
             target_texture_deps,
             generate_target_texture,
-            optional=["target_roads"],
+            optional=["target_ways"],
         )
 
         if self.config.buffer is not None:
@@ -147,7 +147,7 @@ class SceneGenerationPipeline:
                 "target_vegetation",
                 ["target_landcover", "target_dem"],
                 process_target_vegetation,
-                optional=["user_assets", "target_roads"],
+                optional=["user_assets", "target_ways"],
             )
 
         # Scene description (dependencies will be updated by update_scene_dependencies)
@@ -378,7 +378,7 @@ class SceneGenerationPipeline:
                 "background_texture": "#FFFFF0",
                 "user_assets": "#FFA07A",
                 "hamster_data": "#20B2AA",
-                "target_roads": "#A9A9A9",
+                "target_ways": "#A9A9A9",
                 "target_buildings": "#C8A2C8",
                 "scene_description": "#FF6347",
             }

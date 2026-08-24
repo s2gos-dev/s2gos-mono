@@ -12,7 +12,7 @@ from ..core.context import SceneResourceContext
 from ..core.exceptions import DataNotFoundError
 from ..processors.vegetation import (
     _filter_by_exclusion_zones,
-    _filter_by_roads,
+    _filter_by_ways,
     _process_vegetation_with_shared_datasets,
     save_vegetation_collection_binary,
 )
@@ -82,12 +82,12 @@ def process_target_vegetation(
             vegetation_instances, exclusion_zones
         )
 
-    road_exclusion = ctx.config.vegetation_placement.road_exclusion
-    vegetation_instances = _filter_by_roads(
+    way_exclusion = ctx.config.vegetation_placement.way_exclusion
+    vegetation_instances = _filter_by_ways(
         vegetation_instances,
-        ctx.roads,
-        enabled=road_exclusion.enabled,
-        buffer_m=road_exclusion.buffer_m,
+        ctx.ways,
+        enabled=way_exclusion.enabled,
+        buffer_m=way_exclusion.buffer_m,
     )
 
     if not vegetation_instances:
