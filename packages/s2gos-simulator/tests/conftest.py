@@ -8,6 +8,7 @@ from upath import UPath
 from s2gos_simulator.backends.eradiate.eradiate_translator import EradiateTranslator
 from s2gos_simulator.backends.eradiate.geometry_utils import GeometryUtils
 from s2gos_simulator.config import (
+    AstroObjectIllumination,
     ConstantIllumination,
     DirectionalIllumination,
     SatelliteInstrument,
@@ -52,6 +53,12 @@ def scene_dir(tmp_path):
 def directional_illumination():
     """Minimal DirectionalIllumination fixture."""
     return DirectionalIllumination(zenith=30.0, azimuth=135.0)
+
+
+@pytest.fixture
+def astro_illumination():
+    """Minimal AstroObjectIllumination fixture."""
+    return AstroObjectIllumination(zenith=30.0, azimuth=135.0)
 
 
 @pytest.fixture

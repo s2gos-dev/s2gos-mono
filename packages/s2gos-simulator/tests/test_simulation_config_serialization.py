@@ -4,6 +4,7 @@ from datetime import datetime
 import pytest
 
 from s2gos_simulator.config import (
+    AstroObjectIllumination,
     DirectionalIllumination,
     GroundInstrumentType,
     GroundSensor,
@@ -130,6 +131,27 @@ class TestFromJson:
         assert isinstance(illumination, DirectionalIllumination)
         assert illumination.zenith == pytest.approx(30.0)
         assert illumination.azimuth == pytest.approx(135.0)
+
+    def test_from_json_preserves_astro_object_illumination(self, tmp_path):
+        """The discriminated union must restore the astro type as itself.
+
+        Without a discriminator, `astro_object` is structurally a superset of
+        `directional` and can be coerced into it, silently dropping `angular_diameter`."""
+        obs = datetime(2024, 1, 4, 12, 0, 0)
+        config = _make_config(sensors=[_sat_sensor()])
+        config.illumination = AstroObjectIllumination(
+            zenith=42.0, azimuth=200.0, angular_diameter=0.542, irradiance_datetime=obs
+        )
+
+        restored = SimulationConfig.from_json(self._write(config, tmp_path))
+
+        illumination = restored.illumination
+        assert isinstance(illumination, AstroObjectIllumination)
+        assert illumination.type == "astro_object"
+        assert illumination.zenith == pytest.approx(42.0)
+        assert illumination.azimuth == pytest.approx(200.0)
+        assert illumination.angular_diameter == pytest.approx(0.542)
+        assert illumination.irradiance_datetime == obs
 
     def test_from_json_preserves_ground_sensor_fields(self, tmp_path):
         config = _make_config(sensors=[_ground_sensor("ground1")])

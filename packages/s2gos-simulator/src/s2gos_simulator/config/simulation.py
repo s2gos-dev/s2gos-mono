@@ -14,7 +14,11 @@ from pydantic import (
 from s2gos_utils import validate_config_version
 from s2gos_utils.io.paths import PathLike, open_file, read_json
 
-from .illumination import ConstantIllumination, DirectionalIllumination
+from .illumination import (
+    AstroObjectIllumination,
+    ConstantIllumination,
+    DirectionalIllumination,
+)
 from .measurements import (
     BRFConfig,
     HCRFConfig,
@@ -65,9 +69,9 @@ class SimulationConfig(BaseModel):
     )
 
     # Core configuration
-    illumination: Union[DirectionalIllumination, ConstantIllumination] = Field(
-        default_factory=None, description="Illumination configuration"
-    )
+    illumination: Union[
+        DirectionalIllumination, AstroObjectIllumination, ConstantIllumination
+    ] = Field(..., discriminator="type", description="Illumination configuration")
     sensors: List[Union[SatelliteSensor, GroundSensor]] = Field(
         default_factory=list, description="List of sensors to simulate"
     )

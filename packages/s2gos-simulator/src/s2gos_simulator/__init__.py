@@ -8,6 +8,7 @@ from .bhr_processor import BHRProcessor
 from .config import (
     AngularFromOriginViewing,
     AngularViewing,
+    AstroObjectIllumination,
     BHRConfig,
     BRFConfig,
     ConstantIllumination,
@@ -44,6 +45,7 @@ __all__ = [
     "SatelliteSensor",
     "GroundSensor",
     "DirectionalIllumination",
+    "AstroObjectIllumination",
     "ConstantIllumination",
     "AngularViewing",
     "AngularFromOriginViewing",

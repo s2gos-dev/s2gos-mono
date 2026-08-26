@@ -13,7 +13,7 @@ import numpy as np
 import xarray as xr
 from upath import UPath
 
-from .config import BRFConfig, DirectionalIllumination
+from .config import AbstractDirectionalIllumination, BRFConfig
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,8 @@ class BRFProcessor:
             Dataset containing BRF values
 
         Raises:
-            ValueError: If illumination is not directional or required data missing
+            ValueError: If the illumination has no solar direction, or required
+                data is missing
         """
         from .backends.eradiate.reflectance_computation import compute_brf
 
@@ -82,9 +83,10 @@ class BRFProcessor:
 
         # Get cos(SZA) from illumination config
         illumination = self.simulation_config.illumination
-        if not isinstance(illumination, DirectionalIllumination):
+        if not isinstance(illumination, AbstractDirectionalIllumination):
             raise ValueError(
-                f"BRF requires DirectionalIllumination, got {type(illumination)}"
+                "BRF requires an illumination with a solar direction "
+                f"(directional or astro_object), got {type(illumination)}"
             )
 
         sza_rad = np.deg2rad(illumination.zenith)
