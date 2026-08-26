@@ -57,7 +57,9 @@ class ThermophysicalConfig(BaseModel):
         None,
         description="Path to CAMS thermoprops NetCDF file (alternative to identifier)",
     )
-    altitude_min: float = Field(0.0, ge=0.0, description="Minimum altitude in meters")
+    altitude_min: float = Field(
+        0.0, ge=-2000.0, description="Minimum altitude in meters"
+    )
     altitude_max: float = Field(
         120000.0, gt=0.0, description="Maximum altitude in meters"
     )
@@ -319,7 +321,7 @@ class AtmosphereConfig(BaseModel):
     """Comprehensive atmosphere configuration supporting multiple types."""
 
     boa: float = Field(
-        0.0, ge=0.0, description="Bottom of atmosphere altitude in meters"
+        0.0, ge=-2000.0, description="Bottom of atmosphere altitude in meters"
     )
     toa: float = Field(
         75000.0, gt=0.0, description="Top of atmosphere altitude in meters"
