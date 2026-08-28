@@ -9,7 +9,7 @@ from .builder import (
     refine_grid_for_operations,
 )
 from .error_pyramid import DemErrorPyramid
-from .mesh_generator import MeshGenerator
+from .mesh_generator import MeshGenerator, raster_cell_extent
 from .terraforming import (
     GradientFilter,
     TerraformOperation,
@@ -24,6 +24,7 @@ __all__ = [
     "AdaptiveGrid",
     "DemErrorPyramid",
     "MeshGenerator",
+    "raster_cell_extent",
     "GradientFilter",
     "WayFlattenOperation",
     "TerraformOperation",

@@ -3,7 +3,7 @@ import pytest
 import trimesh
 import xarray as xr
 
-from s2gos_generator.processors.terrain_mesh import MeshGenerator
+from s2gos_generator.processors.terrain_mesh import MeshGenerator, raster_cell_extent
 
 
 @pytest.fixture
@@ -109,3 +109,71 @@ class TestAddUvCoordinates:
 
         with pytest.raises(ValueError, match=expected_error_msg):
             generator.add_uv_coordinates(mesh)
+
+
+class TestRasterCellExtent:
+    def test_reaches_half_a_cell_beyond_centre_coords(self):
+        # Centres 5..25 on a 10 m grid cover ground 0..30.
+        da = xr.DataArray(
+            np.zeros((3, 3)),
+            dims=["y", "x"],
+            coords={"x": [5.0, 15.0, 25.0], "y": [5.0, 15.0, 25.0]},
+        )
+        assert raster_cell_extent(da) == (0.0, 0.0, 30.0, 30.0)
+
+    def test_single_cell_axis_has_no_margin(self):
+        da = xr.DataArray(
+            np.zeros((1, 2)),
+            dims=["y", "x"],
+            coords={"x": [0.0, 10.0], "y": [7.0]},
+        )
+        xmin, ymin, xmax, ymax = raster_cell_extent(da)
+        assert (xmin, xmax) == (-5.0, 15.0)
+        assert (ymin, ymax) == (7.0, 7.0)
+
+
+class TestUvRegistrationAgainstTexture:
+    """UVs must map the mesh onto the ground area the texture spans, not the
+    mesh bounding box, which stops half a cell short of the texture's edge."""
+
+    def _mesh(self, generator, dem):
+        return generator.dem_to_mesh(dem)
+
+    def _dem(self):
+        # 3 cells of 10 m: centres 5,15,25 -> ground 0..30
+        return xr.DataArray(
+            np.zeros((3, 3)),
+            dims=["y", "x"],
+            coords={"x": [5.0, 15.0, 25.0], "y": [5.0, 15.0, 25.0]},
+        )
+
+    def test_extent_maps_cell_edges_to_uv_limits(self, generator):
+        dem = self._dem()
+        mesh = self._mesh(generator, dem)
+        result = generator.add_uv_coordinates(mesh, extent=raster_cell_extent(dem))
+        uv = result.visual.uv
+        # Outermost vertices are cell centres, a half-cell inside the texture edge.
+        assert uv[:, 0].min() == pytest.approx(5.0 / 30.0)
+        assert uv[:, 0].max() == pytest.approx(25.0 / 30.0)
+
+    def test_bounding_box_default_misregisters(self, generator):
+        dem = self._dem()
+        mesh = self._mesh(generator, dem)
+        uv = generator.add_uv_coordinates(mesh).visual.uv
+        # The old behaviour stretches the texture corner-to-corner over the vertices.
+        assert uv[:, 0].min() == pytest.approx(0.0)
+        assert uv[:, 0].max() == pytest.approx(1.0)
+
+    def test_texture_feature_lands_where_the_raster_puts_it(self, generator):
+        dem = self._dem()
+        mesh = self._mesh(generator, dem)
+        uv = generator.add_uv_coordinates(
+            mesh, extent=raster_cell_extent(dem)
+        ).visual.uv
+        # One texel per DEM cell, so each vertex must sample its own cell's texel.
+        texels = 3
+        xs = mesh.vertices[:, 0]
+        col = np.clip((uv[:, 0] * texels).astype(int), 0, texels - 1)
+        assert set(col[np.isclose(xs, 5.0)]) == {0}
+        assert set(col[np.isclose(xs, 15.0)]) == {1}
+        assert set(col[np.isclose(xs, 25.0)]) == {2}

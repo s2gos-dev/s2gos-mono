@@ -1,10 +1,30 @@
 import logging
+from typing import Optional, Tuple
 
 import numpy as np
 import trimesh
 import xarray as xr
 from s2gos_utils.io.paths import expand_mapper
 from upath import UPath
+
+
+def raster_cell_extent(data: xr.DataArray) -> Tuple[float, float, float, float]:
+    """Ground extent a raster covers, measured to its outer cell edges.
+
+    Coordinates name cell centres, so the covered area reaches half a cell
+    further out on every side -- which is the extent textures are painted over.
+
+    Args:
+        data: Raster with 1-D ``x`` and ``y`` coordinates.
+
+    Returns:
+        ``(xmin, ymin, xmax, ymax)``.
+    """
+    x = np.asarray(data.x.values, dtype=float)
+    y = np.asarray(data.y.values, dtype=float)
+    half_x = abs(float(x[1] - x[0])) / 2.0 if len(x) > 1 else 0.0
+    half_y = abs(float(y[1] - y[0])) / 2.0 if len(y) > 1 else 0.0
+    return (x.min() - half_x, y.min() - half_y, x.max() + half_x, y.max() + half_y)
 
 
 class MeshGenerator:
@@ -58,26 +78,41 @@ class MeshGenerator:
 
         return np.vstack([faces1, faces2])
 
-    def add_uv_coordinates(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    def add_uv_coordinates(
+        self,
+        mesh: trimesh.Trimesh,
+        extent: Optional[Tuple[float, float, float, float]] = None,
+    ) -> trimesh.Trimesh:
         """
-        Adds planar UV coordinates to a mesh based on its bounding box.
+        Adds planar UV coordinates to a mesh.
 
         Args:
             mesh: The input mesh.
+            extent: ``(xmin, ymin, xmax, ymax)`` of the ground the texture
+                spans, normally :func:`raster_cell_extent` of the source DEM;
+                normalising over the mesh bounding box instead stretches the
+                texture over a smaller area than it represents and slides
+                painted features off the geometry beneath them. Defaults to the
+                bounding box.
 
         Returns:
             The mesh with UV coordinates added.
         """
 
-        bounds = mesh.bounds
-        extent = mesh.extents.copy()
+        if extent is None:
+            origin = mesh.bounds[0, :2].astype(float)
+            size = mesh.extents[:2].astype(float)
+        else:
+            xmin, ymin, xmax, ymax = extent
+            origin = np.array([xmin, ymin], dtype=float)
+            size = np.array([xmax - xmin, ymax - ymin], dtype=float)
 
-        if extent[0] == 0 or extent[1] == 0:
+        if size[0] == 0 or size[1] == 0:
             raise ValueError(
-                "Cannot calculate UV coordinates: Mesh extent on X or Y axis is zero. Check your input DEM data."
+                "Cannot calculate UV coordinates: extent on X or Y axis is zero. Check your input DEM data."
             )
 
-        uv_coords = (mesh.vertices[:, :2] - bounds[0, :2]) / extent[:2]
+        uv_coords = (mesh.vertices[:, :2] - origin) / size
 
         uv_coords = np.clip(uv_coords, 0.0, 1.0)
 
@@ -165,7 +200,7 @@ class MeshGenerator:
         mesh = self.dem_to_mesh(dem_data, handle_nans=handle_nans)
 
         if add_uvs:
-            mesh = self.add_uv_coordinates(mesh)
+            mesh = self.add_uv_coordinates(mesh, extent=raster_cell_extent(dem_data))
 
         self.save_mesh(mesh, output_path)
 

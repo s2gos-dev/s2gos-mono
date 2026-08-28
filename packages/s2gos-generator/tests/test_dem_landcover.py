@@ -1,6 +1,8 @@
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
+import xarray as xr
 
 
 @pytest.fixture
@@ -99,7 +101,12 @@ class TestGenerateTargetMesh:
         )
 
         dem_dataset = MagicMock()
-        elevation = object()
+        # A real DataArray: UV registration reads its coords for the texture extent.
+        elevation = xr.DataArray(
+            np.zeros((2, 2)),
+            dims=["y", "x"],
+            coords={"x": [0.0, 30.0], "y": [0.0, 30.0]},
+        )
         dem_dataset.__getitem__.return_value = elevation
         mock_open_zarr = MagicMock(return_value=dem_dataset)
         monkeypatch.setattr(

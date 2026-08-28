@@ -8,7 +8,11 @@ import xarray as xr
 from s2gos_utils.io.paths import expand_mapper
 
 from ..core.context import SceneResourceContext
-from ..processors.terrain_mesh import MeshGenerator, TerraformOperation
+from ..processors.terrain_mesh import (
+    MeshGenerator,
+    TerraformOperation,
+    raster_cell_extent,
+)
 
 
 def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
@@ -70,7 +74,7 @@ def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
             handle_nans=ctx.config.processing.handle_dem_nans,
         )
 
-    mesh = mesh_generator.add_uv_coordinates(mesh)
+    mesh = mesh_generator.add_uv_coordinates(mesh, extent=raster_cell_extent(dem_data))
     mesh_generator.save_mesh(mesh, mesh_path)
     ctx.assets.mesh_file = mesh_path
 
