@@ -6,6 +6,7 @@ referenced by the scene description. Footprints are merged into one mesh per mat
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -17,6 +18,7 @@ from s2gos_utils.io.resolver import resolver
 from ..core.context import SceneResourceContext
 from ..processors.buildings import (
     build_meshes,
+    footprints_to_sidecar,
     load_building_footprints,
     make_dem_elevation_sampler,
     select_tile_files,
@@ -112,8 +114,17 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
         stats.skipped,
     )
 
-    sidecar_path = ctx.data_dir / "buildings.yml"
     ctx.data_dir.mkdir(parents=True, exist_ok=True)
+
+    # Persist the scene-local footprints so vegetation placement can exclude
+    # trees that land on a building without re-reading the GPKG tiles.
+    footprints_path = ctx.data_dir / "building_footprints.json"
+    with open_file(footprints_path, "w") as f:
+        json.dump(footprints_to_sidecar(gdf), f)
+    ctx.assets.building_footprints_file = footprints_path
+    logging.info("Saved building footprints sidecar: %s", footprints_path)
+
+    sidecar_path = ctx.data_dir / "buildings.yml"
     with open_file(sidecar_path, "w") as f:
         yaml.safe_dump(
             {"objects": objects},

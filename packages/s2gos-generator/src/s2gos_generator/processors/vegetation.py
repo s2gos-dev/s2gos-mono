@@ -11,6 +11,9 @@ from s2gos_utils.io.paths import expand_mapper
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import distance_transform_edt
 
+# Clearance in metres around every building footprint before excluding vegetation.
+_BUILDING_EXCLUSION_BUFFER_M = 1.0
+
 
 def _filter_by_ways(
     instances: List[Dict[str, Any]],
@@ -48,6 +51,51 @@ def _filter_by_ways(
     excl_count = len(instances) - len(filtered)
     logging.info(
         "Way filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
+        len(filtered),
+        excl_count,
+        100.0 * excl_count / len(instances) if instances else 0.0,
+        buffer_m,
+    )
+    return filtered
+
+
+def _filter_by_buildings(
+    instances: List[Dict[str, Any]],
+    footprints: list,
+    *,
+    buffer_m: float = _BUILDING_EXCLUSION_BUFFER_M,
+) -> List[Dict[str, Any]]:
+    """Exclude vegetation positions that fall on or near a building footprint.
+
+    Buildings have priority over vegetation: any instance whose point lies inside
+    a footprint (grown by ``buffer_m``) is dropped. ``intersects`` is
+    boundary-safe, so a point exactly on a footprint edge is excluded.
+
+    Args:
+        instances: Vegetation placement dicts with a ``"position"`` (x, y).
+        footprints: Scene-local building footprint polygons.
+        buffer_m: Extra clearance in metres grown around each footprint.
+    """
+    import shapely
+    from shapely.strtree import STRtree
+
+    if not instances or not footprints:
+        return instances
+
+    polys = (
+        [f.buffer(buffer_m) for f in footprints] if buffer_m > 0 else list(footprints)
+    )
+    tree = STRtree(polys)
+    xy = np.array([[inst["position"][0], inst["position"][1]] for inst in instances])
+    points = shapely.points(xy[:, 0], xy[:, 1])
+    pt_idx, _ = tree.query(points, predicate="intersects")
+    keep = np.ones(len(instances), dtype=bool)
+    keep[pt_idx] = False
+
+    filtered = [inst for inst, k in zip(instances, keep) if k]
+    excl_count = len(instances) - len(filtered)
+    logging.info(
+        "Building filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
         len(filtered),
         excl_count,
         100.0 * excl_count / len(instances) if instances else 0.0,

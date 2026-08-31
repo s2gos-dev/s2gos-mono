@@ -137,6 +137,10 @@ def _validate_building_files(output_dir: UPath, asset_paths: Dict[str, UPath]) -
     sidecar = asset_paths.get("buildings_objects_file")
     if sidecar is None or not sidecar.exists():
         return False
+    footprints = asset_paths.get("building_footprints_file")
+    if footprints is None or not footprints.exists():
+        logging.info("Cache miss: target_buildings (footprint sidecar missing)")
+        return False
     try:
         from s2gos_utils.io.paths import open_file
 
@@ -220,7 +224,8 @@ _RESOURCE_CACHE_SPECS: Dict[str, ResourceCacheSpec] = {
     "hamster_data": ResourceCacheSpec(["hamster_paths_file"]),
     "target_ways": ResourceCacheSpec(["ways_file"]),
     "target_buildings": ResourceCacheSpec(
-        ["buildings_objects_file"], validator=_validate_building_files
+        ["buildings_objects_file", "building_footprints_file"],
+        validator=_validate_building_files,
     ),
 }
 

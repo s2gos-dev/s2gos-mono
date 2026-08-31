@@ -147,7 +147,7 @@ class SceneGenerationPipeline:
                 "target_vegetation",
                 ["target_landcover", "target_dem"],
                 process_target_vegetation,
-                optional=["user_assets", "target_ways"],
+                optional=["user_assets", "target_ways", "target_buildings"],
             )
 
         # Scene description (dependencies will be updated by update_scene_dependencies)
