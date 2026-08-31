@@ -68,6 +68,7 @@ class SceneResourceContext:
         self._coord_system: Optional[object] = None
         self._exclusion_zone_geometries: Optional[list] = None
         self._ways: Optional[list] = None
+        self._building_footprints: Optional[list] = None
         self._way_polygons_by_material: Optional[dict] = None
         self._matched_materials: Optional[dict] = None
 
@@ -160,6 +161,26 @@ class SceneResourceContext:
         if self._ways is None:
             self._ways = self._load_ways_from_sidecar()
         return self._ways
+
+    def _load_building_footprints_from_sidecar(self) -> list:
+        from ..processors.buildings import footprints_from_sidecar
+
+        if self.assets.building_footprints_file is None:
+            return []
+        try:
+            with open(str(self.assets.building_footprints_file), "r") as f:
+                data = json.load(f)
+            return footprints_from_sidecar(data)
+        except (json.JSONDecodeError, OSError) as exc:
+            logging.warning("Failed to load building footprints from sidecar: %s", exc)
+            return []
+
+    @property
+    def building_footprints(self) -> list:
+        """Scene-local building footprint polygons, lazily loaded from the sidecar."""
+        if self._building_footprints is None:
+            self._building_footprints = self._load_building_footprints_from_sidecar()
+        return self._building_footprints
 
     @property
     def way_polygons_by_material(self) -> dict:
