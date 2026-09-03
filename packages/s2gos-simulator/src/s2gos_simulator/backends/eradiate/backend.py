@@ -632,17 +632,9 @@ class EradiateBackend(SimulationBackend):
 
         # Create atmosphere (or use None for BRF measurements)
         if atmosphere == "auto":
-            # TODO: This needs to be more fleshed out and tested
-            # Use simple atmosphere for mono mode (debugging), otherwise use scene atmosphere
-            if self._eradiate_mode == "mono":
-                logger.info(
-                    "  Using simple mono atmosphere (GECKO + US Standard) for fast debugging"
-                )
-                atmosphere_obj = self.atmosphere_builder.create_simple_mono_atmosphere()
-            else:
-                atmosphere_obj = self.atmosphere_builder.create_atmosphere_from_config(
-                    scene_description
-                )
+            atmosphere_obj = self.atmosphere_builder.create_atmosphere_from_config(
+                scene_description
+            )
         else:
             atmosphere_obj = atmosphere  # None for BRF
 
@@ -661,16 +653,9 @@ class EradiateBackend(SimulationBackend):
             f"Experiment measures: {[m.get('id', i) for i, m in enumerate(measures)]}"
         )
 
-        # For mono mode with simple atmosphere, use fixed TOA
-        if self._eradiate_mode == "mono":
-            geometry = {
-                "type": "plane_parallel",
-                "toa_altitude": 120000.0,
-            }
-        else:
-            geometry = self.atmosphere_builder.create_geometry_from_atmosphere(
-                scene_description
-            )
+        geometry = self.atmosphere_builder.create_geometry_from_atmosphere(
+            scene_description
+        )
 
         self.surface_builder.validate_material_ids(kdict, scene_description)
 
