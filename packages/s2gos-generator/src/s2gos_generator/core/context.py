@@ -9,6 +9,7 @@ from upath import UPath
 
 from .assets import SceneAssets
 from .config import SceneGenConfig
+from .grid import SceneGrid
 
 
 class SceneResourceContext:
@@ -64,6 +65,12 @@ class SceneResourceContext:
         self._target_scene_bounds: Optional[object] = None
         self._buffer_aoi_polygon: Optional[object] = None
         self._background_aoi_polygon: Optional[object] = None
+
+        self._target_dem_grid: Optional[object] = None
+        self._target_texture_grid: Optional[object] = None
+        self._buffer_dem_grid: Optional[object] = None
+        self._buffer_texture_grid: Optional[object] = None
+        self._background_texture_grid: Optional[object] = None
 
         self._coord_system: Optional[object] = None
         self._exclusion_zone_geometries: Optional[list] = None
@@ -140,6 +147,58 @@ class SceneResourceContext:
                 self.config.background.size_km
             )
         return self._background_aoi_polygon
+
+    @property
+    def target_dem_grid(self) -> SceneGrid:
+        """Raster the target DEM is sampled on, at its cell corners."""
+        if self._target_dem_grid is None:
+            self._target_dem_grid = SceneGrid.covering(
+                self.aoi_size_km * 1000.0, self.dem_resolution_m
+            )
+        return self._target_dem_grid
+
+    @property
+    def target_texture_grid(self) -> SceneGrid:
+        """Raster the target landcover and selection texture live on."""
+        if self._target_texture_grid is None:
+            self._target_texture_grid = SceneGrid.covering(
+                self.aoi_size_km * 1000.0, self.landcover_resolution_m
+            )
+        return self._target_texture_grid
+
+    @property
+    def buffer_dem_grid(self) -> Optional[SceneGrid]:
+        """Raster the buffer DEM is sampled on, or None."""
+        if self.config.buffer is None:
+            return None
+        if self._buffer_dem_grid is None:
+            self._buffer_dem_grid = SceneGrid.covering(
+                self.config.buffer.size_km * 1000.0, self.config.buffer.resolution_m
+            )
+        return self._buffer_dem_grid
+
+    @property
+    def buffer_texture_grid(self) -> Optional[SceneGrid]:
+        """Raster the buffer landcover, texture and mask live on, or None."""
+        if self.config.buffer is None:
+            return None
+        if self._buffer_texture_grid is None:
+            self._buffer_texture_grid = SceneGrid.covering(
+                self.config.buffer.size_km * 1000.0, self.config.buffer.resolution_m
+            )
+        return self._buffer_texture_grid
+
+    @property
+    def background_texture_grid(self) -> Optional[SceneGrid]:
+        """Grid the background landcover and texture live on, or None."""
+        if self.config.background is None:
+            return None
+        if self._background_texture_grid is None:
+            self._background_texture_grid = SceneGrid.covering(
+                self.config.background.size_km * 1000.0,
+                self.config.background.resolution_m,
+            )
+        return self._background_texture_grid
 
     def _load_ways_from_sidecar(self) -> list:
         from ..processors.ways import ways_from_sidecar

@@ -6,6 +6,20 @@ from s2gos_utils.scene import SceneDescription
 from s2gos_utils.scene.materials import Material, get_landcover_mapping, load_materials
 from upath import UPath
 
+from ..core.grid import SceneGrid
+
+
+def _record_uv_window(
+    area: dict, grid: Optional[SceneGrid], aoi_size_km: float
+) -> None:
+    """Record where the AOI sits inside *grid*, for the renderer to apply as ``to_uv``.
+
+    A missing key means an unpadded texture, whose window is the identity.
+    """
+    if grid is None:
+        return
+    area["texture_uv_window"] = [float(v) for v in grid.uv_window(aoi_size_km * 1000.0)]
+
 
 def _convert_atmosphere_config_to_dict(atmosphere_config) -> dict:
     """Convert to scene description dictionary format.
@@ -148,6 +162,9 @@ def create_s2gos_scene(
     background_size_km: Optional[float] = None,
     hamster_data_paths: Optional[Dict[str, UPath]] = None,
     additional_material_libraries: Optional[List[Dict[str, Dict[str, Any]]]] = None,
+    target_texture_grid: Optional[SceneGrid] = None,
+    buffer_texture_grid: Optional[SceneGrid] = None,
+    background_texture_grid: Optional[SceneGrid] = None,
     **kwargs,
 ) -> SceneDescription:
     """Create standard S2GOS scene configuration.
@@ -218,6 +235,7 @@ def create_s2gos_scene(
         "selection_texture": texture_path,
         "size_km": aoi_size_km,
     }
+    _record_uv_window(target, target_texture_grid, aoi_size_km)
 
     if hamster_data_paths and "target" in hamster_data_paths:
         if output_dir:
@@ -236,9 +254,6 @@ def create_s2gos_scene(
         if output_dir is None:
             output_dir = UPath(".")
 
-        buffer_resolution = int(buffer_size_km * 10)
-        target_resolution = int(aoi_size_km * 10)
-
         from ..processors.terrain_data import generate_buffer_mask
 
         mask_path = (
@@ -246,9 +261,12 @@ def create_s2gos_scene(
             / "textures"
             / f"mask_{scene_name}_{int(buffer_size_km)}km_buffer_{int(aoi_size_km)}km_target.bmp"
         )
+        mask_grid = buffer_texture_grid or SceneGrid.covering(
+            buffer_size_km * 1000.0, buffer_size_km * 1000.0 / 100.0
+        )
         generate_buffer_mask(
-            mask_size=buffer_resolution,
-            target_size=target_resolution,
+            buffer_grid=mask_grid,
+            aoi_size_m=aoi_size_km * 1000.0,
             output_path=mask_path,
         )
 
@@ -259,6 +277,7 @@ def create_s2gos_scene(
             "target_size_km": aoi_size_km,
             "mask_texture": str(mask_path.relative_to(output_dir)),
         }
+        _record_uv_window(buffer, buffer_texture_grid, buffer_size_km)
 
         if hamster_data_paths and "buffer" in hamster_data_paths:
             if output_dir:
@@ -303,6 +322,7 @@ def create_s2gos_scene(
             "elevation": bg_elevation,
             "size_km": background_size_km,
         }
+        _record_uv_window(background, background_texture_grid, background_size_km)
 
         if hamster_data_paths and "background" in hamster_data_paths:
             if output_dir:

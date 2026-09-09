@@ -5,7 +5,10 @@ from shapely.geometry import Polygon
 from upath import UPath
 
 from .base_processor import BaseTileProcessor
+from ...core.grid import SceneGrid
 from ...dataset import Dataset, IndexedGeoTiff, Zarr
+
+ESA_CLASS_PERMANENT_WATER = 80
 
 
 class LandCoverProcessor(BaseTileProcessor):
@@ -33,8 +36,8 @@ class LandCoverProcessor(BaseTileProcessor):
 
     @property
     def default_fill_value(self) -> Union[float, int]:
-        """Default fill value for NaN values in landcover data."""
-        return 7
+        """Fill for missing landcover, as an ESA class code, not a material index."""
+        return ESA_CLASS_PERMANENT_WATER
 
     @property
     def use_context_manager(self) -> bool:
@@ -45,30 +48,29 @@ class LandCoverProcessor(BaseTileProcessor):
         self,
         aoi_polygon: Polygon,
         output_path: UPath,
-        target_resolution_m: float = 10.0,
-        center_lat: Optional[float] = None,
-        center_lon: Optional[float] = None,
-        aoi_size_km: Optional[float] = None,
+        grid: SceneGrid,
+        center_lat: float,
+        center_lon: float,
     ) -> xr.Dataset:
-        """Generate landcover data for the AOI with configurable resolution.
+        """Generate landcover data on grid, sampled at its cell centres.
 
         Args:
             aoi_polygon: Area of interest polygon
             output_path: Path where to save the processed landcover data
-            target_resolution_m: Target resolution in meters (default: 10.0 for native WorldCover)
-            center_lat: Center latitude for projection (required for non-native resolution)
-            center_lon: Center longitude for projection (required for non-native resolution)
-            aoi_size_km: Size of the AOI in kilometers (required for non-native resolution)
+            grid: Target :class:`SceneGrid` for the regridded output
+            center_lat: Center latitude for projection
+            center_lon: Center longitude for projection
 
         Returns:
             Processed landcover dataset
         """
 
-        tile_paths = self.dataset.query(aoi_polygon)
+        source_aoi = self._source_aoi(aoi_polygon, grid.half_size_m)
+        tile_paths = self.dataset.query(source_aoi)
 
         if isinstance(self.dataset, IndexedGeoTiff):
             # Pass AOI to merge for early spatial filtering
-            merged_landcover = self._merge_tiles(tile_paths, aoi_polygon)
+            merged_landcover = self._merge_tiles(tile_paths, source_aoi)
             merged_landcover = merged_landcover.persist()
         elif isinstance(self.dataset, Zarr):
             merged_landcover = self.dataset.open()
@@ -77,28 +79,15 @@ class LandCoverProcessor(BaseTileProcessor):
                 "This type of dataset is not supported for landcovers."
             )
 
-        # Clip to exact AOI geometry
-        clipped_landcover = self._clip_to_aoi(merged_landcover, aoi_polygon)
+        clipped_landcover = self._clip_to_aoi(merged_landcover, source_aoi)
 
-        # Apply regridding if resolution differs from native (10m) or projection is requested
-        if target_resolution_m != 10.0 or (
-            center_lat is not None
-            and center_lon is not None
-            and aoi_size_km is not None
-        ):
-            if center_lat is None or center_lon is None or aoi_size_km is None:
-                raise ValueError(
-                    "center_lat, center_lon, and aoi_size_km are required for regridding operations"
-                )
-
-            clipped_landcover = self._regrid_data(
-                clipped_landcover,
-                target_resolution_m,
-                center_lat,
-                center_lon,
-                aoi_size_km,
-                fillna_value=self.default_fill_value,
-            )
+        clipped_landcover = self._regrid_data(
+            clipped_landcover,
+            grid.cell_centres(),
+            center_lat,
+            center_lon,
+            fillna_value=self.default_fill_value,
+        )
 
         clipped_landcover = clipped_landcover.rename(
             {self.data_variable_name: "landcover"}

@@ -13,6 +13,9 @@ def _stable_hash(data: dict) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
+_LANDCOVER_FILL_CLASS = 80
+
+
 class ResourceFingerprints:
     """Per-resource config fingerprints for cache.
 
@@ -32,6 +35,7 @@ class ResourceFingerprints:
     @staticmethod
     def _target_dem(config) -> dict:
         return {
+            "grid": "covering-nodes",
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "aoi_size_km": config.location.aoi_size_km,
@@ -44,6 +48,7 @@ class ResourceFingerprints:
     @staticmethod
     def _buffer_dem(config) -> dict:
         return {
+            "grid": "covering-nodes",
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "buffer_size_km": config.buffer.size_km if config.buffer else None,
@@ -58,6 +63,8 @@ class ResourceFingerprints:
     @staticmethod
     def _target_landcover(config) -> dict:
         return {
+            "grid": "exact",
+            "fill_class": _LANDCOVER_FILL_CLASS,
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "aoi_size_km": config.location.aoi_size_km,
@@ -68,6 +75,8 @@ class ResourceFingerprints:
     @staticmethod
     def _buffer_landcover(config) -> dict:
         return {
+            "grid": "exact",
+            "fill_class": _LANDCOVER_FILL_CLASS,
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "buffer_size_km": config.buffer.size_km if config.buffer else None,
@@ -80,6 +89,8 @@ class ResourceFingerprints:
     @staticmethod
     def _background_landcover(config) -> dict:
         return {
+            "grid": "exact",
+            "fill_class": _LANDCOVER_FILL_CLASS,
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "background_size_km": (

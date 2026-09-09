@@ -35,14 +35,18 @@ def extract_dem(dem_data: xr.DataArray) -> tuple[np.ndarray, np.ndarray, np.ndar
 
 
 def _make_elevation_fn(x: np.ndarray, y: np.ndarray, elev: np.ndarray):
-    """Return a bilinear interpolation callable for the given DEM arrays."""
-    dx = (x[-1] - x[0]) / (len(x) - 1)
-    dy = (y[-1] - y[0]) / (len(y) - 1)
-    x0, y0 = float(x[0]), float(y[0])
+    """Return a bilinear interpolation callable for the given DEM arrays.
+
+    ``np.interp`` is exact on the samples, so a query landing on one reads it unsmoothed.
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    x_index = np.arange(len(x), dtype=float)
+    y_index = np.arange(len(y), dtype=float)
 
     def elevation_fn(xy: np.ndarray) -> np.ndarray:
-        x_idx = (xy[:, 0] - x0) / dx
-        y_idx = (xy[:, 1] - y0) / dy
+        x_idx = np.interp(xy[:, 0], x, x_index)
+        y_idx = np.interp(xy[:, 1], y, y_index)
         return map_coordinates(elev, np.vstack((y_idx, x_idx)), order=1, mode="nearest")
 
     return elevation_fn
@@ -64,8 +68,8 @@ def build_decimated_grid(
     reserves additional refinement headroom for downstream feature-based passes.
 
     Args:
-        x:                    1-D x coordinate array (DEM native resolution).
-        y:                    1-D y coordinate array (DEM native resolution).
+        x:                    1-D DEM x coordinates, uniformly spaced.
+        y:                    1-D DEM y coordinates, uniformly spaced.
         elev:                 2-D elevation array matching (y × x) shape.
         decimation_depth:     Coarsening factor in powers of 2.
         decimation_tolerance_m: Max plane-residual (metres) before a cell is
@@ -89,11 +93,7 @@ def build_decimated_grid(
     grid = AdaptiveGrid(x_base, y_base, max_depth=decimation_depth + extra_max_depth)
 
     if decimation_depth > 0 and decimation_tolerance_m > 0:
-        dx = (x[-1] - x[0]) / (len(x) - 1)
-        dy = (y[-1] - y[0]) / (len(y) - 1)
-        pyramid = DemErrorPyramid(
-            elev, float(x[0]), float(y[0]), dx, dy, decimation_depth
-        )
+        pyramid = DemErrorPyramid(elev, x, y, decimation_depth)
         grid.refine(
             make_roughness_predicate(pyramid, tolerance_m=decimation_tolerance_m),
             max_level=decimation_depth,
@@ -167,11 +167,11 @@ def build_refined_mesh(
 ) -> trimesh.Trimesh:
     """Build an adaptive quadtree mesh with optional terraforming operations.
 
-    Orchestrates: DEM extraction -> decimated grid -> operation refinement ->
-    triangulation + flatten -> NaN cleanup.
+    Unlike the uniform path, refinement puts vertices between DEM samples, so
+    elevations here are genuinely interpolated rather than read.
 
     Args:
-        dem_data:   DEM elevation DataArray.
+        dem_data:   DEM elevation DataArray, on the DEM raster.
         operations: List of :class:`TerraformOperation` to apply; pass ``None``
                     or an empty list to skip way-influence refinement and flattening.
         config:     :class:`MeshRefinementConfig` (``decimation_depth``,

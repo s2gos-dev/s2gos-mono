@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..core.context import SceneResourceContext
+from ..core.grid import SceneGrid
 from ..processors.terrain_data import LandCoverProcessor
 
 
@@ -13,19 +14,20 @@ def _process_landcover(
     aoi_polygon,
     resolution_m: float,
     filename_prefix: str,  # "landcover" | "landcover_buffer" | "landcover_background"
-    aoi_size_km: float,
+    grid: SceneGrid,
 ) -> Path:
     processor = LandCoverProcessor(dataset=ctx.config.data_sources.landcover)
+    # resolution_m is the requested value, kept verbatim for the filename.
+    # grid carries the same number derived, which does not always render alike.
     output_path = (
         ctx.data_dir / f"{filename_prefix}_{ctx.scene_name}_{resolution_m}m.zarr"
     )
     processor.generate_landcover(
         aoi_polygon=aoi_polygon,
         output_path=output_path,
-        target_resolution_m=resolution_m,
+        grid=grid,
         center_lat=ctx.center_lat,
         center_lon=ctx.center_lon,
-        aoi_size_km=aoi_size_km,
     )
     return output_path
 
@@ -45,7 +47,11 @@ def process_target_landcover(ctx: SceneResourceContext) -> Optional[Path]:
         raise ValueError("Target AOI polygon not found in context")
 
     output_path = _process_landcover(
-        ctx, aoi_polygon, ctx.landcover_resolution_m, "landcover", ctx.aoi_size_km
+        ctx,
+        aoi_polygon,
+        ctx.landcover_resolution_m,
+        "landcover",
+        ctx.target_texture_grid,
     )
     ctx.assets.landcover_file = output_path
 
@@ -76,7 +82,7 @@ def process_buffer_landcover(ctx: SceneResourceContext) -> Optional[Path]:
         buffer_aoi_polygon,
         buffer_resolution_m,
         "landcover_buffer",
-        ctx.config.buffer.size_km,
+        ctx.buffer_texture_grid,
     )
     ctx.assets.buffer_landcover_file = output_path
 
@@ -107,7 +113,7 @@ def process_background_landcover(ctx: SceneResourceContext) -> Optional[Path]:
         background_aoi_polygon,
         background_resolution_m,
         "landcover_background",
-        ctx.config.background.size_km,
+        ctx.background_texture_grid,
     )
     ctx.assets.background_landcover_file = output_path
 

@@ -4,7 +4,10 @@ import numpy as np
 import trimesh
 import xarray as xr
 from s2gos_utils.io.paths import expand_mapper
+from trimesh.intersections import slice_mesh_plane
 from upath import UPath
+
+from ...core.grid import aoi_to_uv
 
 
 class MeshGenerator:
@@ -14,16 +17,25 @@ class MeshGenerator:
         """Initialize the mesh generator."""
 
     def dem_to_mesh(
-        self, dem_data: xr.DataArray, handle_nans: bool = True
+        self,
+        dem_data: xr.DataArray,
+        handle_nans: bool = True,
     ) -> trimesh.Trimesh:
-        """Convert a DEM DataArray to a Trimesh object."""
+        """Build a terrain mesh with one vertex per DEM sample.
+
+        Args:
+            dem_data: DEM elevation DataArray, on the DEM raster.
+            handle_nans: Whether to drop faces with NaN elevations.
+        """
         from .builder import extract_dem
 
         x_coords, y_coords, elevation = extract_dem(dem_data)
-        nx, ny = len(x_coords), len(y_coords)
 
+        nx, ny = len(x_coords), len(y_coords)
         x_grid, y_grid = np.meshgrid(x_coords, y_coords)
-        vertices = np.vstack([x_grid.ravel(), y_grid.ravel(), elevation.ravel()]).T
+        vertices = np.column_stack(
+            [x_grid.ravel(), y_grid.ravel(), np.asarray(elevation, float).ravel()]
+        )
 
         faces = self._create_grid_faces(nx, ny)
 
@@ -58,31 +70,45 @@ class MeshGenerator:
 
         return np.vstack([faces1, faces2])
 
-    def add_uv_coordinates(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
+    def _clip_to_aoi(self, mesh: trimesh.Trimesh, aoi_size_m: float) -> trimesh.Trimesh:
+        """Slice the mesh against the four sides of the AOI square.
+
+        Leaves vertices exactly on the boundary with elevations interpolated along the
+        cut. A mesh that already ends on the AOI is returned untouched.
         """
-        Adds planar UV coordinates to a mesh based on its bounding box.
+        half = aoi_size_m / 2.0
+        sides = (
+            ((1.0, 0.0, 0.0), (-half, 0.0, 0.0)),
+            ((-1.0, 0.0, 0.0), (half, 0.0, 0.0)),
+            ((0.0, 1.0, 0.0), (0.0, -half, 0.0)),
+            ((0.0, -1.0, 0.0), (0.0, half, 0.0)),
+        )
+        for normal, origin in sides:
+            mesh = slice_mesh_plane(
+                mesh,
+                plane_normal=np.array(normal, dtype=float),
+                plane_origin=np.array(origin, dtype=float),
+                cap=False,
+            )
+        return mesh
+
+    def fit_to_aoi(self, mesh: trimesh.Trimesh, aoi_size_m: float) -> trimesh.Trimesh:
+        """Trim the mesh to the AOI and map it onto ``[0, 1]`` UV.
+
+        The mesh is built over the DEM raster, which reaches past the AOI whenever the
+        resolution does not divide it, so it is trimmed before the UVs are taken.
 
         Args:
-            mesh: The input mesh.
+            mesh: Terrain mesh in scene coordinates (metres).
+            aoi_size_m: Side length of the area the mesh must end up spanning.
 
         Returns:
-            The mesh with UV coordinates added.
+            The clipped mesh, carrying UV coordinates.
         """
+        mesh = self._clip_to_aoi(mesh, aoi_size_m)
 
-        bounds = mesh.bounds
-        extent = mesh.extents.copy()
-
-        if extent[0] == 0 or extent[1] == 0:
-            raise ValueError(
-                "Cannot calculate UV coordinates: Mesh extent on X or Y axis is zero. Check your input DEM data."
-            )
-
-        uv_coords = (mesh.vertices[:, :2] - bounds[0, :2]) / extent[:2]
-
-        uv_coords = np.clip(uv_coords, 0.0, 1.0)
-
-        mesh.visual.uv = uv_coords
-
+        uv = aoi_to_uv(mesh.vertices[:, :2], aoi_size_m)
+        mesh.visual.uv = np.clip(uv, 0.0, 1.0)
         return mesh
 
     def save_mesh(
@@ -120,7 +146,7 @@ class MeshGenerator:
         """Build an adaptive quadtree mesh with terraforming operations.
 
         Args:
-            dem_data: DEM elevation DataArray.
+            dem_data: DEM elevation DataArray, on the DEM raster.
             operations: ``list[TerraformOperation]`` — one per way segment,
                 or ``None`` for a uniform mesh.
             refinement_config: MeshRefinementConfig instance.
@@ -137,36 +163,26 @@ class MeshGenerator:
         self,
         dem_file_path: UPath,
         output_path: UPath,
-        add_uvs: bool = True,
+        aoi_size_m: float,
         handle_nans: bool = True,
     ) -> trimesh.Trimesh:
-        """
-        Complete pipeline: loads DEM from file, generates mesh, and saves.
+        """Load a DEM, build a mesh over the AOI, and save it.
 
         Args:
-            dem_file_path: UPath to the DEM NetCDF file.
+            dem_file_path: UPath to the DEM zarr.
             output_path: UPath where the mesh will be saved.
-            add_uvs: Whether to add UV coordinates.
-            handle_nans: Whether to handle NaN values in the DEM.
+            aoi_size_m: Side length of the area the mesh must span.
+            handle_nans: Whether to drop faces with NaN elevations.
 
         Returns:
             The generated mesh.
         """
-
         dem_dataset = xr.open_zarr(expand_mapper(dem_file_path))
         dem_data = dem_dataset["elevation"]
 
-        if isinstance(dem_data, xr.Dataset):
-            if "elevation" in dem_data.data_vars:
-                dem_data = dem_data["elevation"]
-            else:
-                dem_data = dem_data[list(dem_data.data_vars.keys())[0]]
-
-        mesh = self.dem_to_mesh(dem_data, handle_nans=handle_nans)
-
-        if add_uvs:
-            mesh = self.add_uv_coordinates(mesh)
-
+        mesh = self.fit_to_aoi(
+            self.dem_to_mesh(dem_data, handle_nans=handle_nans), aoi_size_m
+        )
         self.save_mesh(mesh, output_path)
 
         return mesh

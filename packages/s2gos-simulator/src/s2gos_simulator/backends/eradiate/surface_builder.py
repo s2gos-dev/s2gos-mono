@@ -23,6 +23,30 @@ logger = logging.getLogger(__name__)
 PIL.Image.MAX_IMAGE_PIXELS = 40000000000
 
 
+def uv_window_transform(area_config: dict):
+    """Build the ``to_uv`` transform placing mesh UVs onto a texture's AOI window.
+
+    Returns ``None`` when the generator recorded no window or an identity one, which
+    is the usual case. The bitmap then gets no ``to_uv`` at all.
+
+    Must be 4x4. Mitsuba accepts a 3x3 without error, then silently drops its
+    translation, sliding every windowed texture off its geometry.
+    """
+    window = area_config.get("texture_uv_window")
+    if not window:
+        return None
+
+    u0, v0, u1, v1 = (float(v) for v in window)
+    if (u0, v0, u1, v1) == (0.0, 0.0, 1.0, 1.0):
+        return None
+
+    return (
+        mi.ScalarAffineTransform4f()
+        .translate([u0, v0, 0.0])
+        .scale([u1 - u0, v1 - v0, 1.0])
+    )
+
+
 class SurfaceBuilder:
     """Builder for creating surfaces, materials, and 3D objects."""
 
@@ -112,15 +136,21 @@ class SurfaceBuilder:
             mask_data = np.array(mask_image) / 255.0
             mask_data = np.atleast_3d(mask_data)
 
+            # The mask is on the buffer texture grid, so it shares its UV window.
+            opacity = {
+                "type": "bitmap",
+                "raw": True,
+                "filter_type": "nearest",
+                "wrap_mode": "clamp",
+                "data": mi.TensorXf(mask_data),
+            }
+            mask_to_uv = uv_window_transform(buffer_config)
+            if mask_to_uv is not None:
+                opacity["to_uv"] = mask_to_uv
+
             result["buffer_mask"] = {
                 "type": "mask",
-                "opacity": {
-                    "type": "bitmap",
-                    "raw": True,
-                    "filter_type": "nearest",
-                    "wrap_mode": "clamp",
-                    "data": mi.TensorXf(mask_data),
-                },
+                "opacity": opacity,
                 "material": {"type": "ref", "id": "buffer_material"},
             }
             buffer_bsdf_id = "buffer_mask"
@@ -233,16 +263,21 @@ class SurfaceBuilder:
         )
         bsdf_prefix = "terrain" if surface_name == "target" else surface_name
 
+        indices = {
+            "type": "bitmap",
+            "raw": True,
+            "filter_type": "nearest",
+            "wrap_mode": "clamp",
+            "data": mi.TensorXf(selection_texture_data),
+        }
+        to_uv = uv_window_transform(getattr(scene_description, surface_name) or {})
+        if to_uv is not None:
+            indices["to_uv"] = to_uv
+
         material_dict = {
             "type": "selectbsdf",
             "id": material_id,
-            "indices": {
-                "type": "bitmap",
-                "raw": True,
-                "filter_type": "nearest",
-                "wrap_mode": "clamp",
-                "data": mi.TensorXf(selection_texture_data),
-            },
+            "indices": indices,
             **{
                 f"{bsdf_prefix}_bsdf_{i:02d}": {"type": "ref", "id": f"_mat_{mat_id}"}
                 for i, mat_id in enumerate(material_ids)

@@ -150,6 +150,9 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         hamster_data_paths=hamster_data_paths,
         additional_material_libraries=additional_material_libraries,
         region_material_indices=region_material_indices,
+        target_texture_grid=ctx.target_texture_grid,
+        buffer_texture_grid=ctx.buffer_texture_grid,
+        background_texture_grid=ctx.background_texture_grid,
     )
 
     # Set include_files on the scene description

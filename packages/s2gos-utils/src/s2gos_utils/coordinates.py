@@ -179,16 +179,20 @@ class CoordinateSystem:
         """
         Query elevation from DEM dataset at specific coordinate.
 
+        Uses ``method="nearest"``, which snaps without a tolerance: a coordinate
+        outside the DEM silently returns the nearest edge sample rather than raising,
+        so do not rely on this to tell you that a point is off-scene.
+
         Args:
             lat: Latitude in decimal degrees
             lon: Longitude in decimal degrees
             dem_path: Path to DEM zarr dataset
 
         Returns:
-            Elevation value in meters
+            Elevation value in meters, clamped to the DEM edge outside its bounds
 
         Raises:
-            ValueError: If coordinate is outside DEM bounds or DEM cannot be read
+            ValueError: If the DEM cannot be read
         """
         try:
             dem_dataset = xr.open_zarr(dem_path)
@@ -364,6 +368,36 @@ def bounds_overlap(bounds1: Dict[str, float], bounds2: Dict[str, float]) -> bool
         or bounds1["ymax"] < bounds2["ymin"]
         or bounds1["ymin"] > bounds2["ymax"]
     )
+
+
+def clamp_to_grid_bounds(
+    x: np.ndarray,
+    y: np.ndarray,
+    x_grid: np.ndarray,
+    y_grid: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, int]:
+    """Clamp scene coordinates into an extent given by its coordinate arrays.
+
+    A query past the edge has nothing beyond it to interpolate from, so the boundary
+    value is the answer there.
+
+    Args:
+        x, y: Scene coordinates in metres.
+        x_grid, y_grid: Coordinate arrays whose min and max give the extent.
+
+    Returns:
+        ``(x, y, clamped)``, the clamped coordinates and how many of them moved, so
+        the caller can warn once with a count.
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    x_lo, x_hi = float(np.min(x_grid)), float(np.max(x_grid))
+    y_lo, y_hi = float(np.min(y_grid)), float(np.max(y_grid))
+
+    x_clamped = np.clip(x, x_lo, x_hi)
+    y_clamped = np.clip(y, y_lo, y_hi)
+    clamped = int(np.count_nonzero((x_clamped != x) | (y_clamped != y)))
+    return x_clamped, y_clamped, clamped
 
 
 def calculate_pixel_size(

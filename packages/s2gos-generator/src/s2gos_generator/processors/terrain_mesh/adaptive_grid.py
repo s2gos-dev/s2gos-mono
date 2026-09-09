@@ -4,6 +4,12 @@ from typing import Callable
 
 import numpy as np
 
+#: ``predicate(xmin, ymin, xmax, ymax, level) -> bool[N]``, True where a cell should
+#: be subdivided. ``level`` is the quadtree depth of the cells in the batch.
+RefinePredicate = Callable[
+    [np.ndarray, np.ndarray, np.ndarray, np.ndarray, int], np.ndarray
+]
+
 
 def _build_mesh_templates() -> list[np.ndarray]:
     """Precompute the 16 triangulation patterns indexed by 4-bit neighbor-split mask.
@@ -63,6 +69,9 @@ class AdaptiveGrid:
         y_coords: np.ndarray,
         max_depth: int,
     ):
+        self._x_nodes = np.asarray(x_coords, dtype=float)
+        self._y_nodes = np.asarray(y_coords, dtype=float)
+
         self._xmin = float(x_coords[0])
         self._xmax = float(x_coords[-1])
         self._ymin = float(y_coords[0])
@@ -75,11 +84,9 @@ class AdaptiveGrid:
         if self._nx <= 0 or self._ny <= 0:
             raise ValueError("DEM must have at least 2 points in each dimension")
 
-        dx_base = (self._xmax - self._xmin) / self._nx
-        dy_base = (self._ymax - self._ymin) / self._ny
+        self._base_x = np.arange(self._nx + 1, dtype=float)
+        self._base_y = np.arange(self._ny + 1, dtype=float)
 
-        self._dx_levels = [dx_base / (1 << L) for L in range(max_depth + 2)]
-        self._dy_levels = [dy_base / (1 << L) for L in range(max_depth + 2)]
         self.limit_x = [self._nx << L for L in range(max_depth + 2)]
         self.limit_y = [self._ny << L for L in range(max_depth + 2)]
 
@@ -92,11 +99,25 @@ class AdaptiveGrid:
         self._leaves: set[int] = set()
         self._internal: set[int] = set()
 
+    def _world_x(self, index, level: int) -> np.ndarray:
+        """World x of a cell/vertex index at level.
+
+        ``index / 2**level`` is the position in base-cell units, which
+        :func:`numpy.interp` turns into metres through the node array. The base grid's
+        final cell is short whenever the DEM sample count is not stride-aligned, so
+        this cannot be a scalar step.
+        """
+        pos = np.asarray(index, dtype=float) / float(1 << level)
+        return np.interp(pos, self._base_x, self._x_nodes)
+
+    def _world_y(self, index, level: int) -> np.ndarray:
+        """World y of a cell/vertex index at level. See :meth:`_world_x`."""
+        pos = np.asarray(index, dtype=float) / float(1 << level)
+        return np.interp(pos, self._base_y, self._y_nodes)
+
     def refine(
         self,
-        predicate: Callable[
-            [np.ndarray, np.ndarray, np.ndarray, np.ndarray], np.ndarray
-        ],
+        predicate: RefinePredicate,
         max_level: int | None = None,
     ) -> None:
         """Batch-subdivide leaves using the supplied spatial predicate."""
@@ -119,14 +140,12 @@ class AdaptiveGrid:
             i_arr = (current >> np.uint64(30)) & np.uint64(0x3FFFFFFF)
             j_arr = current & np.uint64(0x3FFFFFFF)
 
-            dx = self._dx_levels[level]
-            dy = self._dy_levels[level]
-            xmin = self._xmin + i_arr.astype(float) * dx
-            ymin = self._ymin + j_arr.astype(float) * dy
-            xmax = xmin + dx
-            ymax = ymin + dy
+            xmin = self._world_x(i_arr, level)
+            ymin = self._world_y(j_arr, level)
+            xmax = self._world_x(i_arr.astype(np.int64) + 1, level)
+            ymax = self._world_y(j_arr.astype(np.int64) + 1, level)
 
-            intersects = predicate(xmin, ymin, xmax, ymax)
+            intersects = predicate(xmin, ymin, xmax, ymax, level)
 
             to_keep = current[~intersects]
             to_split = current[intersects]
@@ -297,8 +316,6 @@ class AdaptiveGrid:
         else:
             vid_dict: dict[int, int] = {}
 
-        scale_x = self._dx_levels[self.max_depth]
-        scale_y = self._dy_levels[self.max_depth]
         xy_x_chunks: list[np.ndarray] = []
         xy_y_chunks: list[np.ndarray] = []
         next_vid = 0
@@ -336,8 +353,8 @@ class AdaptiveGrid:
                     for idx, key in enumerate(uniq_keys[new_mask].tolist()):
                         vid_dict[key] = int(new_ids[idx])
                 existing[new_mask] = new_ids
-                xy_x_chunks.append(self._xmin + u_vx[new_mask] * scale_x)
-                xy_y_chunks.append(self._ymin + u_vy[new_mask] * scale_y)
+                xy_x_chunks.append(self._world_x(u_vx[new_mask], self.max_depth))
+                xy_y_chunks.append(self._world_y(u_vy[new_mask], self.max_depth))
 
             vertex_ids[s, active] = existing[inv]
 

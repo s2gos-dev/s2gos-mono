@@ -1,6 +1,6 @@
 """Terrain mesh construction: adaptive quadtree, decimation, and terrain flattening."""
 
-from .adaptive_grid import AdaptiveGrid
+from .adaptive_grid import AdaptiveGrid, RefinePredicate
 from .builder import (
     build_decimated_grid,
     build_refined_mesh,
@@ -22,6 +22,7 @@ from .terraforming import (
 
 __all__ = [
     "AdaptiveGrid",
+    "RefinePredicate",
     "DemErrorPyramid",
     "MeshGenerator",
     "GradientFilter",

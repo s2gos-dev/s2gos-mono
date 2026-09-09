@@ -70,7 +70,7 @@ def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
             handle_nans=ctx.config.processing.handle_dem_nans,
         )
 
-    mesh = mesh_generator.add_uv_coordinates(mesh)
+    mesh = mesh_generator.fit_to_aoi(mesh, ctx.aoi_size_km * 1000.0)
     mesh_generator.save_mesh(mesh, mesh_path)
     ctx.assets.mesh_file = mesh_path
 
@@ -98,7 +98,7 @@ def generate_buffer_mesh(ctx: SceneResourceContext) -> Optional[Path]:
     _ = mesh_generator.generate_mesh_from_dem_file(
         dem_file_path=buffer_dem_file_path,
         output_path=mesh_path,
-        add_uvs=True,
+        aoi_size_m=ctx.config.buffer.size_km * 1000.0,
         handle_nans=ctx.config.processing.handle_dem_nans,
     )
 

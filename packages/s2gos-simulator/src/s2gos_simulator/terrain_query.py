@@ -8,7 +8,9 @@ different processors and backends.
 import logging
 from typing import Optional, Tuple
 
+import numpy as np
 import xarray as xr
+from s2gos_utils.coordinates import clamp_to_grid_bounds
 from s2gos_utils.io.paths import UPath
 from s2gos_utils.scene.description import SceneDescription
 from scipy.interpolate import RegularGridInterpolator
@@ -86,6 +88,8 @@ class TerrainQuery:
     ) -> float:
         """Query terrain elevation at scene coordinates (x, y) in meters.
 
+        A single-point call of :meth:`query_elevations_at_scene_coords`.
+
         Args:
             x: Scene x-coordinate in meters
             y: Scene y-coordinate in meters
@@ -97,6 +101,41 @@ class TerrainQuery:
         Raises:
             FileNotFoundError: If DEM file not found (only if raise_on_error=True)
         """
+        return float(
+            self.query_elevations_at_scene_coords(
+                np.array([x]), np.array([y]), raise_on_error=raise_on_error
+            )[0]
+        )
+
+    def query_elevations_at_scene_coords(
+        self,
+        xs: "np.ndarray",
+        ys: "np.ndarray",
+        raise_on_error: bool = True,
+    ) -> "np.ndarray":
+        """Query terrain elevation at many scene coordinates at once.
+
+        Same interpolation as :meth:`query_elevation_at_scene_coords`, but the DEM is
+        opened and the interpolator built once for the whole batch.
+
+        Args:
+            xs: Scene x-coordinates in meters
+            ys: Scene y-coordinates in meters (same length as ``xs``)
+            raise_on_error: If True, raise exceptions. If False, return zeros on error.
+
+        Returns:
+            Array of elevations in meters, one per input coordinate pair
+
+        Raises:
+            FileNotFoundError: If DEM file not found (only if raise_on_error=True)
+        """
+        xs = np.asarray(xs, dtype=float)
+        ys = np.asarray(ys, dtype=float)
+        if xs.shape != ys.shape:
+            raise ValueError(
+                f"xs and ys must have the same shape: {xs.shape} vs {ys.shape}"
+            )
+
         dem_path = self.find_dem_file()
 
         if dem_path is None:
@@ -108,37 +147,44 @@ class TerrainQuery:
                 raise FileNotFoundError(msg)
             else:
                 logger.warning(msg + " Using 0.0m.")
-                return 0.0
+                return np.zeros_like(xs)
 
         try:
-            # Load DEM data
             from s2gos_utils.io.paths import expand_mapper
 
             with xr.open_zarr(expand_mapper(dem_path)) as dem_ds:
                 dem_data = dem_ds["elevation"]
+
+                qx, qy, clamped = clamp_to_grid_bounds(
+                    xs.ravel(), ys.ravel(), dem_data.x.values, dem_data.y.values
+                )
+                if clamped:
+                    logger.warning(
+                        "%d of %d query point(s) fall outside the DEM, clamped to the "
+                        "boundary for the elevation lookup.",
+                        clamped,
+                        xs.size,
+                    )
 
                 interpolator = RegularGridInterpolator(
                     (dem_data.y.values, dem_data.x.values),
                     dem_data.values,
                     method="linear",
                     bounds_error=False,
-                    fill_value=0.0,
+                    fill_value=None,
                 )
 
-                elevation = float(interpolator([(y, x)])[0])
+                elevations = interpolator(np.column_stack([qy, qx]))
 
-            logger.debug(
-                f"DEM elevation at scene coords ({x:.1f}m, {y:.1f}m): {elevation:.2f}m"
-            )
-            return elevation
+            return np.asarray(elevations, dtype=float).reshape(xs.shape)
 
         except Exception as e:
-            msg = f"DEM query failed at ({x}, {y}): {e}"
+            msg = f"Batched DEM query failed over {xs.size} points: {e}"
             if raise_on_error:
                 raise RuntimeError(msg) from e
             else:
                 logger.warning(msg + " Using 0.0m.")
-                return 0.0
+                return np.zeros_like(xs)
 
     def query_elevation_at_geographic_coords(
         self,

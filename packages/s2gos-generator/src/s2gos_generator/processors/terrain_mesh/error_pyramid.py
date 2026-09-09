@@ -3,40 +3,55 @@ from __future__ import annotations
 import numpy as np
 
 
+def _uniform_step(axis: np.ndarray, name: str) -> float:
+    """Spacing of a uniformly spaced axis, rejecting anything else.
+
+    The block arithmetic in this module is only correct on a uniform axis.
+    """
+    axis = np.asarray(axis, dtype=float)
+    if len(axis) < 2:
+        raise ValueError(f"{name} axis needs at least 2 samples, got {len(axis)}")
+    step = (axis[-1] - axis[0]) / (len(axis) - 1)
+    if step <= 0 or not np.allclose(np.diff(axis), step, rtol=0.0, atol=1e-6 * step):
+        raise ValueError(f"{name} axis must be ascending and uniformly spaced")
+    return float(step)
+
+
 class DemErrorPyramid:
     """Precomputed per-level max plane-residual errors for adaptive-quadtree decimation.
 
-    Each level L stores, for every cell of size K×K DEM pixels (K = 2^(D-L)),
-    the maximum absolute deviation of the DEM from the least-squares plane
-    fitted to that cell. Errors are saturated top-down (parent ≥ max of
-    children) so top-down refinement decisions are monotone — no cracks arise
-    from coarse cells being mis-classified as flat after their children were
-    already refined.
+    Level ``L`` holds, for every ``K x K`` block of DEM pixels (``K = 2 ** (D - L)``),
+    the largest deviation of the DEM from the least-squares plane fitted to that block.
+    Blocks tile from pixel 0, so a quadtree cell with index ``i`` at level ``L`` is
+    described by block ``i``: both structures halve from the same origin.
 
-    D (decimation_depth) is the number of refinement levels used for terrain
-    decimation (matches ``MeshRefinementConfig.decimation_depth``). At the
-    finest level D, cells are 1×1 DEM pixels and the residual is 0.
+    Errors are saturated top-down (parent >= max of children) so refinement decisions
+    are monotone and no cracks arise from a coarse cell being called flat after its
+    children were already refined.
+
+    ``D`` (``decimation_depth``) is the number of refinement levels available, matching
+    ``MeshRefinementConfig.decimation_depth``. At level ``D`` a block is one pixel and
+    its residual is 0.
+
+    The quadtree's base grid gains a short final cell whenever the DEM sample count is
+    not stride-aligned, and no block describes it. :meth:`query` answers "subdivide" for
+    such a cell, leaving that strip at native resolution.
     """
 
     def __init__(
         self,
         elev: np.ndarray,
-        x0: float,
-        y0: float,
-        dx: float,
-        dy: float,
+        x: np.ndarray,
+        y: np.ndarray,
         decimation_depth: int,
     ) -> None:
-        self._x0 = x0
-        self._y0 = y0
-        self._dx = dx
-        self._dy = dy
+        self._dx = _uniform_step(x, "x")
+        self._dy = _uniform_step(y, "y")
+        self._x_start = float(x[0])
+        self._y_start = float(y[0])
         self._nx = elev.shape[1]
         self._ny = elev.shape[0]
         self._decimation_depth = decimation_depth
-
-        self._x_start = min(x0, x0 + (self._nx - 1) * dx)
-        self._y_start = min(y0, y0 + (self._ny - 1) * dy)
 
         self._levels: list[np.ndarray] = self._build(elev, decimation_depth)
 
@@ -44,35 +59,29 @@ class DemErrorPyramid:
         self,
         xmin: np.ndarray,
         ymin: np.ndarray,
-        xmax: np.ndarray,
-        ymax: np.ndarray,
+        level: int,
         tolerance_m: float,
     ) -> np.ndarray:
-        """Vectorized predicate: True where max plane-residual > tolerance_m.
+        """Vectorized predicate: True where a cell should be subdivided.
 
-        Cell sizes are inferred from the world-coordinate extents so this
-        method can be used directly as a ``refine`` predicate without knowing
-        the current level explicitly.
+        A cell is subdivided when its max plane-residual exceeds ``tolerance_m``, or
+        when no block describes it at all.
         """
-        D = self._decimation_depth
-        K_float = abs(xmax[0] - xmin[0]) / abs(self._dx)
-        K = max(1, int(round(K_float)))
-        level = max(0, D - int(round(np.log2(max(1.0, float(K))))))
-
         lvl_arr = self._levels[level]
         nh, nw = lvl_arr.shape
+        block = 1 << (self._decimation_depth - level)
 
-        K_actual = 1 << (D - level)
-        abs_dx = abs(self._dx)
-        abs_dy = abs(self._dy)
+        # Round rather than floor: a cell corner is always a sample, give or take the
+        # float error in the linspace that produced it.
+        i_arr = np.rint((xmin - self._x_start) / self._dx).astype(np.int64) // block
+        j_arr = np.rint((ymin - self._y_start) / self._dy).astype(np.int64) // block
 
-        ix = (np.minimum(xmin, xmax) - self._x_start) / abs_dx
-        iy = (np.minimum(ymin, ymax) - self._y_start) / abs_dy
-
-        i_arr = np.clip(np.floor(ix / K_actual).astype(int), 0, nw - 1)
-        j_arr = np.clip(np.floor(iy / K_actual).astype(int), 0, nh - 1)
-
-        return lvl_arr[j_arr, i_arr].astype(np.float64) > tolerance_m
+        # The index clip only keeps the lookup legal, ``unmapped`` discards its result.
+        unmapped = (i_arr < 0) | (i_arr >= nw) | (j_arr < 0) | (j_arr >= nh)
+        residual = lvl_arr[np.clip(j_arr, 0, nh - 1), np.clip(i_arr, 0, nw - 1)].astype(
+            np.float64
+        )
+        return unmapped | (residual > tolerance_m)
 
     def _build(self, elev: np.ndarray, D: int) -> list[np.ndarray]:
         levels: list[np.ndarray] = []

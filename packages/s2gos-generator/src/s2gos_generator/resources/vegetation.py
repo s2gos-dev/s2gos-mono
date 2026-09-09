@@ -72,7 +72,7 @@ def process_target_vegetation(
         raise DataNotFoundError(f"DEM file not found: {dem_path}")
 
     vegetation_instances = _process_vegetation_with_shared_datasets(
-        landcover_path, dem_path, vegetation_config
+        landcover_path, dem_path, vegetation_config, ctx.aoi_size_km * 1000.0
     )
 
     exclusion_zones = _load_exclusion_zones(ctx)

@@ -3,14 +3,16 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Callable, Protocol, runtime_checkable
 
-if TYPE_CHECKING:
-    from .error_pyramid import DemErrorPyramid
-
 import numpy as np
 import shapely
 from scipy.ndimage import map_coordinates
 from shapely.geometry import LineString, MultiLineString
 from shapely.strtree import STRtree
+
+from .adaptive_grid import RefinePredicate
+
+if TYPE_CHECKING:
+    from .error_pyramid import DemErrorPyramid
 
 
 @runtime_checkable
@@ -236,14 +238,15 @@ def apply_way_flatten_batch(
 
 def make_refinement_predicate(
     influence_zone: shapely.Geometry,
-) -> Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], np.ndarray]:
+) -> RefinePredicate:
     """Return a vectorised predicate for :class:`AdaptiveGrid.refine`.
 
     Args:
         influence_zone: Merged polygon/multipolygon covering all way buffers.
 
     Returns:
-        ``predicate(xmin, ymin, xmax, ymax) -> bool[N]``
+        ``predicate(xmin, ymin, xmax, ymax, level) -> bool[N]``. The level is
+        unused here: a way's influence zone is a shape, not a scale.
     """
     poly = influence_zone
     shapely.prepare(poly)
@@ -254,6 +257,7 @@ def make_refinement_predicate(
         ymin: np.ndarray,
         xmax: np.ndarray,
         ymax: np.ndarray,
+        level: int,
     ) -> np.ndarray:
         # AABB pre-filter: reject cells entirely outside the polygon bounding box
         possible = ~((xmax < px0) | (xmin > px1) | (ymax < py0) | (ymin > py1))
@@ -272,20 +276,24 @@ def make_refinement_predicate(
 def make_roughness_predicate(
     pyramid: "DemErrorPyramid",
     tolerance_m: float,
-) -> Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray], np.ndarray]:
+) -> RefinePredicate:
     """Predicate returning True for cells whose max plane-residual exceeds tolerance_m.
 
     Args:
         pyramid:     Precomputed DEM error pyramid.
         tolerance_m: Max allowed plane-residual in metres before a cell is
-                     subdivided. Replaces the old peak-to-peak tolerance;
-                     typical values are 0.1–1.0 m depending on scene scale.
+                     subdivided. Typical values are 0.1 to 1.0 m depending on
+                     scene scale.
     """
 
     def predicate(
-        xmin: np.ndarray, ymin: np.ndarray, xmax: np.ndarray, ymax: np.ndarray
+        xmin: np.ndarray,
+        ymin: np.ndarray,
+        xmax: np.ndarray,
+        ymax: np.ndarray,
+        level: int,
     ) -> np.ndarray:
-        return pyramid.query(xmin, ymin, xmax, ymax, tolerance_m)
+        return pyramid.query(xmin, ymin, level, tolerance_m)
 
     return predicate
 
@@ -305,9 +313,7 @@ def compute_gradient(
     Returns:
         Gradient magnitude array with the same shape as ``elev``.
     """
-    dx_dem = (x[-1] - x[0]) / (len(x) - 1)
-    dy_dem = (y[-1] - y[0]) / (len(y) - 1)
-    grad_y, grad_x = np.gradient(elev, dy_dem, dx_dem)
+    grad_y, grad_x = np.gradient(elev, np.asarray(y, float), np.asarray(x, float))
     return np.sqrt(grad_x**2 + grad_y**2)
 
 
@@ -324,10 +330,10 @@ class GradientFilter:
 
     def __init__(self, elev: np.ndarray, x: np.ndarray, y: np.ndarray) -> None:
         self._grad_mag = compute_gradient(elev, x, y)
-        self._dx_dem = (x[-1] - x[0]) / (len(x) - 1)
-        self._dy_dem = (y[-1] - y[0]) / (len(y) - 1)
-        self._x0_dem = float(x[0])
-        self._y0_dem = float(y[0])
+        self._x = np.asarray(x, dtype=float)
+        self._y = np.asarray(y, dtype=float)
+        self._x_index = np.arange(len(self._x), dtype=float)
+        self._y_index = np.arange(len(self._y), dtype=float)
 
     def exceeds_threshold(self, centerline: shapely.Geometry, threshold: float) -> bool:
         """Return True if the max gradient magnitude along *centerline* ≥ *threshold*.
@@ -341,8 +347,8 @@ class GradientFilter:
         if len(coords) < 2:
             return False
 
-        x_idx = (coords[:, 0] - self._x0_dem) / self._dx_dem
-        y_idx = (coords[:, 1] - self._y0_dem) / self._dy_dem
+        x_idx = np.interp(coords[:, 0], self._x, self._x_index)
+        y_idx = np.interp(coords[:, 1], self._y, self._y_index)
         grad = map_coordinates(
             self._grad_mag, np.vstack((y_idx, x_idx)), order=1, mode="nearest"
         )

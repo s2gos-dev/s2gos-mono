@@ -1,19 +1,23 @@
 """Base tile processor for unified DEM and LandCover processing."""
 
 import logging
+import math
 import os
 from abc import ABC, abstractmethod
 from typing import List, Optional, Union
 
+import numpy as np
 import psutil
 import rioxarray as rxr
 import xarray as xr
 from s2gos_utils.io.paths import open_dataarray
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, box
 from upath import UPath
 
 from .datautil import regrid_to_projection
 from ...dataset import Dataset
+
+SOURCE_MARGIN_M = 200.0
 
 # Configure PROJ environment to fix "Cannot find proj.db" warnings
 try:
@@ -187,14 +191,14 @@ class BaseTileProcessor(ABC):
             if not hasattr(dataset.rio, "crs") or dataset.rio.crs is None:
                 dataset = dataset.rio.write_crs("EPSG:4326")
 
-            bounds = aoi_polygon.bounds
-
             if "x" in dataset.dims:
-                x_dim = "x"
-                y_dim = "y"
+                x_dim, y_dim = "x", "y"
             elif "lon" in dataset.dims:
-                x_dim = "lon"
-                y_dim = "lat"
+                x_dim, y_dim = "lon", "lat"
+            else:
+                raise ValueError(
+                    "Dataset must have either (x, y) or (lon, lat) coordinates"
+                )
 
             lon_min, lat_min, lon_max, lat_max = aoi_polygon.bounds
 
@@ -240,22 +244,34 @@ class BaseTileProcessor(ABC):
     def _regrid_data(
         self,
         dataset: xr.Dataset,
-        target_resolution_m: float,
+        axis: np.ndarray,
         center_lat: float,
         center_lon: float,
-        aoi_size_km: float,
         fillna_value: Optional[float] = None,
     ) -> xr.Dataset:
-        """Regrid dataset to target resolution using oblique mercator projection."""
+        """Regrid dataset onto axis using an oblique mercator projection."""
         return regrid_to_projection(
             dataset=dataset,
-            target_resolution_m=target_resolution_m,
+            axis=axis,
             center_lat=center_lat,
             center_lon=center_lon,
-            aoi_size_km=aoi_size_km,
             interpolation_method=self.default_interpolation_method,
             fillna_value=fillna_value,
             data_variable=self.data_variable_name,
+        )
+
+    def _source_aoi(self, aoi_polygon: Polygon, half_size_m: float) -> Polygon:
+        """Widen the AOI by :data:`SOURCE_MARGIN_M`, to the ground the source must
+        supply."""
+        centre = aoi_polygon.centroid
+        half_m = half_size_m + SOURCE_MARGIN_M
+        half_lat_deg = half_m / 111_320.0
+        half_lon_deg = half_m / (111_320.0 * max(math.cos(math.radians(centre.y)), 0.1))
+        return box(
+            centre.x - half_lon_deg,
+            centre.y - half_lat_deg,
+            centre.x + half_lon_deg,
+            centre.y + half_lat_deg,
         )
 
     def _save_dataset(self, dataset: xr.Dataset, output_path: UPath) -> None:

@@ -113,8 +113,24 @@ def _filter_by_exclusion_zones(
     return filtered_instances
 
 
+def _drop_outside_aoi(
+    positions: List[Dict[str, float]], aoi_size_m: float
+) -> List[Dict[str, float]]:
+    """Drop positions outside the AOI.
+
+    The landcover raster reaches past the AOI and instances are jittered within their
+    cell, so the outermost ring can place them where there is no terrain to stand on.
+    """
+    half = aoi_size_m / 2.0
+    inside = [p for p in positions if abs(p["x"]) <= half and abs(p["y"]) <= half]
+    dropped = len(positions) - len(inside)
+    if dropped:
+        logging.info("Dropped %d vegetation instance(s) outside the AOI", dropped)
+    return inside
+
+
 def _process_vegetation_with_shared_datasets(
-    landcover_path, dem_path, vegetation_config
+    landcover_path, dem_path, vegetation_config, aoi_size_m
 ) -> List[Dict[str, Any]]:
     """Multi-species vegetation processing with shared dataset loading.
 
@@ -122,6 +138,7 @@ def _process_vegetation_with_shared_datasets(
         landcover_path: Path to landcover data file
         dem_path: Path to DEM data file
         vegetation_config: Vegetation placement configuration with species mapping
+        aoi_size_m: Side length of the target area, in metres
 
     Returns:
         List of vegetation placement dictionaries with position, rotation, and species data.
@@ -226,6 +243,10 @@ def _process_vegetation_with_shared_datasets(
         if not all_vegetation_instances:
             logging.info("No vegetation instances generated")
             return []
+
+        all_vegetation_instances = _drop_outside_aoi(
+            all_vegetation_instances, aoi_size_m
+        )
 
         logging.info("Applying vectorized elevation lookup...")
         all_vegetation_instances = _batch_elevation_lookup(
@@ -724,9 +745,8 @@ def _batch_elevation_lookup(
         dem_data: DEM data for elevation queries (xarray DataArray)
 
     Returns:
-        List of vegetation positions with 'elevation' field set from DEM interpolation.
-        Drops instances whose (x, y) lies outside DEM bounds; uses 0.0 only if
-        interpolator construction itself fails.
+        List of vegetation positions with 'elevation' set. Instances outside the
+        DEM are dropped, and 0.0 is used only if the interpolator cannot be built.
     """
     if not positions:
         return positions

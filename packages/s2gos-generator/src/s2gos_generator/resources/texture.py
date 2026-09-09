@@ -12,6 +12,7 @@ from PIL import Image
 from s2gos_utils.io.paths import expand_mapper
 
 from ..core.context import SceneResourceContext
+from ..core.grid import SceneGrid
 from ..core.materials import build_material_index_map
 from ..processors.terrain_texture import (
     TerrainMaterialGenerator,
@@ -79,6 +80,7 @@ def _apply_spectral_matching(
 def _generate_texture(
     ctx: SceneResourceContext,
     landcover_path: Path,
+    grid: SceneGrid,
     base_name: str,
     dem_file_path: Optional[Path],
     season_month: Optional[int],
@@ -116,6 +118,7 @@ def _generate_texture(
         if applicable_regions:
             texture_2d, changed = apply_region_materials(
                 texture_2d,
+                grid,
                 landcover_path,
                 applicable_regions,
                 ctx.coordinate_system,
@@ -134,7 +137,7 @@ def _generate_texture(
     if ctx.dependency_outputs.get("target_ways") is not None and area_name == "target":
         texture_2d, way_mask = apply_ways(
             texture_2d,
-            landcover_path,
+            grid,
             ctx.way_polygons_by_material,
             material_index_map,
             ctx.config.texture_resolution_m,
@@ -182,6 +185,7 @@ class _AreaSpec:
     require_landcover: bool  # target raises if missing; others warn and skip
     applies_snow: bool
     resolution: Callable[[SceneResourceContext], float]
+    grid: Callable[[SceneResourceContext], SceneGrid]
     name_infix: str  # "" | "buffer" | "background"
     selection_field: str
     preview_field: str
@@ -194,6 +198,7 @@ _TARGET = _AreaSpec(
     True,
     True,
     lambda ctx: ctx.landcover_resolution_m,
+    lambda ctx: ctx.target_texture_grid,
     "",
     "selection_texture_file",
     "preview_texture_file",
@@ -205,6 +210,7 @@ _BUFFER = _AreaSpec(
     False,
     True,
     lambda ctx: ctx.config.buffer.resolution_m,
+    lambda ctx: ctx.buffer_texture_grid,
     "buffer",
     "buffer_selection_texture_file",
     "buffer_preview_texture_file",
@@ -216,6 +222,7 @@ _BACKGROUND = _AreaSpec(
     False,
     False,
     lambda ctx: ctx.config.background.resolution_m,
+    lambda ctx: ctx.background_texture_grid,
     "background",
     "background_selection_texture_file",
     "background_preview_texture_file",
@@ -251,6 +258,7 @@ def _generate_area_texture(
     selection_texture_path, preview_texture_path = _generate_texture(
         ctx,
         landcover_path,
+        spec.grid(ctx),
         base_name,
         dem_file_path,
         season_month,

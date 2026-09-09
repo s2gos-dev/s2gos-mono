@@ -10,6 +10,7 @@ from .exceptions import (
     RegridError,
     S2GOSError,
 )
+from .grid import SceneGrid, aoi_to_uv
 from .pipeline import SceneGenerationPipeline
 
 __all__ = [
@@ -17,6 +18,8 @@ __all__ = [
     "SceneGenerationPipeline",
     "SceneAssets",
     "SceneResourceContext",
+    "SceneGrid",
+    "aoi_to_uv",
     "S2GOSError",
     "DataNotFoundError",
     "ConfigurationError",
@@ -24,8 +27,4 @@ __all__ = [
     "RegridError",
     "GeospatialError",
     "MaterialError",
-    "dataset_factory",
-    "Dataset",
-    "IndexedGeoTiff",
-    "Zarr",
 ]

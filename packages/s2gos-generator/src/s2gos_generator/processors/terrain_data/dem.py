@@ -5,6 +5,7 @@ from shapely.geometry import Polygon
 from upath import UPath
 
 from .base_processor import BaseTileProcessor
+from ...core.grid import SceneGrid
 from ...dataset import Dataset, IndexedGeoTiff, Zarr
 
 
@@ -45,51 +46,46 @@ class DEMProcessor(BaseTileProcessor):
         self,
         aoi_polygon: Polygon,
         output_path: UPath,
+        grid: SceneGrid,
+        center_lat: float,
+        center_lon: float,
         fillna_value: Optional[float] = 0.0,
-        target_resolution_m: Optional[float] = None,
-        center_lat: Optional[float] = None,
-        center_lon: Optional[float] = None,
-        aoi_size_km: Optional[float] = None,
         flatten_dem: bool = False,
     ) -> xr.Dataset:
-        """Generate DEM data for the AOI."""
+        """Generate DEM data on grid, sampled at its cell corners.
 
-        tile_paths = self.dataset.query(aoi_polygon)
+        Elevation is point-like, so it is sampled at :meth:`SceneGrid.nodes` rather
+        than at cell centres.
+        """
+
+        source_aoi = self._source_aoi(aoi_polygon, grid.half_size_m)
+        tile_paths = self.dataset.query(source_aoi)
 
         if isinstance(self.dataset, IndexedGeoTiff):
             # Pass AOI to merge for early spatial filtering
             merged_dem = self._merge_tiles(
-                tile_paths, aoi_polygon, fillna_value=fillna_value
+                tile_paths, source_aoi, fillna_value=fillna_value
             )
         elif isinstance(self.dataset, Zarr):
             merged_dem = self.dataset.open()
         else:
             raise NotImplementedError("This type of dataset is not supported for DEMs.")
 
-        # Clip to exact AOI geometry
-        clipped_dem = self._clip_to_aoi(merged_dem, aoi_polygon)
+        clipped_dem = self._clip_to_aoi(merged_dem, source_aoi)
 
-        if (
-            target_resolution_m is not None
-            and center_lat is not None
-            and center_lon is not None
-            and aoi_size_km is not None
-        ):
-            clipped_dem = self._regrid_data(
-                clipped_dem,
-                target_resolution_m,
-                center_lat,
-                center_lon,
-                aoi_size_km,
-                fillna_value,
-            )
+        clipped_dem = self._regrid_data(
+            clipped_dem,
+            grid.nodes(),
+            center_lat,
+            center_lon,
+            fillna_value,
+        )
 
         if flatten_dem:
             clipped_dem[self.data_variable_name] = xr.zeros_like(
                 clipped_dem[self.data_variable_name]
             )
 
-        # Rename data variable to a predictable name
         clipped_dem = clipped_dem.rename({self.data_variable_name: "elevation"})
 
         self._save_dataset(clipped_dem, output_path)

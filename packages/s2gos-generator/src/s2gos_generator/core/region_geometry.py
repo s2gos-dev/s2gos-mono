@@ -10,17 +10,18 @@ from typing import Literal, Optional, Tuple, Union
 
 import numpy as np
 from pydantic import BaseModel, Field, model_validator
-from rasterio.features import rasterize
-from rasterio.transform import from_bounds
 from s2gos_utils.coordinates import CoordinateSystem
 from shapely.geometry import Polygon as ShapelyPolygon
+from shapely.geometry import box
+
+from .grid import SceneGrid
 
 
 class RegionGeometry(BaseModel, ABC):
     """Abstract base class for region geometry definitions.
 
     All geometry types must implement the to_mask() method to generate binary masks
-    at a specified resolution.
+    on a given :class:`SceneGrid`.
     """
 
     geometry_type: str = Field(
@@ -30,21 +31,18 @@ class RegionGeometry(BaseModel, ABC):
     @abstractmethod
     def to_mask(
         self,
-        width_px: int,
-        height_px: int,
-        scene_bounds: dict[str, float],
+        grid: SceneGrid,
         coordinate_system: Optional[CoordinateSystem] = None,
     ) -> np.ndarray:
-        """Generate binary mask for this region.
+        """Generate binary mask for this region on *grid*.
 
         Args:
-            width_px: Output mask width in pixels
-            height_px: Output mask height in pixels
-            scene_bounds: Scene bounds dict with 'xmin', 'xmax', 'ymin', 'ymax' in meters
+            grid: Grid to burn onto.
             coordinate_system: Optional coordinate system for lat/lon conversion
 
         Returns:
-            Binary mask array (0 or 255) with shape (height_px, width_px)
+            Binary mask array (0 or 255) with shape ``(grid.n, grid.n)``, in scene
+            row order (row 0 is the southernmost).
         """
         pass
 
@@ -131,41 +129,13 @@ class RectangleGeometry(RegionGeometry):
 
     def to_mask(
         self,
-        width_px: int,
-        height_px: int,
-        scene_bounds: dict[str, float],
+        grid: SceneGrid,
         coordinate_system: Optional[CoordinateSystem] = None,
     ) -> np.ndarray:
         """Generate binary mask for rectangular region."""
-        # Get region bounds in scene coordinates
-        region_bounds = self.get_bounds(coordinate_system)
+        b = self.get_bounds(coordinate_system)
 
-        # Calculate pixel resolution
-        pixel_width_m = (scene_bounds["xmax"] - scene_bounds["xmin"]) / width_px
-        pixel_height_m = (scene_bounds["ymax"] - scene_bounds["ymin"]) / height_px
-
-        # Create coordinate arrays for pixels (centers)
-        x_coords = np.linspace(
-            scene_bounds["xmin"] + pixel_width_m / 2,
-            scene_bounds["xmax"] - pixel_width_m / 2,
-            width_px,
-        )
-        y_coords = np.linspace(
-            scene_bounds["ymin"] + pixel_height_m / 2,
-            scene_bounds["ymax"] - pixel_height_m / 2,
-            height_px,
-        )
-
-        # Create 2D coordinate grids
-        X, Y = np.meshgrid(x_coords, y_coords)
-
-        # Check which pixels are inside the rectangle
-        inside_x = (X >= region_bounds["xmin"]) & (X <= region_bounds["xmax"])
-        inside_y = (Y >= region_bounds["ymin"]) & (Y <= region_bounds["ymax"])
-        mask = inside_x & inside_y
-
-        # Convert to uint8 (0 or 255)
-        return (mask * 255).astype(np.uint8)
+        return grid.rasterize([(box(b["xmin"], b["ymin"], b["xmax"], b["ymax"]), 255)])
 
 
 class PolygonGeometry(RegionGeometry):
@@ -244,45 +214,13 @@ class PolygonGeometry(RegionGeometry):
 
     def to_mask(
         self,
-        width_px: int,
-        height_px: int,
-        scene_bounds: dict[str, float],
+        grid: SceneGrid,
         coordinate_system: Optional[CoordinateSystem] = None,
     ) -> np.ndarray:
-        """Generate binary mask for polygonal region.
+        """Generate binary mask for polygonal region."""
+        polygon = ShapelyPolygon(self._get_scene_vertices(coordinate_system))
 
-        Args:
-            width_px: Output mask width in pixels
-            height_px: Output mask height in pixels
-            scene_bounds: Scene bounds dict with 'xmin', 'xmax', 'ymin', 'ymax' in meters
-            coordinate_system: Optional coordinate system for lat/lon conversion
-
-        Returns:
-            Binary mask array (0 or 255) with shape (height_px, width_px)
-        """
-        vertices = self._get_scene_vertices(coordinate_system)
-
-        polygon = ShapelyPolygon(vertices)
-
-        transform = from_bounds(
-            scene_bounds["xmin"],
-            scene_bounds["ymin"],
-            scene_bounds["xmax"],
-            scene_bounds["ymax"],
-            width_px,
-            height_px,
-        )
-
-        mask = rasterize(
-            [(polygon, 255)],
-            out_shape=(height_px, width_px),
-            transform=transform,
-            fill=0,
-            dtype=np.uint8,
-            all_touched=False,
-        )
-
-        return mask
+        return grid.rasterize([(polygon, 255)])
 
 
 # Type alias for any geometry type

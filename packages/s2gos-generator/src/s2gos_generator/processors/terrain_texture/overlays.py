@@ -10,19 +10,12 @@ import xarray as xr
 from PIL import Image
 from s2gos_utils.io.paths import expand_mapper
 
-
-def _lc_bounds(lc_data: xr.DataArray) -> tuple[float, float, float, float, float]:
-    """Return (xmin, xmax, ymin, ymax, native_res) from landcover pixel-centre coordinates."""
-    x = lc_data.coords["x"].values
-    y = lc_data.coords["y"].values
-    xmin, xmax = float(x.min()), float(x.max())
-    ymin, ymax = float(y.min()), float(y.max())
-    native_res = abs(xmax - xmin) / (len(x) - 1) if len(x) > 1 else 0.0
-    return xmin, xmax, ymin, ymax, native_res
+from ...core.grid import SceneGrid
 
 
 def apply_region_materials(
     texture_2d: np.ndarray,
+    grid: SceneGrid,
     landcover_path: Path,
     applicable_regions: list,
     coord_system,
@@ -32,8 +25,9 @@ def apply_region_materials(
     """Apply material region overlays to an in-memory texture array.
 
     Args:
-        texture_2d: 2-D array
-        landcover_path: Path to landcover zarr file
+        texture_2d: 2-D array, in scene row order (row 0 is the southernmost)
+        grid: Grid the texture lives on
+        landcover_path: Path to landcover zarr file, read only for ``landcover_filter``
         applicable_regions: List of MaterialRegion configs to apply
         coord_system: Scene coordinate system (from ``ctx.coordinate_system``)
         material_index_map: Mapping of material name to texture index
@@ -42,16 +36,10 @@ def apply_region_materials(
     Returns:
         (texture_2d, modified) where modified is True if any pixels were changed.
     """
-    with xr.open_zarr(expand_mapper(landcover_path)) as ds:
-        landcover_data = ds[list(ds.data_vars)[0]]
-        width_px = len(landcover_data.coords["x"].values)
-        height_px = len(landcover_data.coords["y"].values)
-        xmin, xmax, ymin, ymax, _ = _lc_bounds(landcover_data)
-        scene_bounds = {"xmin": xmin, "xmax": xmax, "ymin": ymin, "ymax": ymax}
-
-        landcover_2d = None
-        if any(r.landcover_filter is not None for r in applicable_regions):
-            landcover_2d = np.flipud(landcover_data.values)
+    landcover_2d = None
+    if any(r.landcover_filter is not None for r in applicable_regions):
+        with xr.open_zarr(expand_mapper(landcover_path)) as ds:
+            landcover_2d = ds[list(ds.data_vars)[0]].values
 
     from ...core.region_geometry import geometry_from_dict
 
@@ -61,9 +49,7 @@ def apply_region_materials(
 
         try:
             geometry = geometry_from_dict(region_config.geometry)
-            mask = geometry.to_mask(width_px, height_px, scene_bounds, coord_system)
-            mask_flipped = np.flipud(mask)
-            binary_mask = mask_flipped > 0
+            binary_mask = geometry.to_mask(grid, coord_system) > 0
 
             if region_config.landcover_filter is not None and landcover_2d is not None:
                 binary_mask = binary_mask & np.isin(
@@ -92,7 +78,7 @@ def apply_region_materials(
 
 def apply_ways(
     texture_2d: np.ndarray,
-    landcover_path: Path,
+    grid: SceneGrid,
     way_polygons_by_material: dict,
     way_material_indices: dict[str, int],
     texture_resolution_m: Optional[float] = None,
@@ -102,68 +88,47 @@ def apply_ways(
 
     Args:
         texture_2d: 2-D uint8 array to modify (may be resized if texture_resolution_m
-            is finer than the landcover resolution)
-        landcover_path: Path to landcover zarr (for resolution/bounds)
+            is finer than the grid's resolution)
+        grid: Grid the texture lives on
         way_polygons_by_material: Merged way polygon per material name
             (from ``ctx.way_polygons_by_material``)
         way_material_indices: Mapping of material_name to texture index
         texture_resolution_m: Target texture resolution (from
-            ``ctx.config.texture_resolution_m``); upsamples when finer than native
+            ``ctx.config.texture_resolution_m``). Upsamples when finer than native
         area_name: Logging label
 
     Returns:
-        (texture_2d, union_mask) — texture_2d may have new dimensions after
-        upsampling; ``union_mask`` is a boolean array of every painted way pixel
+        (texture_2d, union_mask). ``texture_2d`` may have new dimensions after
+        upsampling. ``union_mask`` is a boolean array of every painted way pixel
         (same shape as the returned ``texture_2d``), or ``None`` if no ways were
         applied. The caller can reuse it to overlay ways on the preview texture.
-    """
-    from rasterio.features import rasterize
-    from rasterio.transform import from_bounds
 
+    Upsampling changes the pixel count but not the ground covered, so the area's UV
+    window still holds.
+    """
     way_geoms = way_polygons_by_material
     if not way_geoms:
         return texture_2d, None
 
-    with xr.open_zarr(expand_mapper(landcover_path)) as ds:
-        lc_data = ds[list(ds.data_vars)[0]]
-        native_width_px = len(lc_data.coords["x"].values)
-        native_height_px = len(lc_data.coords["y"].values)
-        xmin, xmax, ymin, ymax, native_res = _lc_bounds(lc_data)
+    raster_grid = grid
+    if texture_resolution_m is not None and texture_resolution_m < grid.resolution_m:
+        # A resolution that does not divide the extent lands on a slightly different
+        # one. The extent is what the UV window needs, and that is preserved exactly.
+        raster_grid = SceneGrid(grid.size_m, round(grid.size_m / texture_resolution_m))
 
-    texture_res = texture_resolution_m
-    if texture_res is not None and texture_res < native_res:
-        scale = native_res / texture_res
-        target_width = round(native_width_px * scale)
-        target_height = round(native_height_px * scale)
-        raster_res = texture_res
-    else:
-        target_width = native_width_px
-        target_height = native_height_px
-        raster_res = native_res
-
-    half_px = raster_res / 2
-    transform = from_bounds(
-        xmin - half_px,
-        ymin - half_px,
-        xmax + half_px,
-        ymax + half_px,
-        target_width,
-        target_height,
-    )
-
-    if (target_height, target_width) != texture_2d.shape:
+    if (raster_grid.n, raster_grid.n) != texture_2d.shape:
         texture_2d = np.array(
             Image.fromarray(texture_2d, mode="L").resize(
-                (target_width, target_height), Image.NEAREST
+                (raster_grid.n, raster_grid.n), Image.NEAREST
             )
         )
 
-    union_mask = np.zeros((target_height, target_width), dtype=bool)
+    union_mask = np.zeros((raster_grid.n, raster_grid.n), dtype=bool)
     for material_name, merged_poly in way_geoms.items():
         mat_idx = way_material_indices.get(material_name)
         if mat_idx is None:
             logging.warning(
-                "Way material %r has no texture index — those segments keep the "
+                "Way material %r has no texture index, so those segments keep the "
                 "underlying landcover material, even though the terrain under them "
                 "is still flattened and still excludes vegetation. Check that %r is "
                 "reachable from the way config and defined in the material library.",
@@ -172,15 +137,7 @@ def apply_ways(
             )
             continue
 
-        way_mask = rasterize(
-            [(merged_poly, 1)],
-            out_shape=(target_height, target_width),
-            transform=transform,
-            fill=0,
-            dtype=np.uint8,
-            all_touched=True,
-        )
-        way_mask = np.flipud(way_mask) > 0
+        way_mask = raster_grid.rasterize([(merged_poly, 1)], all_touched=True) > 0
 
         pixels_modified = int(way_mask.sum())
         if pixels_modified > 0:
@@ -192,9 +149,9 @@ def apply_ways(
                 area_name,
                 pixels_modified,
                 mat_idx,
-                target_width,
-                target_height,
-                raster_res,
+                raster_grid.n,
+                raster_grid.n,
+                raster_grid.resolution_m,
             )
 
     return texture_2d, (union_mask if union_mask.any() else None)
@@ -212,5 +169,6 @@ def apply_ways_to_preview(
         if rgb.size != (target_w, target_h):
             rgb = rgb.resize((target_w, target_h), Image.NEAREST)
         arr = np.array(rgb)
+    # The preview PNG is north-up for humans, unlike everything else in this module.
     arr[np.flipud(way_mask)] = debug_color
     Image.fromarray(arr, mode="RGB").save(preview_path)

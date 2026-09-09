@@ -7,6 +7,8 @@ from PIL import Image
 from s2gos_utils.io.paths import expand_mapper, mkdir, open_dataset, write_image
 from upath import UPath
 
+from ..terrain_data.landcover import ESA_CLASS_PERMANENT_WATER
+
 PERMANENT_WATER_MATERIAL_INDEX = 7
 UNKNOWN_MATERIAL_PREVIEW_VALUE = -1
 GRAY_COLOR = (128, 128, 128)
@@ -118,7 +120,9 @@ class TerrainMaterialGenerator:
         Args:
             landcover_data: xarray DataArray containing land cover class values.
             output_path: UPath where the texture PNG will be saved.
-            flip_vertical: If True, flips the texture vertically (for Mitsuba compatibility).
+            flip_vertical: If True, flips the texture vertically. Mitsuba reads v = 0
+                as array row 0, which already matches scene row order, so the
+                selection texture is written unflipped.
             default_material_index: Material index to use for unknown classes.
             dem_data: Optional DEM DataArray for seasonal snow adjustment.
             season_month: Optional month name for seasonal snow adjustment.
@@ -135,15 +139,13 @@ class TerrainMaterialGenerator:
         if np.any(np.isnan(class_values)):
             nan_count = np.sum(np.isnan(class_values))
             logging.info(
-                f"Found {nan_count} NaN values in landcover data, replacing with default material index {default_material_index}"
-            )
-            class_values = np.where(
-                np.isnan(class_values), default_material_index, class_values
+                f"Found {nan_count} NaN values in landcover data, replacing with "
+                f"ESA class {ESA_CLASS_PERMANENT_WATER}"
             )
 
-        class_values = np.nan_to_num(class_values, nan=default_material_index).astype(
-            np.uint8
-        )
+        class_values = np.nan_to_num(
+            class_values, nan=ESA_CLASS_PERMANENT_WATER
+        ).astype(np.uint8)
 
         selection_texture = np.full_like(
             class_values, default_material_index, dtype=np.uint8
@@ -328,7 +330,9 @@ class TerrainMaterialGenerator:
             x_grid_scene, y_grid_scene
         )
 
-        elevation_grid = dem_data.values
+        # The lat/lon grid comes from the landcover coordinates, and the DEM is a
+        # different raster, so sample onto the landcover grid.
+        elevation_grid = dem_data.interp(x=landcover_data.x, y=landcover_data.y).values
 
         month_enum = Month(season_month.lower())
         day_of_year = get_day_of_year(month_enum)

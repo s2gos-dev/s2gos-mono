@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..core.context import SceneResourceContext
+from ..core.grid import SceneGrid
 from ..processors.terrain_data import DEMProcessor
 
 
@@ -13,20 +14,21 @@ def _process_dem(
     aoi_polygon,
     resolution_m: float,
     filename_prefix: str,  # "dem" | "dem_buffer"
-    aoi_size_km: float,
+    grid: SceneGrid,
 ) -> Path:
     processor = DEMProcessor(dataset=ctx.config.data_sources.dem)
+    # resolution_m is the requested value, kept verbatim for the filename.
+    # grid carries the same number derived, which does not always render alike.
     output_path = (
         ctx.data_dir / f"{filename_prefix}_{ctx.scene_name}_{resolution_m}m.zarr"
     )
     processor.generate_dem(
         aoi_polygon=aoi_polygon,
         output_path=output_path,
-        fillna_value=ctx.config.processing.dem_fillna_value,
-        target_resolution_m=resolution_m,
+        grid=grid,
         center_lat=ctx.center_lat,
         center_lon=ctx.center_lon,
-        aoi_size_km=aoi_size_km,
+        fillna_value=ctx.config.processing.dem_fillna_value,
         flatten_dem=ctx.config.processing.flatten_dem,
     )
     return output_path
@@ -47,7 +49,7 @@ def process_target_dem(ctx: SceneResourceContext) -> Optional[Path]:
         raise ValueError("Target AOI polygon not found in context")
 
     output_path = _process_dem(
-        ctx, aoi_polygon, ctx.dem_resolution_m, "dem", ctx.aoi_size_km
+        ctx, aoi_polygon, ctx.dem_resolution_m, "dem", ctx.target_dem_grid
     )
     ctx.assets.dem_file = output_path
 
@@ -76,7 +78,7 @@ def process_buffer_dem(ctx: SceneResourceContext) -> Optional[Path]:
         buffer_aoi_polygon,
         buffer_resolution_m,
         "dem_buffer",
-        ctx.config.buffer.size_km,
+        ctx.buffer_dem_grid,
     )
     ctx.assets.buffer_dem_file = output_path
 
