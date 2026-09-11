@@ -16,10 +16,10 @@ def _grid(nx, ny, max_depth):
 def _const(val):
     """A ``refine`` predicate that returns the same boolean for every cell.
 
-    Matches the predicate signature ``(xmin, ymin, xmax, ymax) -> bool[N]`` that
-    ``AdaptiveGrid.refine`` calls per level; ``_const(True)`` refines everywhere.
+    Matches the ``RefinePredicate`` signature ``(xmin, ymin, xmax, ymax, level)``
+    that ``AdaptiveGrid.refine`` calls per level. ``_const(True)`` refines everywhere.
     """
-    return lambda xmin, ymin, xmax, ymax: np.full(len(xmin), val, dtype=bool)
+    return lambda xmin, ymin, xmax, ymax, level: np.full(len(xmin), val, dtype=bool)
 
 
 def _flat_z(xy):
@@ -83,7 +83,7 @@ class TestAdaptiveGrid:
     def test_refine_only_subdivides_predicate_region(self):
         grid = _grid(4, 4, max_depth=2)
         # True only for the leftmost column of base cells (xmin < 1).
-        grid.refine(lambda xmn, ymn, xmx, ymx: xmn < 1.0, max_level=1)
+        grid.refine(lambda xmn, ymn, xmx, ymx, lvl: xmn < 1.0, max_level=1)
         # 4 left cells -> 16 level-1 leaves; the other 12 base cells stay level 0.
         assert len(grid._leaves) == 28
         assert _leaf_levels(grid) == {0, 1}
@@ -102,7 +102,7 @@ class TestAdaptiveGrid:
 
     def test_balanced_refined_mesh_is_crack_free(self):
         grid = _grid(4, 4, max_depth=2)
-        grid.refine(lambda xmn, ymn, xmx, ymx: xmx <= 1.0 + 1e-9, max_level=2)
+        grid.refine(lambda xmn, ymn, xmx, ymx, lvl: xmx <= 1.0 + 1e-9, max_level=2)
         grid.balance()
         verts, faces = grid.to_mesh(_flat_z)
 
@@ -115,30 +115,23 @@ class TestAdaptiveGrid:
 def _pyramid(elev, decimation_depth=3):
     """A DemErrorPyramid on a unit grid (origin 0, 1 m pixels).
 
-    ``query`` infers the pyramid level from the cell width: with ``D=3`` an 8x8
-    DEM has 1x1 cells at the finest level (residual 0) up to one 8x8 cell at the
-    coarsest, so a 2 m-wide query cell hits the level whose blocks are 2x2 pixels.
+    ``query`` is told its level rather than inferring it. With ``D=3``, level 3 blocks
+    are 1x1 pixels (residual 0) and level 0 is a single 8x8 block, so the 2x2 blocks
+    the tests below use are level 2.
     """
-    return DemErrorPyramid(
-        elev, x0=0.0, y0=0.0, dx=1.0, dy=1.0, decimation_depth=decimation_depth
-    )
+    axis = np.arange(elev.shape[0], dtype=float)
+    return DemErrorPyramid(elev, axis, axis, decimation_depth)
 
 
-def _cell(xmin, xmax, ymin, ymax):
-    """Wrap a single query rectangle as the length-1 arrays ``query`` expects."""
-    return (
-        np.array([float(xmin)]),
-        np.array([float(ymin)]),
-        np.array([float(xmax)]),
-        np.array([float(ymax)]),
-    )
+def _at(xmin, ymin):
+    """Wrap one cell's lower corner as the length-1 arrays ``query`` expects."""
+    return np.array([float(xmin)]), np.array([float(ymin)])
 
 
 class TestDemErrorPyramid:
     def test_flat_dem_never_exceeds_tolerance(self):
         pyr = _pyramid(np.full((8, 8), 5.0))
-        xmn, ymn, xmx, ymx = _cell(2, 4, 2, 4)
-        assert not pyr.query(xmn, ymn, xmx, ymx, tolerance_m=0.001).any()
+        assert not pyr.query(*_at(2, 2), 2, tolerance_m=0.001).any()
 
     def test_tilted_plane_has_no_residual(self):
         # A perfect plane fits its own least-squares plane exactly -> 0 residual,
@@ -147,26 +140,43 @@ class TestDemErrorPyramid:
         elev = (2.0 * i + 3.0 * j).astype(float)
         pyr = _pyramid(elev)
         for xmin in (0, 2, 4, 6):
-            xmn, ymn, xmx, ymx = _cell(xmin, xmin + 2, 0, 2)
-            assert not pyr.query(xmn, ymn, xmx, ymx, tolerance_m=0.01).any()
+            assert not pyr.query(*_at(xmin, 0), 2, tolerance_m=0.01).any()
 
     def test_localized_bump_refines_locally_and_respects_threshold(self):
         elev = np.zeros((8, 8))
         elev[2, 2] = 10.0  # a single spike
         pyr = _pyramid(elev)
 
-        over_bump = _cell(2, 4, 2, 4)  # the 2x2 cell containing the spike
-        assert pyr.query(*over_bump, tolerance_m=1.0).all()  # residual exceeds 1 m
-        assert not pyr.query(*over_bump, tolerance_m=20.0).any()  # but not 20 m
+        over_bump = _at(2, 2)  # the 2x2 block containing the spike
+        assert pyr.query(*over_bump, 2, tolerance_m=1.0).all()  # residual exceeds 1 m
+        assert not pyr.query(*over_bump, 2, tolerance_m=20.0).any()  # but not 20 m
 
-        away = _cell(4, 6, 4, 6)  # a cell with no spike
-        assert not pyr.query(*away, tolerance_m=1.0).any()
+        away = _at(4, 4)  # a cell with no spike
+        assert not pyr.query(*away, 2, tolerance_m=1.0).any()
 
     def test_coarse_query_saturates_from_fine_bump(self):
         elev = np.zeros((8, 8))
         elev[2, 2] = 10.0
         pyr = _pyramid(elev)
-        # A coarse cell covering the whole DEM still flags True
 
-        whole = _cell(0, 8, 0, 8)
-        assert pyr.query(*whole, tolerance_m=1.0).all()
+        # Level 0 is one block covering the whole DEM, and it still flags True.
+        assert pyr.query(*_at(0, 0), 0, tolerance_m=1.0).all()
+
+    def test_a_cell_no_block_describes_is_always_refined(self):
+        """9 pixels at D=3 leaves a final strip no 8x8 block covers.
+
+        Reading a neighbouring block there would call that ground flat, so the only
+        safe answer is to subdivide, whatever the tolerance.
+        """
+        elev = np.zeros((9, 9))
+        pyr = _pyramid(elev)
+
+        assert not pyr.query(*_at(0, 0), 0, tolerance_m=1e-9).any()
+        assert pyr.query(*_at(8, 8), 0, tolerance_m=1e9).all()
+
+    def test_construction_rejects_a_non_uniform_axis(self):
+        """The block arithmetic is only correct on a uniform axis."""
+        ragged = np.array([0.0, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 8.0])
+
+        with pytest.raises(ValueError, match="uniformly spaced"):
+            DemErrorPyramid(np.zeros((8, 8)), ragged, np.arange(8.0), 3)

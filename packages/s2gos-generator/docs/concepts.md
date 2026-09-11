@@ -8,8 +8,8 @@ Scene generation follows a DAG (directed acyclic graph) pipeline with automatic 
 
 The broad stages are:
 
-1. **Data extraction** — Clips source data (DEM, landcover) to the target and optionally buffer/background extents.
-2. **Mesh generation** — Converts elevation data into 3D triangle meshes (PLY format), one per zone. The target mesh can be locally refined with an [adaptive quadtree grid](#adaptive-terrain-mesh) so that features such as ways sit on well-resolved, flattened terrain.
+1. **Data extraction** — Regrids source data (DEM, landcover) onto a uniform raster per zone, at exactly the requested resolution.
+2. **Mesh generation** — Converts elevation data into 3D triangle meshes (PLY format), one per zone. The target mesh can be locally refined with an [adaptive quadtree grid](#adaptive-terrain-mesh) so that features such as ways sit on well-resolved, flattened terrain. Each mesh is then trimmed to its zone boundary and UV-mapped in one step.
 3. **Texture generation** — Maps landcover classes to material definitions, producing selection textures for each mesh.
 4. **Scene description output** — Assembles all resources into a [`SceneDescription`][s2gos_utils.scene.description.SceneDescription] YAML that ties meshes, textures, materials, and atmosphere together for use by the simulator.
 
@@ -36,7 +36,7 @@ A generated scene is composed of up to three concentric zones, each at a differe
 
 The **target zone** is the core area of interest (AOI). It is generated at the highest resolution using full DEM elevation data and landcover-derived material textures and potentially 3D object such as vegetation. All measurements of interest fall within this zone.
 
-The target is defined by a centre coordinate and an AOI size in kilometres ([`SceneLocation`][s2gos_generator.core.config.scene.SceneLocation]).
+The target is defined by a centre coordinate and an AOI size in kilometres ([`SceneLocation`][s2gos_generator.core.config.scene.SceneLocation]). Each raster uses exactly the requested resolution, so it can reach a fraction of a cell past the AOI. The mesh is clipped back to it.
 
 ### Buffer
 

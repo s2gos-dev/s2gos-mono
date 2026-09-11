@@ -44,7 +44,9 @@ class TestProcessTargetDem:
 
         expected = mock_ctx.data_dir / "dem_test_scene_30.0m.zarr"
         assert result == expected
-        assert mock_processor.generate_dem.call_args.kwargs["output_path"] == expected
+        kwargs = mock_processor.generate_dem.call_args.kwargs
+        assert kwargs["output_path"] == expected
+        assert kwargs["grid"] is mock_ctx.target_dem_grid
         assert mock_ctx.assets.dem_file == expected
 
 
@@ -69,10 +71,9 @@ class TestProcessTargetLandcover:
         expected = mock_ctx.data_dir / "landcover_test_scene_30.0m.zarr"
 
         assert result == expected
-        assert (
-            mock_processor.generate_landcover.call_args.kwargs["output_path"]
-            == expected
-        )
+        kwargs = mock_processor.generate_landcover.call_args.kwargs
+        assert kwargs["output_path"] == expected
+        assert kwargs["grid"] is mock_ctx.target_texture_grid
 
 
 class TestGenerateTargetMesh:
@@ -116,6 +117,7 @@ class TestGenerateTargetMesh:
         )
         dem_dataset.__getitem__.assert_called_once_with("elevation")
         assert mock_generator.dem_to_mesh.call_args.args[0] is elevation
-        mock_generator.add_uv_coordinates.assert_called_once()
+        # The mesh is trimmed to the AOI and UV-mapped in one call.
+        assert mock_generator.fit_to_aoi.call_args.args[1] == 10_000.0
         assert mock_generator.save_mesh.call_args.args[1] == expected
         assert mock_ctx.assets.mesh_file == expected

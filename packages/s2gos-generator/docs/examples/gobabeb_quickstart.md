@@ -37,14 +37,13 @@ from s2gos_generator.core.config import (
     AbsorptionDatabase,
 )
 
-# Target area: 10 km around Gobabeb at 10 m resolution
+# Target area: 10 km around Gobabeb at 30 m resolution
 config = create_scene_config(
     scene_name="gobabeb",
     center_lat=-23.6015,
     center_lon=15.1259,
     aoi_size_km=10,
     output_dir="./gen_output",
-    target_resolution_m=10.0,
     description="Gobabeb PICS site in the Namib Desert.",
 )
 
@@ -70,7 +69,6 @@ config.set_atmosphere_molecular(
 | Parameter | Value | Meaning |
 |---|---|---|
 | `aoi_size_km` | 10 | 10 km &times; 10 km target area |
-| `target_resolution_m` | 10.0 | One mesh cell per 10 m |
 | `buffer.size_km` | 60.0 | 60 km buffer at 60 m resolution |
 | `background.size_km` | 150.0 | 150 km background at 200 m resolution |
 

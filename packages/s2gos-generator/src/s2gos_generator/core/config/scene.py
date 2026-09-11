@@ -457,7 +457,7 @@ def create_scene_config(
         aoi_size_km: Area of interest size in kilometers
         output_dir: Output directory for generated scene
         dem_resolution_m: DEM resolution in meters (default: 30.0)
-        landcover_resolution_m: Landcover resolution in meters (default: 30.0)
+        landcover_resolution_m: Landcover resolution in meters (default: 10.0)
         description: Optional scene description
         data_overrides: Optional dict with user data overrides:
             - dem_index: Custom DEM index file

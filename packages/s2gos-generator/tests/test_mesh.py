@@ -3,7 +3,12 @@ import pytest
 import trimesh
 import xarray as xr
 
+from s2gos_generator.core.grid import SceneGrid, aoi_to_uv
 from s2gos_generator.processors.terrain_mesh import MeshGenerator
+
+RESOLUTION_M = 30.0
+DIVIDES = 900.0  # 30 cells exactly, so the raster is the AOI
+OVERSHOOTS = 905.0  # 31 cells of 30 m, so the raster reaches 930 m
 
 
 @pytest.fixture
@@ -21,11 +26,12 @@ def clean_3x3_dem():
     )
 
 
-@pytest.fixture
-def unit_square_mesh():
-    vertices = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], dtype=float)
-    faces = np.array([[0, 1, 2], [0, 2, 3]])
-    return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+def _dem_covering(aoi_size_m):
+    """A tilted, bumpy DEM on the raster covering *aoi_size_m*."""
+    axis = SceneGrid.covering(aoi_size_m, RESOLUTION_M).nodes()
+    x, y = np.meshgrid(axis, axis)
+    values = 0.05 * x + 30.0 * np.sin(y / 120.0)
+    return xr.DataArray(values, dims=["y", "x"], coords={"x": axis, "y": axis})
 
 
 class TestCreateGridFaces:
@@ -86,26 +92,31 @@ class TestDemToMesh:
         assert isinstance(mesh, trimesh.Trimesh)
 
 
-class TestAddUvCoordinates:
-    def test_uv_in_unit_range(self, generator, unit_square_mesh):
-        result = generator.add_uv_coordinates(unit_square_mesh)
-        assert np.all(result.visual.uv >= 0.0)
-        assert np.all(result.visual.uv <= 1.0)
+class TestFitToAoi:
+    """The mesh is built over the DEM raster, which reaches past the AOI whenever the
+    resolution does not divide it. ``fit_to_aoi`` trims it back and takes the UVs from
+    the AOI, in that order."""
 
-    def test_corner_vertices_map_to_extremes(self, generator, unit_square_mesh):
-        result = generator.add_uv_coordinates(unit_square_mesh)
-        uv = result.visual.uv
-        np.testing.assert_allclose(uv[0], [0.0, 0.0])
-        np.testing.assert_allclose(uv[2], [1.0, 1.0])
+    @pytest.mark.parametrize("aoi_size_m", [DIVIDES, OVERSHOOTS])
+    def test_spans_the_aoi_exactly(self, generator, aoi_size_m):
+        mesh = generator.fit_to_aoi(
+            generator.dem_to_mesh(_dem_covering(aoi_size_m)), aoi_size_m
+        )
 
-    def test_zero_extent_raises_value_error(self, generator):
-        vertices = np.array(
-            [[0, 0, 0], [0, 1, 0], [0, 1, 1], [0, 0, 1]], dtype=float
-        )  #  perfectly flat wall on the Y-Z plane
-        faces = np.array([[0, 1, 2], [0, 2, 3]])
-        mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+        half = aoi_size_m / 2.0
+        for column in (0, 1):
+            assert mesh.vertices[:, column].min() == pytest.approx(-half)
+            assert mesh.vertices[:, column].max() == pytest.approx(half)
 
-        expected_error_msg = "Cannot calculate UV coordinates"
+    @pytest.mark.parametrize("aoi_size_m", [DIVIDES, OVERSHOOTS])
+    def test_every_uv_is_its_vertex_with_nothing_clamped(self, generator, aoi_size_m):
+        """Mapping an untrimmed mesh would push the outer vertices past ``[0, 1]``, and
+        clamping them would smear the border texel around the whole edge. Comparing
+        against the unclamped mapping proves the trim ran first."""
+        mesh = generator.fit_to_aoi(
+            generator.dem_to_mesh(_dem_covering(aoi_size_m)), aoi_size_m
+        )
 
-        with pytest.raises(ValueError, match=expected_error_msg):
-            generator.add_uv_coordinates(mesh)
+        np.testing.assert_allclose(
+            mesh.visual.uv, aoi_to_uv(mesh.vertices[:, :2], aoi_size_m)
+        )

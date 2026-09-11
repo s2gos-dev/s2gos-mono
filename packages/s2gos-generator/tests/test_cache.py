@@ -22,6 +22,7 @@ from s2gos_generator.core.cache import (
     restore_context,
 )
 from s2gos_generator.core.fingerprints import (
+    _LANDCOVER_FILL_CLASS,
     ResourceFingerprints,
     _stable_hash,
     compute_all_hashes,
@@ -130,6 +131,16 @@ class TestHashingAndFingerprints:
         assert _stable_hash(d1) == _stable_hash(d2)  # Order independent
         assert _stable_hash({"a": 1}) != _stable_hash({"a": 2})  # Value dependent
         assert len(_stable_hash({"k": "v"})) == 16  # Fixed length
+
+    def test_landcover_fill_fingerprint_tracks_the_processor(self):
+        """``fingerprints`` cannot import the processor without inverting the layering,
+        so it keeps its own copy. If the two drift, the fill changes, no cache busts,
+        and stale landcover carrying the old fill is reused."""
+        from s2gos_generator.processors.terrain_data.landcover import (
+            ESA_CLASS_PERMANENT_WATER,
+        )
+
+        assert _LANDCOVER_FILL_CLASS == ESA_CLASS_PERMANENT_WATER
 
     def test_resource_fingerprints(self, minimal_config):
         cfg = minimal_config
