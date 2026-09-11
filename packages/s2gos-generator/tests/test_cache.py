@@ -189,6 +189,56 @@ class TestHashingAndFingerprints:
         assert h2["target_dem"] == h3["target_dem"]
         assert h2["target_texture"] != h3["target_texture"]
 
+    def test_target_sentinel2_fingerprint_ignores_clustering_fields(
+        self, minimal_config
+    ):
+        from s2gos_generator.core.config.material_match import SpectralMatchingConfig
+
+        def _sm(**overrides):
+            kwargs = dict(
+                landcover_classes=[30],
+                material_library="materials.json",
+                acquisition_date="2024-12-21",
+                search_window_days=80,
+                bands=["B02", "B03", "B04", "B08"],
+                max_cloud_cover=70.0,
+                scl_exclude=[1, 3, 8, 9, 10],
+                min_coverage=0.99,
+                stac_url="https://stac.dataspace.copernicus.eu/v1",
+                credential_id="aws_s2",
+                clusters_per_class=6,
+                random_seed=13,
+                max_sam_angle_deg=None,
+            )
+            kwargs.update(overrides)
+            return SpectralMatchingConfig.model_construct(**kwargs)
+
+        minimal_config.spectral_matching = _sm()
+        base = ResourceFingerprints.get("target_sentinel2", minimal_config)
+
+        for change in (
+            {"clusters_per_class": 16},
+            {"random_seed": 99},
+            {"landcover_classes": [10, 20, 30]},
+            {"material_library": "other.json"},
+            {"max_sam_angle_deg": 5.0},
+        ):
+            minimal_config.spectral_matching = _sm(**change)
+            assert ResourceFingerprints.get("target_sentinel2", minimal_config) == base
+
+        for change in (
+            {"acquisition_date": "2024-06-01"},
+            {"search_window_days": 10},
+            {"bands": ["B02", "B03", "B04"]},
+            {"max_cloud_cover": 20.0},
+            {"scl_exclude": [8, 9]},
+            {"min_coverage": 0.5},
+            {"stac_url": "https://example.test/v1"},
+            {"credential_id": "other"},
+        ):
+            minimal_config.spectral_matching = _sm(**change)
+            assert ResourceFingerprints.get("target_sentinel2", minimal_config) != base
+
 
 class TestManifestAndContextHandling:
     def test_cache_manifest(self, tmp_path):

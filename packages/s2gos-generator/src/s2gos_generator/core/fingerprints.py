@@ -4,6 +4,7 @@ import hashlib
 import json
 from typing import Dict
 
+from .config.material_match import IMAGERY_AFFECTING_FIELDS
 from .resource_registry import ResourceRegistry
 
 
@@ -125,14 +126,16 @@ class ResourceFingerprints:
 
     @staticmethod
     def _target_sentinel2(config) -> dict:
+        # Only imagery-affecting fields: clustering params must not trigger a re-download.
+        sm = getattr(config, "spectral_matching", None)
         return {
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "aoi_size_km": config.location.aoi_size_km,
             "landcover_resolution_m": config.landcover_resolution_m,
             "spectral_matching": (
-                getattr(config, "spectral_matching", None).model_dump()
-                if getattr(config, "spectral_matching", None)
+                {f: getattr(sm, f) for f in IMAGERY_AFFECTING_FIELDS}
+                if sm is not None
                 else None
             ),
         }

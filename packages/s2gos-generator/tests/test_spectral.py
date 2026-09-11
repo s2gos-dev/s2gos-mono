@@ -703,6 +703,16 @@ class TestConfig:
         assert scene.spectral_matching is not None
         assert scene.spectral_matching.landcover_classes == [30, 60]
 
+    def test_imagery_field_lists_partition_every_config_field(self):
+        from s2gos_generator.core.config.material_match import (
+            IMAGERY_AFFECTING_FIELDS,
+            NON_IMAGERY_FIELDS,
+        )
+
+        imagery, non_imagery = set(IMAGERY_AFFECTING_FIELDS), set(NON_IMAGERY_FIELDS)
+        assert not imagery & non_imagery
+        assert imagery | non_imagery == set(SpectralMatchingConfig.model_fields)
+
 
 class TestPipelineWiring:
     """Conditional resource wiring and the matched-materials sidecar context property."""

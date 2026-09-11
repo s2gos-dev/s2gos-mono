@@ -21,6 +21,25 @@ S2_BAND_WAVELENGTHS_NM: dict[str, float] = {
     "B08": 842.0,  # NIR
 }
 
+# Fields that change the fetched Sentinel-2 composite; the rest only re-run local matching.
+IMAGERY_AFFECTING_FIELDS: tuple[str, ...] = (
+    "acquisition_date",
+    "search_window_days",
+    "bands",
+    "max_cloud_cover",
+    "scl_exclude",
+    "min_coverage",
+    "stac_url",
+    "credential_id",
+)
+NON_IMAGERY_FIELDS: tuple[str, ...] = (
+    "landcover_classes",
+    "material_library",
+    "clusters_per_class",
+    "random_seed",
+    "max_sam_angle_deg",
+)
+
 
 class SpectralMatchingConfig(BaseModel):
     """Spectral matching of selected landcover classes.
