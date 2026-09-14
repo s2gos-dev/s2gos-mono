@@ -152,7 +152,7 @@ class AtmosphereBuilder:
             )
         else:
             distribution = UniformParticleDistribution(
-                {"bounds": layer_dict.get("bounds", [0, 1])}
+                bounds=layer_dict.get("bounds", [0.0, 1.0])
             )
 
         layer = ParticleLayer(

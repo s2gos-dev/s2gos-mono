@@ -150,11 +150,14 @@ class GroundInstrumentType(str, Enum):
 class FisheyeOptions(BaseModel):
     """Fisheye lens projection and calibration options.
 
-    The ``polynomial`` projection model reproduces a real, calibrated
-    camera/lens pair through its normalised projection function
-    ``rho(theta) = lens_a * theta + lens_b * theta**2`` (with ``rho`` in
-    [0, 1]), in that mode the sensor's ``fov`` is ignored, since the
-    calibration fully defines the mapping.
+    A projection model maps the angle from the optical axis ``theta`` onto a
+    normalised image radius ``rho`` in [0, 1], ``rho = 1`` being the edge of the
+    image circle. ``fov`` is the full angle that circle subtends for the analytic
+    models, and the angular domain the fit was made over for ``polynomial``.
+
+    ``center_x``, ``center_y`` and ``image_circle_radius`` place and scale the
+    image circle for *every* model; they are pixels in ``calibration_resolution``
+    and default to the film centre and its inscribed disk.
     """
 
     projection_model: Literal[
@@ -165,18 +168,16 @@ class FisheyeOptions(BaseModel):
         "equisolid_full",
         "polynomial",
     ] = Field("equisolid", description="Fisheye projection law")
-    lens_a: Optional[float] = Field(
+    lens_coefficients: Optional[List[float]] = Field(
         None,
         description=(
-            "Polynomial calibration coefficient A (linear term), 'Lens A'. "
-            "Required and strictly positive when projection_model='polynomial'."
+            "Ascending-order coefficients of rho(theta) = c0 * theta + "
+            "c1 * theta**2 + ..., theta in radian; a calibration sheet's "
+            "'Lens A'/'Lens B' is [lens_a, lens_b]. Accepts a number, a sequence "
+            "or a comma- or whitespace-separated string. 'polynomial' model only."
         ),
     )
-    lens_b: Optional[float] = Field(
-        None,
-        description="Polynomial calibration coefficient B (quadratic term), 'Lens B'",
-    )
-    max_radius: Optional[float] = Field(
+    image_circle_radius: Optional[float] = Field(
         None,
         description=(
             "Calibrated image-circle radius ('Maximum Radius') in pixels at "
@@ -200,42 +201,58 @@ class FisheyeOptions(BaseModel):
     calibration_resolution: Optional[Tuple[int, int]] = Field(
         None,
         description=(
-            "Resolution (width, height) the calibration was performed at, i.e. "
-            "the pixel frame for center_x/center_y/max_radius. Defaults to the "
-            "sensor's resolution; must share its aspect ratio."
+            "Resolution (width, height) the calibration was performed at, the "
+            "pixel frame for center_x/center_y/image_circle_radius. Defaults to "
+            "the sensor's resolution; must share its aspect ratio."
+        ),
+    )
+    far_clip_m: Optional[float] = Field(
+        None,
+        description=(
+            "Radial distance in metres rays are traced to. Defaults to the "
+            "kernel's 10 000 km."
         ),
     )
 
+    @field_validator("lens_coefficients", mode="before")
+    @classmethod
+    def parse_lens_coefficients(cls, v):
+        """Accept a scalar or a comma- or whitespace-separated string."""
+        if v is None or isinstance(v, (list, tuple)):
+            return v
+        if not isinstance(v, str):
+            return [v]
+        try:
+            return [float(token) for token in v.replace(",", " ").split()]
+        except ValueError as e:
+            raise ValueError(f"could not parse lens_coefficients {v!r}") from e
+
     @model_validator(mode="after")
     def validate_polynomial_calibration(self):
-        calibration_fields = {
-            "lens_a": self.lens_a,
-            "lens_b": self.lens_b,
-            "max_radius": self.max_radius,
-            "center_x": self.center_x,
-            "center_y": self.center_y,
-            "calibration_resolution": self.calibration_resolution,
-        }
-
-        if self.projection_model != "polynomial":
-            set_fields = sorted(
-                k for k, v in calibration_fields.items() if v is not None
-            )
-            if set_fields:
+        if self.projection_model == "polynomial":
+            if not self.lens_coefficients:
                 raise ValueError(
-                    f"Calibration fields {set_fields} are only used by the "
-                    f"'polynomial' projection model, got projection_model="
-                    f"'{self.projection_model}'"
+                    "'polynomial' requires at least one coefficient in "
+                    "'lens_coefficients'"
                 )
-            return self
-
-        if self.lens_a is None or self.lens_a <= 0:
+            if self.lens_coefficients[0] <= 0:
+                raise ValueError(
+                    "'polynomial' requires a positive linear coefficient, got "
+                    f"{self.lens_coefficients[0]}"
+                )
+        elif self.lens_coefficients is not None:
             raise ValueError(
-                "The 'polynomial' projection model requires lens_a > 0, "
-                f"got {self.lens_a}"
+                "'lens_coefficients' is only used by the 'polynomial' projection "
+                f"model, got projection_model='{self.projection_model}'"
             )
-        if self.max_radius is not None and self.max_radius <= 0:
-            raise ValueError(f"max_radius must be > 0, got {self.max_radius}")
+
+        if self.image_circle_radius is not None and self.image_circle_radius <= 0:
+            raise ValueError(
+                f"image_circle_radius must be > 0, got {self.image_circle_radius}"
+            )
+
+        if self.far_clip_m is not None and self.far_clip_m <= 0:
+            raise ValueError(f"far_clip_m must be > 0, got {self.far_clip_m}")
 
         return self
 
@@ -277,6 +294,13 @@ class PostProcessingOptions(BaseModel):
         default=1.8,
         gt=0.0,
         description="Brightness multiplier for RGB visualization",
+    )
+    rgb_background: Literal["white", "black"] = Field(
+        default="white",
+        description=(
+            "Colour of the masked pixels in the RGB visualization. Only applies "
+            "when apply_circular_mask is enabled."
+        ),
     )
 
 

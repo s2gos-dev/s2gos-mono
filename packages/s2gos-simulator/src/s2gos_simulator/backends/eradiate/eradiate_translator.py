@@ -489,26 +489,26 @@ class EradiateTranslator:
                 base_measure["type"] = "fisheye"
                 base_measure["film_resolution"] = sensor.resolution or [1024, 1024]
                 base_measure["up"] = view.up or [0, 0, 1]
+                base_measure["fov"] = sensor.fov if sensor.fov is not None else 180.0
 
                 fisheye = sensor.fisheye or FisheyeOptions()
                 base_measure["projection_model"] = fisheye.projection_model
 
-                if fisheye.projection_model == "polynomial":
-                    for key in (
-                        "lens_a",
-                        "lens_b",
-                        "max_radius",
-                        "center_x",
-                        "center_y",
-                        "calibration_resolution",
-                    ):
-                        value = getattr(fisheye, key)
-                        if value is not None:
-                            base_measure[key] = value
-                else:
-                    base_measure["fov"] = (
-                        sensor.fov if sensor.fov is not None else 180.0
-                    )
+                if fisheye.lens_coefficients is not None:
+                    base_measure["lens_coefficients"] = list(fisheye.lens_coefficients)
+
+                for key in (
+                    "image_circle_radius",
+                    "center_x",
+                    "center_y",
+                    "calibration_resolution",
+                ):
+                    value = getattr(fisheye, key)
+                    if value is not None:
+                        base_measure[key] = value
+
+                if fisheye.far_clip_m is not None:
+                    base_measure["far_clip"] = fisheye.far_clip_m
 
             elif sensor.instrument == GroundInstrumentType.HYPSTAR:
                 base_measure["type"] = "perspective"

@@ -61,7 +61,9 @@ class SensorProcessor:
         radiance = original_radiance
         pp = getattr(sensor, "post_processing", None)
 
-        radiance = self._apply_fov_mask_step(radiance, sensor, pp)
+        valid = self._valid_mask(dataset)
+
+        radiance = self._apply_fov_mask_step(radiance, sensor, pp, valid=valid)
 
         if pp is not None and getattr(pp, "generate_rgb_image", False):
             from upath import UPath
@@ -97,14 +99,31 @@ class SensorProcessor:
             dataset, radiance, sensor, pp, spectral_changed=spectral_changed
         )
 
-    def _apply_fov_mask_step(self, data: xr.DataArray, sensor, pp) -> xr.DataArray:
-        """Apply the circular FOV mask if the sensor is configured for it.
+    @staticmethod
+    def _valid_mask(dataset: xr.Dataset):
+        """The simulation's own footprint mask, when the measure publishes one.
+
+        Eradiate sets it for films with pixels that image no direction (the
+        fisheye camera); it follows the calibrated image circle, decentred or not.
+        """
+        return dataset.data_vars.get("valid")
+
+    def _apply_fov_mask_step(
+        self, data: xr.DataArray, sensor, pp, valid: xr.DataArray = None
+    ) -> xr.DataArray:
+        """Apply the FOV mask if the sensor is configured for it.
+
+        Prefers the simulation's own ``valid`` mask when one is available, and
+        falls back to the inscribed-disk approximation otherwise.
 
         Returns the input object unchanged when the step does not apply, so callers
         can detect a no-op with an identity check.
         """
         if pp is None or not getattr(pp, "apply_circular_mask", False):
             return data
+
+        if valid is not None:
+            return self._apply_valid_mask(data, valid)
 
         fov = getattr(sensor, "fov", None)
         if fov is None:
@@ -126,14 +145,16 @@ class SensorProcessor:
 
         return self._apply_spatial_averaging(data)
 
-    def _apply_spatial_ops(self, data: xr.DataArray, sensor, pp) -> xr.DataArray:
+    def _apply_spatial_ops(
+        self, data: xr.DataArray, sensor, pp, valid: xr.DataArray = None
+    ) -> xr.DataArray:
         """Apply the configured spatial operations (FOV mask, then averaging).
 
         Used to keep the extra simulation variables consistent with the processed
         radiance. RGB generation is deliberately not part of this: it is a
         radiance-only side effect that must run between the two steps.
         """
-        data = self._apply_fov_mask_step(data, sensor, pp)
+        data = self._apply_fov_mask_step(data, sensor, pp, valid=valid)
         return self._apply_averaging_step(data, pp)
 
     def _resolve_target_wavelengths(self, srf_config, radiance: xr.DataArray):
@@ -168,6 +189,7 @@ class SensorProcessor:
         Returns:
             Post-processed dataset
         """
+        valid = self._valid_mask(original_dataset)
         result = {"radiance": processed_radiance}
 
         for key in ["irradiance", "toa_irradiance"]:
@@ -185,8 +207,14 @@ class SensorProcessor:
         else:
             for name in extras:
                 variable = original_dataset[name]
-                if any(d in variable.dims for d in ("x_index", "y_index")):
-                    variable = self._apply_spatial_ops(variable, sensor, pp)
+                # 'valid' describes the film, not a measurement: masking it
+                # would turn a footprint into a fraction.
+                if name != "valid" and any(
+                    d in variable.dims for d in ("x_index", "y_index")
+                ):
+                    variable = self._apply_spatial_ops(
+                        variable, sensor, pp, valid=valid
+                    )
                 result[name] = variable
 
         return xr.Dataset(result, attrs=original_dataset.attrs)
@@ -296,6 +324,26 @@ class SensorProcessor:
         if spatial_dims:
             return radiance.reduce(np.nanmean, dim=spatial_dims)
         return radiance
+
+    def _apply_valid_mask(
+        self, radiance: xr.DataArray, valid: xr.DataArray
+    ) -> xr.DataArray:
+        """Mask out the pixels the simulation flagged as imaging no direction."""
+        if "x_index" not in radiance.dims or "y_index" not in radiance.dims:
+            logger.warning(
+                "Valid mask requires x_index and y_index dimensions. Skipping."
+            )
+            return radiance
+
+        masked_radiance = radiance.where(valid, other=np.nan)
+
+        masked_radiance.attrs["circular_mask_applied"] = True
+        masked_radiance.attrs["mask_source"] = "simulation_valid_mask"
+
+        valid_fraction = float(np.asarray(valid).mean())
+        logger.info(f"Applied simulation valid mask: {valid_fraction:.1%} of the film")
+
+        return masked_radiance
 
     def _apply_circular_fov_mask(
         self,
@@ -429,20 +477,20 @@ class SensorProcessor:
             )
             nan_mask = None
 
-        img = (img * 255).astype(np.uint8)
+        # NaN casts to a garbage integer (and warns); repainted just below.
+        img = (np.nan_to_num(img) * 255).astype(np.uint8)
+
+        background = getattr(config, "rgb_background", "white")
+        background_value = 0 if background == "black" else 255
 
         if nan_mask is not None and nan_mask.any():
             if img.shape[:2] == nan_mask.shape:
-                img[nan_mask, 0] = 255
-                img[nan_mask, 1] = 255
-                img[nan_mask, 2] = 255
-                logger.info(
-                    f"Set {nan_mask.sum()} pixels outside circular FOV to white background"
-                )
+                img[nan_mask] = background_value
+                logger.info(f"Set {nan_mask.sum()} masked pixels to {background}")
             else:
                 logger.warning(
-                    f"Cannot apply white background: img shape {img.shape[:2]} "
-                    f"doesn't match nan_mask shape {nan_mask.shape}"
+                    f"Cannot apply the {background} background: img shape "
+                    f"{img.shape[:2]} doesn't match nan_mask shape {nan_mask.shape}"
                 )
 
         rgb_path = output_dir / f"{sensor_id}_rgb.png"
