@@ -24,9 +24,10 @@ from .atmosphere import (
     _default_atmosphere_config,
 )
 from .buildings import BuildingsConfig
+from .exclusion import ExclusionZone
 from .material_match import SpectralMatchingConfig
 from .mesh_refinement import MeshRefinementConfig
-from .vegetation import VegetationExclusionZone, VegetationPlacementConfig
+from .vegetation import VegetationPlacementConfig
 from .ways import WaysConfig
 from ..._version import get_version
 from ...dataset import IndexedGeoTiff, Zarr, dataset_factory
@@ -291,9 +292,9 @@ class SceneGenConfig(BaseModel):
         None,
         description="Vegetation placement configuration (None disables vegetation). See [VegetationPlacementConfig][s2gos_generator.core.config.vegetation.VegetationPlacementConfig].",
     )
-    vegetation_exclusion_zones: List[VegetationExclusionZone] = Field(
+    exclusion_zones: List[ExclusionZone] = Field(
         default_factory=list,
-        description="Standalone vegetation exclusion zones",
+        description="Areas kept clear of procedural content (vegetation, buildings); each zone's `excludes` can narrow it. See [ExclusionZone][s2gos_generator.core.config.exclusion.ExclusionZone].",
     )
     created_at: datetime = Field(
         default_factory=datetime.now, description="Configuration creation time"

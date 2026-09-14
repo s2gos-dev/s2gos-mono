@@ -16,6 +16,30 @@ def _stable_hash(data: dict) -> str:
 _LANDCOVER_FILL_CLASS = 80
 
 
+def _exclusion_zones(config, target: str) -> list:
+    """Every exclusion zone (config-level and object shorthand) that affects *target*."""
+    zones = [z.model_dump() for z in config.exclusion_zones if target in z.excludes]
+    zones += [
+        {
+            "coordinate": list(a.coordinate),
+            "coord_type": a.coord_type,
+            "exclusion_zone": a.exclusion_zone.model_dump(),
+        }
+        for a in config.user_assets
+        if a.exclusion_zone is not None and target in a.exclusion_zone.excludes
+    ]
+    zones += [
+        {
+            "base_coordinate": list(x.base_coordinate),
+            "coord_type": x.coord_type,
+            "exclusion_zone": x.exclusion_zone.model_dump(),
+        }
+        for x in config.xml_scenes
+        if x.exclusion_zone is not None and target in x.exclusion_zone.excludes
+    ]
+    return zones
+
+
 class ResourceFingerprints:
     """Per-resource config fingerprints for cache.
 
@@ -132,6 +156,7 @@ class ResourceFingerprints:
             "aoi_size_km": config.location.aoi_size_km,
             "buildings": config.buildings.model_dump() if config.buildings else None,
             "building_tiles": str(building_tiles) if building_tiles else None,
+            "exclusion_zones": _exclusion_zones(config, "buildings"),
         }
 
     @staticmethod
@@ -201,27 +226,7 @@ class ResourceFingerprints:
         return {
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
-            "vegetation_exclusion_zones": [
-                z.model_dump() for z in config.vegetation_exclusion_zones
-            ],
-            "asset_exclusion_zones": [
-                {
-                    "coordinate": a.coordinate,
-                    "coord_type": a.coord_type,
-                    "exclusion_zone": a.exclusion_zone,
-                }
-                for a in config.user_assets
-                if a.exclusion_zone is not None
-            ],
-            "xml_scene_exclusion_zones": [
-                {
-                    "base_coordinate": list(x.base_coordinate),
-                    "coord_type": x.coord_type,
-                    "exclusion_zone": x.exclusion_zone,
-                }
-                for x in config.xml_scenes
-                if x.exclusion_zone is not None
-            ],
+            "exclusion_zones": _exclusion_zones(config, "vegetation"),
             "vegetation_placement": (
                 config.vegetation_placement.model_dump()
                 if config.vegetation_placement

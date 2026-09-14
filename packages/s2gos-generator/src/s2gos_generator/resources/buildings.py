@@ -22,6 +22,7 @@ from ..processors.buildings import (
     select_tile_files,
 )
 from ..processors.buildings.meshing import _safe_name
+from ..processors.exclusion import exclusion_mask
 
 
 def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
@@ -57,6 +58,17 @@ def process_target_buildings(ctx: SceneResourceContext) -> Optional[Path]:
         return None
 
     gdf = ctx.coordinate_system.geodataframe_to_scene_local(gdf)
+    gdf = gdf[
+        exclusion_mask(
+            gdf.geometry.values,
+            ctx.exclusion_zones_for("buildings"),
+            label="Building",
+        )
+    ]
+    if gdf.empty:
+        logging.info("All buildings fall inside exclusion zones — skipping")
+        return None
+
     elev_fn = make_dem_elevation_sampler(target_dem_path)
 
     result = build_meshes(gdf, elev_fn, cfg)

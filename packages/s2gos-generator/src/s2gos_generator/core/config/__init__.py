@@ -26,6 +26,13 @@ from .atmosphere import (
     create_molecular_atmosphere_config,
 )
 from .buildings import BuildingsConfig
+from .exclusion import (
+    BoxGeometry,
+    CircleGeometry,
+    ExclusionZone,
+    ObjectExclusionZone,
+    PolygonGeometry,
+)
 from .material_match import SpectralMatchingConfig
 from .mesh_refinement import MeshRefinementConfig
 from .scene import (
@@ -40,10 +47,6 @@ from .scene import (
     create_scene_config,
 )
 from .vegetation import (
-    BoxGeometry,
-    CircleGeometry,
-    PolygonGeometry,
-    VegetationExclusionZone,
     VegetationPlacementConfig,
     VegetationSpecies,
 )
@@ -76,7 +79,8 @@ __all__ = [
     "CircleGeometry",
     "BoxGeometry",
     "PolygonGeometry",
-    "VegetationExclusionZone",
+    "ExclusionZone",
+    "ObjectExclusionZone",
     "VegetationSpecies",
     "VegetationPlacementConfig",
     # assets

@@ -18,11 +18,6 @@ from ..processors.vegetation import (
 )
 
 
-def _load_exclusion_zones(ctx: SceneResourceContext) -> List[Dict[str, Any]]:
-    """Load all exclusion zones from context."""
-    return list(ctx.exclusion_zone_geometries)
-
-
 def process_target_vegetation(
     ctx: SceneResourceContext,
 ) -> Any:
@@ -75,12 +70,9 @@ def process_target_vegetation(
         landcover_path, dem_path, vegetation_config, ctx.aoi_size_km * 1000.0
     )
 
-    exclusion_zones = _load_exclusion_zones(ctx)
-
-    if exclusion_zones:
-        vegetation_instances = _filter_by_exclusion_zones(
-            vegetation_instances, exclusion_zones
-        )
+    vegetation_instances = _filter_by_exclusion_zones(
+        vegetation_instances, ctx.exclusion_zones_for("vegetation")
+    )
 
     way_exclusion = ctx.config.vegetation_placement.way_exclusion
     vegetation_instances = _filter_by_ways(

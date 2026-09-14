@@ -119,7 +119,7 @@ def minimal_config() -> Any:
         material_regions=[],
         user_assets=[],
         xml_scenes=[],
-        vegetation_exclusion_zones=[],
+        exclusion_zones=[],
         vegetation_placement=None,
         hamster=None,
     )

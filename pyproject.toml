@@ -12,6 +12,10 @@ authors = [
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
+# ── activation: put the local eradiate kernel (mitsuba build) on PYTHONPATH ──
+# [tool.pixi.activation]
+# scripts = ["/home/gonzalezm/eradiate/setpath.sh"]
+
 # ── base runtime deps (all environments) ──────────────────────
 [tool.pixi.dependencies]
 python = ">=3.10,<3.12"
@@ -29,9 +33,16 @@ s2gos_utils     = { path = "packages/s2gos-utils",      editable = true }
 s2gos_generator = { path = "packages/s2gos-generator",  editable = true }
 s2gos_simulator = { path = "packages/s2gos-simulator",  editable = true }
 s2gos_apps      = { path = "packages/s2gos-apps",       editable = true }
-s2gos-client = { git = "https://github.com/s2gos-dev/s2gos-controller.git", subdirectory = "s2gos-client" }
-s2gos-server = { git = "https://github.com/s2gos-dev/s2gos-controller.git", subdirectory = "s2gos-server" }
+s2gos-client = { git = "https://github.com/s2gos-dev/s2gos-controller.git", rev = "5a83f7d6afb7adba9e72d9c11b1135004ea21082", subdirectory = "s2gos-client" }
+s2gos-server = { git = "https://github.com/s2gos-dev/s2gos-controller.git", rev = "5a83f7d6afb7adba9e72d9c11b1135004ea21082", subdirectory = "s2gos-server" }
 pinttrs = ">=23.2.0,<26"
+eradiate-mitsuba = ">=0.5.1rc2"
+# local editable eradiate checkout (~/eradiate)
+# eradiate = { path = "/home/gonzalezm/eradiate", editable = true, extras = ["kernel"] }
+
+# [tool.pixi.pypi-options]
+# # the path dep alone loses to `eradiate[kernel]==1.3.0rc1` pinned in s2gos-simulator
+# dependency-overrides = { eradiate = { path = "/home/gonzalezm/eradiate", editable = true, extras = ["kernel"] } }
 
 # ── feature: notebook ─────────────────────────────────────────
 [tool.pixi.feature.notebook.dependencies]
@@ -93,6 +104,14 @@ dev       = { features = ["notebook",  "test", "docs", "dev-tools"], solve-group
 [tool.pixi.tasks]
 lab           = "jupyter lab"
 eradiate-init = "eradiate data install core gecko"
+# The Blender add-on is built by Blender itself, not by pixi -- it is not a Python
+# package and never enters an environment here. `blender` must be on PATH.
+# blender-ext = """
+# mkdir -p dist
+# blender --command extension build \
+#   --source-dir packages/s2gos-blender/src/s2gos_blender \
+#   --output-dir dist
+# """
 
 [tool.pixi.feature.dev-tools.tasks]
 lint              = "ruff check ."

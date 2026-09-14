@@ -11,6 +11,8 @@ from s2gos_utils.io.paths import expand_mapper
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import distance_transform_edt
 
+from .exclusion import ResolvedExclusionZone, exclusion_mask
+
 
 def _filter_by_ways(
     instances: List[Dict[str, Any]],
@@ -27,90 +29,39 @@ def _filter_by_ways(
         enabled: When False, ``instances`` is returned unchanged.
         buffer_m: Extra clearance in metres beyond each way's half-width.
     """
-    import shapely
-    from shapely.strtree import STRtree
-
     if not enabled or not instances or not ways:
         return instances
 
-    polys = [
-        way.centerline.buffer(way.width / 2 + buffer_m, cap_style="flat")
+    zones = [
+        ResolvedExclusionZone(
+            "way",
+            way.centerline.buffer(way.width / 2 + buffer_m, cap_style="flat"),
+            frozenset({"vegetation"}),
+        )
         for way in ways
     ]
-    tree = STRtree(polys)
-    xy = np.array([[inst["position"][0], inst["position"][1]] for inst in instances])
-    points = shapely.points(xy[:, 0], xy[:, 1])
-    pt_idx, _ = tree.query(points, predicate="intersects")
-    keep = np.ones(len(instances), dtype=bool)
-    keep[pt_idx] = False
-
-    filtered = [inst for inst, k in zip(instances, keep) if k]
-    excl_count = len(instances) - len(filtered)
-    logging.info(
-        "Way filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
-        len(filtered),
-        excl_count,
-        100.0 * excl_count / len(instances) if instances else 0.0,
-        buffer_m,
-    )
-    return filtered
+    return _filter_by_exclusion_zones(instances, zones, label="Way")
 
 
 def _filter_by_exclusion_zones(
     vegetation_instances: List[Dict[str, Any]],
-    exclusion_zones: List[Dict[str, Any]],
+    exclusion_zones: List[ResolvedExclusionZone],
+    *,
+    label: str = "Vegetation",
 ) -> List[Dict[str, Any]]:
-    """Filter vegetation instances by exclusion zones.
-
-    Queries an STRtree for all intersecting (point, zone) pairs. ``intersects``
-    is boundary-safe — a point exactly on a road edge is excluded.
-
-    Args:
-        vegetation_instances: List of vegetation placement dicts
-        exclusion_zones: List of exclusion zone dicts with 'geometry' keys
-
-    Returns:
-        Filtered list with instances outside all exclusion zones
-    """
+    """Drop vegetation instances whose position falls inside any exclusion zone."""
     import shapely
-    from shapely.strtree import STRtree
 
-    if not vegetation_instances:
+    if not vegetation_instances or not exclusion_zones:
         return vegetation_instances
-
-    if not exclusion_zones:
-        logging.info("No exclusion zones to apply")
-        return vegetation_instances
-
-    logging.info(
-        "Applying %d exclusion zones to %d vegetation instances",
-        len(exclusion_zones),
-        len(vegetation_instances),
-    )
-
-    geometries = [zone["geometry"] for zone in exclusion_zones]
-    tree = STRtree(geometries)
 
     xy = np.array(
         [[inst["position"][0], inst["position"][1]] for inst in vegetation_instances]
     )
-    points = shapely.points(xy[:, 0], xy[:, 1])
-
-    pt_idx, _ = tree.query(points, predicate="intersects")
-    keep = np.ones(len(vegetation_instances), dtype=bool)
-    keep[pt_idx] = False
-
-    filtered_instances = [inst for inst, k in zip(vegetation_instances, keep) if k]
-    excluded_count = len(vegetation_instances) - len(filtered_instances)
-
-    logging.info(
-        "Exclusion filtering: kept %d, excluded %d (%.1f%%)",
-        len(filtered_instances),
-        excluded_count,
-        100 * excluded_count / len(vegetation_instances),
+    keep = exclusion_mask(
+        shapely.points(xy[:, 0], xy[:, 1]), exclusion_zones, label=label
     )
-
-    return filtered_instances
+    return [inst for inst, k in zip(vegetation_instances, keep) if k]
 
 
 def _drop_outside_aoi(

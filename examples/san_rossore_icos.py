@@ -12,6 +12,13 @@ Convert the rayshade forest first:
 
 The fisheye sensor lives only in the locally built Mitsuba kernel, which pixi puts on
 PYTHONPATH on activation.
+
+Eradiate data: the two passes need the ``komodo`` (mono) and ``monotropa`` (ckd)
+absorption databases plus the aerosol, thermoprops and solar-irradiance datasets. The
+``core`` bundle covers all of them; install it once (``~/.cache/eradiate`` unless
+``ERADIATE_DATA_PATH`` is set):
+
+    pixi run eradiate data install core
 """
 
 from datetime import datetime
@@ -22,6 +29,7 @@ from s2gos_generator.core.config import (
     BoxGeometry,
     BufferConfig,
     BuildingsConfig,
+    ExclusionZone,
     MeshRefinementConfig,
     MolecularAtmosphereConfig,
     Month,
@@ -29,15 +37,12 @@ from s2gos_generator.core.config import (
     SnowConfig,
     ThermophysicalConfig,
     UniformDistribution,
-    VegetationExclusionZone,
     VegetationPlacementConfig,
     VegetationSpecies,
     WaysConfig,
     XmlSceneConfig,
     create_scene_config,
 )
-
-# Not re-exported from core.config — only reachable via the module path.
 from s2gos_generator.core.config.vegetation import WayExclusionConfig
 from s2gos_generator.core.pipeline import SceneGenerationPipeline
 from s2gos_simulator.backends.eradiate.backend import (
@@ -67,16 +72,12 @@ OUTPUT_DIR = "./san_rossore_icos"
 OBS_DATE = datetime(2024, 6, 21, 12, 0, 0)
 RANDOM_SEED = 13
 
-# Note the differing tuple orders: XmlSceneConfig and BoxGeometry want lon first,
-# CoordinateSystem.latlon_to_scene wants lat first.
 PLOT_LONLAT = (10.290910, 43.732022)
 FISHEYE_LATLON = (43.732105, 10.290495)
 
-# Calibrated DHP lens, from the calibration sheet: 'Lens A'/'Lens B' are the projection
-# rho(theta) = A*theta + B*theta**2, 'Lens X'/'Lens Y' the optical centre and 'Maximum
-# Radius' the image circle, the last three in pixels at CALIBRATION_RESOLUTION. The lens
-# only reaches rho = 0.973 at theta = 90 deg, so the outermost pixels image nothing and
-# come back masked rather than guessed at.
+# Calibrated DHP lens: rho(theta) = A*theta + B*theta**2, optical centre and image
+# circle in pixels at CALIBRATION_RESOLUTION. Pixels outside the image circle come
+# back masked.
 CALIBRATION_RESOLUTION = (6000, 4000)
 DHP_LENS = FisheyeOptions(
     projection_model="polynomial",
@@ -87,9 +88,7 @@ DHP_LENS = FisheyeOptions(
     calibration_resolution=CALIBRATION_RESOLUTION,
 )
 
-# Render cost. The calibration is normalised, so any film sharing its 3:2 aspect ratio
-# reproduces the same lens: scale the calibration frame and the lens block never changes.
-# 1.0 -> 6000x4000 (full), 0.25 -> 1500x1000 (preview), 0.1 -> 600x400 (smoke test).
+# Render cost: 1.0 -> 6000x4000 (full), 0.25 -> 1500x1000 (preview), 0.1 -> smoke test.
 FISHEYE_SCALE = 0.5
 FISHEYE_SPP = 4
 PAR_SPP = 4
@@ -112,31 +111,28 @@ DHP_OFFSETS = [
     (9, "north_west", -15.00, 15.00),
 ]
 
-# Assets are looked up by name on the file resolver's search paths, which the scene
-# bundle's setup script writes into s2gos_settings.yaml.
 FOREST_XML = "sr_rayshade_static_ellipsoids.xml"
 
-# Wytham Woods cluster representatives, used for the procedural landcover vegetation.
 WYTHAM_TREES = [
     f"tree_{tid}.xml"
     for tid in (
         "8109",
-        "8110",  # Acer campestre
+        "8110",
         "654b",
-        "1713",  # Acer pseudoplatanus
+        "1713",
         "8193",
-        "8075a",  # Corylus avellana
+        "8075a",
         "8057b",
-        "8056",  # Crataegus monogyna
+        "8056",
         "2024b",
-        "1016",  # Fraxinus excelsior
+        "1016",
         "46",
-        "118",  # Quercus robur
+        "118",
         "8149b",
-        "8097",  # Unknown
+        "8097",
     )
 ]
-WYTHAM_SHRUB = "tree_2024b.xml"  # smallest Fraxinus rep
+WYTHAM_SHRUB = "tree_2024b.xml"
 
 # ── Generation ────────────────────────────────────────────────────────────────
 print("=" * 60)
@@ -154,15 +150,11 @@ config = create_scene_config(
     landcover_resolution_m=RESOLUTION_M,
 )
 config.snow = SnowConfig(season_month=Month.JUNE)
-# Ways = roads + railways; per-type widths and materials are set through
-# road_overrides / railway_overrides.
 config.ways = WaysConfig(
     enabled=True,
     source="overpass",
     mesh_gradient_threshold=0.3,
 )
-# Building footprints come from `generator.files.building_tiles` in s2gos_settings.yaml;
-# this config only styles them.
 config.buildings = BuildingsConfig(
     material={"concrete": 0.5, "brick": 0.1, "cement_cinder": 0.4},
     pitched_roof_proportion=0.95,
@@ -222,8 +214,7 @@ config.vegetation_placement = VegetationPlacementConfig(
     random_seed=RANDOM_SEED,
 )
 
-# Drop the rayshade forest at the plot, sitting on the terrain. fix_blender_coords is off
-# because the converted scene is already Z-up.
+# The rayshade forest, placed at the plot.
 config.xml_scenes.append(
     XmlSceneConfig(
         xml_path=FOREST_XML,
@@ -234,23 +225,19 @@ config.xml_scenes.append(
     )
 )
 
-# Keep the procedural vegetation out of the measured plot.
-config.vegetation_exclusion_zones = [
-    VegetationExclusionZone(
+# Keep procedural vegetation and buildings out of the measured plot.
+config.exclusion_zones = [
+    ExclusionZone(
         zone_id="pov_forest_plot",
         geometry=BoxGeometry(
             center=PLOT_LONLAT,  # (lon, lat)
             coord_type="geographic",
-            width=100.0,  # metres (east-west)
-            height=100.0,  # metres (north-south)
+            width=100.0,
+            height=100.0,
         ),
     )
 ]
 
-
-# No absorption_database: the two passes run in different spectral modes, and each
-# needs its own kind of database (komodo is mono-only, monotropa is the CKD one).
-# Leaving it unset lets each pass pick eradiate's default for its active mode.
 config.set_atmosphere_heterogeneous(
     molecular_config=MolecularAtmosphereConfig(
         thermoprops=ThermophysicalConfig(
@@ -260,7 +247,7 @@ config.set_atmosphere_heterogeneous(
     particle_layers=[
         ParticleLayerConfig(
             aerosol_dataset=AerosolDataset.SIXSV_CONTINENTAL,
-            optical_thickness=2.75,
+            optical_thickness=0.1,
             altitude_bottom=1000.0,
             altitude_top=1500.0,
             distribution=UniformDistribution(),
@@ -270,7 +257,7 @@ config.set_atmosphere_heterogeneous(
 config.atmosphere.boa = 0.0
 
 pipeline = SceneGenerationPipeline(config)
-pipeline.visualize_dag()  # writes the pipeline DAG under the output directory
+pipeline.visualize_dag()
 scene_description = pipeline.run()
 print(f"Scene generated: {config.scene_output_dir}")
 print(f"  objects: {len(scene_description.objects)}")
@@ -279,10 +266,10 @@ print(f"  objects: {len(scene_description.objects)}")
 if not ERADIATE_AVAILABLE:
     print("\nEradiate not available — skipping simulation.")
 else:
-    # Sensors are placed in scene metres, so project the DHP anchor first.
+    # Sensors are placed in scene metres (east, north).
     coords = CoordinateSystem(CENTER_LAT, CENTER_LON)
-    fx, fy = coords.latlon_to_scene(*FISHEYE_LATLON)  # -> (east, north) metres
-    px, py = coords.latlon_to_scene(PLOT_LONLAT[1], PLOT_LONLAT[0])  # plot centre
+    fx, fy = coords.latlon_to_scene(*FISHEYE_LATLON)
+    px, py = coords.latlon_to_scene(PLOT_LONLAT[1], PLOT_LONLAT[0])
 
     illumination = DirectionalIllumination.from_date_and_location(
         OBS_DATE, CENTER_LAT, CENTER_LON
@@ -296,7 +283,6 @@ else:
     print(f"DHP grid anchored at ({fx:.1f}, {fy:.1f}) m")
     print(f"Plot centre at ({px:.1f}, {py:.1f}) m")
 
-    # The helper hardcodes id="camera"; rename it so the PNG says what it is.
     top_down = top_down_perspective_sensor(AOI_KM, 45, CAMERA_SPP, [1280, 1280])
     top_down.id = "top_down"
 
@@ -320,8 +306,7 @@ else:
                     fisheye=DHP_LENS,
                     resolution=FISHEYE_RESOLUTION,
                     samples_per_pixel=FISHEYE_SPP,
-                    # The mask comes from the kernel, so it follows the calibrated
-                    # image circle; black matches the vignette of a real DHP frame.
+                    # Black outside the image circle, like a real DHP frame.
                     post_processing=PostProcessingOptions(
                         apply_srf=False,
                         generate_rgb_image=True,
@@ -331,9 +316,7 @@ else:
                 )
                 for dhp_no, name, dx, dy in DHP_OFFSETS
             ),
-            # Isometric view of the plot: equal offsets on x, y and z put the camera on
-            # the isometric axis, looking down on the stand from the south-west. 120 m
-            # out on each axis frames the 100 m plot with a little margin.
+            # Isometric view of the plot from the south-west.
             GroundSensor(
                 id="isometric",
                 instrument=GroundInstrumentType.PERSPECTIVE_CAMERA,
@@ -341,7 +324,6 @@ else:
                     origin=[px - 120.0, py - 120.0, 120.0],
                     target=[px, py, 10.0],
                     up=[0, 0, 1],
-                    # Lifts origin and target by the DEM at their own (x, y).
                     terrain_relative_height=True,
                 ),
                 srf=SpectralResponse(type="delta", wavelengths=[440.0, 550.0, 660.0]),
@@ -358,8 +340,7 @@ else:
         backend_hints={"eradiate": {"mode": "mono"}},
     )
 
-    # EradiateBackend sets the eradiate mode when it is constructed, so the two backends
-    # must be built one after the other, each right before its own run.
+    # Each backend sets the eradiate mode on construction: build one, run it, then the next.
     EradiateBackend(visuals_config).run_simulation(
         scene_description,
         scene_dir=config.scene_output_dir,
@@ -372,10 +353,8 @@ else:
     print("Step 3: PAR flux above the plot (ckd)")
     print("=" * 60)
 
-    # A flux collector is a white disk viewed over its hemisphere: facing up it reads
-    # incoming PAR, facing down the PAR reflected by the canopy below it. With
-    # terrain_relative_height the disk sits height_offset_m above the DEM and target_z is
-    # ignored, so both sit 24 m up, just over the canopy.
+    # Flux collectors just over the canopy: facing up reads incoming PAR, facing down
+    # the PAR reflected by the stand. height_offset_m is above the DEM.
     par_location = HemisphericalMeasurementLocation(
         target_x=fx + 10,
         target_y=fy + 10,

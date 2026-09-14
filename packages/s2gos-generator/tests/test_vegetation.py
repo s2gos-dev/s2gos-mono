@@ -2,6 +2,7 @@ import math
 import random
 import types
 
+from s2gos_generator.processors.exclusion import ResolvedExclusionZone
 from s2gos_generator.processors.vegetation import (
     _apply_spacing_filter_optimized,
     _batch_elevation_lookup,
@@ -144,6 +145,10 @@ class TestGeneratePixelVegetationPositions:
         assert result == []
 
 
+def _zone(geometry):
+    return ResolvedExclusionZone("test", geometry, frozenset({"vegetation"}))
+
+
 class TestFilterByExclusionZones:
     def test_empty_instances_returns_empty(self):
         from shapely.geometry import Point
@@ -161,7 +166,7 @@ class TestFilterByExclusionZones:
         from shapely.geometry import Point
 
         big_circle = Point(0, 0).buffer(1000)
-        zones = [{"geometry": big_circle}]
+        zones = [_zone(big_circle)]
         instances = [
             _instance(float(x), float(y)) for x in range(-5, 6) for y in range(-5, 6)
         ]
@@ -172,7 +177,7 @@ class TestFilterByExclusionZones:
         from shapely.geometry import Point
 
         tiny_circle = Point(0, 0).buffer(1)
-        zones = [{"geometry": tiny_circle}]
+        zones = [_zone(tiny_circle)]
         instances = [
             _instance(float(x), float(y))
             for x in range(100, 110)
@@ -185,7 +190,7 @@ class TestFilterByExclusionZones:
         from shapely.geometry import Point
 
         circle = Point(0, 0).buffer(5)
-        zones = [{"geometry": circle}]
+        zones = [_zone(circle)]
         inside = _instance(0.0, 0.0)
         outside = _instance(100.0, 100.0)
         result = _filter_by_exclusion_zones([inside, outside], zones)

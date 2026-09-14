@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from s2gos_utils.io.paths import PathRef
 
 from ._utils import resolve_asset_path
+from .exclusion import ObjectExclusionZone
 
 
 class HamsterConfig(BaseModel):
@@ -69,12 +70,12 @@ class UserAssets(BaseModel):
         None,
         description="Mitsuba PLY face normals setting: True=smooth normals, False=per-face normals, None=use PLY file defaults",
     )
-    exclusion_zone: Optional[Union[float, Tuple[float, float]]] = Field(
+    exclusion_zone: Optional[ObjectExclusionZone] = Field(
         None,
         description=(
-            "Vegetation exclusion zone centered on this object. Can be:\n"
-            "- float: Circular radius in meters\n"
-            "- (width, height): Rectangular box in meters"
+            "Keep procedural content (vegetation, buildings) out of an area centered on "
+            "this object. Shorthand: a float is a circle radius in meters, (width, height) "
+            "is a box; use ObjectExclusionZone to narrow `excludes`."
         ),
     )
 
@@ -334,12 +335,12 @@ class XmlSceneConfig(BaseModel):
     validate_materials: bool = Field(
         True, description="Validate that all materials are properly defined"
     )
-    exclusion_zone: Optional[Union[float, Tuple[float, float]]] = Field(
+    exclusion_zone: Optional[ObjectExclusionZone] = Field(
         None,
         description=(
-            "Vegetation exclusion zone centered on base_coordinate for this XML scene. Can be:\n"
-            "- float: Circular radius in meters\n"
-            "- (width, height): Rectangular box in meters"
+            "Keep procedural content (vegetation, buildings) out of an area centered on "
+            "base_coordinate. Shorthand: a float is a circle radius in meters, (width, height) "
+            "is a box; use ObjectExclusionZone to narrow `excludes`."
         ),
     )
 

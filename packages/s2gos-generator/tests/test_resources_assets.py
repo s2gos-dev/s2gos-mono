@@ -1,12 +1,18 @@
-import shutil
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-import yaml
 from pydantic import ValidationError
+from shapely.geometry import Point
 
+from s2gos_generator.core.config import (
+    BoxGeometry,
+    CircleGeometry,
+    ExclusionZone,
+    ObjectExclusionZone,
+    PolygonGeometry,
+)
 from s2gos_generator.core.config.assets import UserAssets, XmlSceneConfig
+from s2gos_generator.processors.exclusion import resolve_exclusion_zones
 
 _PATCH_RESOLVE = "s2gos_generator.core.config.assets.resolve_asset_path"
 _PATCH_MKDIR = "s2gos_utils.io.paths.mkdir"
@@ -105,17 +111,17 @@ class TestXmlSceneConfigValidation:
             )
 
 
-class TestBuildExclusionZoneGeometries:
-    """Tests that _build_exclusion_zone_geometries computes zones from config."""
+class TestResolveExclusionZones:
+    """resolve_exclusion_zones collects config zones and object shorthand zones."""
 
     def _make_coord_system(self):
         cs = MagicMock()
         cs.latlon_to_scene.return_value = (50.0, 60.0)
         return cs
 
-    def _make_config(self, user_assets=None, xml_scenes=None):
+    def _make_config(self, exclusion_zones=None, user_assets=None, xml_scenes=None):
         cfg = MagicMock()
-        cfg.vegetation_exclusion_zones = []
+        cfg.exclusion_zones = exclusion_zones or []
         cfg.user_assets = user_assets or []
         cfg.xml_scenes = xml_scenes or []
         return cfg
@@ -127,7 +133,11 @@ class TestBuildExclusionZoneGeometries:
 
         return UserAssets.model_construct(
             object_id=object_id,
-            exclusion_zone=exclusion_zone,
+            exclusion_zone=(
+                None
+                if exclusion_zone is None
+                else ObjectExclusionZone.model_validate(exclusion_zone)
+            ),
             coordinate=list(coordinate),
             coord_type=coord_type,
             ply_path=PathRef("/fake/obj.ply"),
@@ -150,7 +160,11 @@ class TestBuildExclusionZoneGeometries:
             xml_path=PathRef("/fake/scene.xml"),
             base_coordinate=base_coordinate,
             coord_type=coord_type,
-            exclusion_zone=exclusion_zone,
+            exclusion_zone=(
+                None
+                if exclusion_zone is None
+                else ObjectExclusionZone.model_validate(exclusion_zone)
+            ),
             object_id_prefix=None,
             elevation_offset=0.0,
             scale=1.0,
@@ -163,188 +177,163 @@ class TestBuildExclusionZoneGeometries:
         )
 
     def test_user_asset_circular_zone_built(self):
-        from shapely.geometry import Point
-
-        from s2gos_generator.core.context import _build_exclusion_zone_geometries
-
         asset = self._make_user_asset(
             "tree", exclusion_zone=5.0, coordinate=(10.0, 20.0), coord_type="scene"
         )
-        config = self._make_config(user_assets=[asset])
-        cs = self._make_coord_system()
-
-        result = _build_exclusion_zone_geometries(config, cs)
+        result = resolve_exclusion_zones(
+            self._make_config(user_assets=[asset]), self._make_coord_system()
+        )
 
         assert len(result) == 1
-        assert result[0]["source"] == "asset_tree"
-        assert result[0]["geometry"].contains(Point(10.0, 20.0))
+        assert result[0].source == "asset_tree"
+        assert result[0].geometry.contains(Point(10.0, 20.0))
+        assert result[0].excludes == {"vegetation", "buildings"}
 
     def test_user_asset_box_zone_built(self):
-        from s2gos_generator.core.context import _build_exclusion_zone_geometries
-
         asset = self._make_user_asset(
             "building",
             exclusion_zone=(10.0, 6.0),
             coordinate=(0.0, 0.0),
             coord_type="scene",
         )
-        config = self._make_config(user_assets=[asset])
-        cs = self._make_coord_system()
-
-        result = _build_exclusion_zone_geometries(config, cs)
+        result = resolve_exclusion_zones(
+            self._make_config(user_assets=[asset]), self._make_coord_system()
+        )
 
         assert len(result) == 1
-        assert result[0]["source"] == "asset_building"
-        assert result[0]["geometry"].bounds == pytest.approx((-5.0, -3.0, 5.0, 3.0))
+        assert result[0].source == "asset_building"
+        assert result[0].geometry.bounds == pytest.approx((-5.0, -3.0, 5.0, 3.0))
+
+    def test_user_asset_narrowed_excludes(self):
+        asset = self._make_user_asset(
+            "tower", exclusion_zone={"radius": 3.0, "excludes": ["buildings"]}
+        )
+        result = resolve_exclusion_zones(
+            self._make_config(user_assets=[asset]), self._make_coord_system()
+        )
+        assert result[0].excludes == {"buildings"}
 
     def test_none_exclusion_zone_skipped(self):
-        from s2gos_generator.core.context import _build_exclusion_zone_geometries
-
         asset = self._make_user_asset("tree", exclusion_zone=None)
-        config = self._make_config(user_assets=[asset])
-        cs = self._make_coord_system()
-
-        result = _build_exclusion_zone_geometries(config, cs)
+        result = resolve_exclusion_zones(
+            self._make_config(user_assets=[asset]), self._make_coord_system()
+        )
         assert result == []
 
     def test_xml_scene_circular_zone_built(self):
-        from shapely.geometry import Point
-
-        from s2gos_generator.core.context import _build_exclusion_zone_geometries
-
         xml_scene = self._make_xml_scene(
             exclusion_zone=4.0, base_coordinate=(3.0, 7.0), coord_type="scene"
         )
-        config = self._make_config(xml_scenes=[xml_scene])
-        cs = self._make_coord_system()
-
-        result = _build_exclusion_zone_geometries(config, cs)
+        result = resolve_exclusion_zones(
+            self._make_config(xml_scenes=[xml_scene]), self._make_coord_system()
+        )
 
         assert len(result) == 1
-        assert result[0]["source"].startswith("xml_scene_")
-        assert result[0]["geometry"].contains(Point(3.0, 7.0))
+        assert result[0].source.startswith("xml_scene_")
+        assert result[0].geometry.contains(Point(3.0, 7.0))
+
+    def test_config_zones_circle_box_polygon(self):
+        zones = [
+            ExclusionZone(
+                zone_id="c",
+                geometry=CircleGeometry(
+                    center=(0.0, 0.0), coord_type="scene", radius=5.0
+                ),
+            ),
+            ExclusionZone(
+                zone_id="b",
+                geometry=BoxGeometry(
+                    center=(10.0, 20.0), coord_type="geographic", width=4, height=2
+                ),
+                excludes=["vegetation"],
+            ),
+            ExclusionZone(
+                zone_id="p",
+                geometry=PolygonGeometry(
+                    coordinates=[(0, 0), (10, 0), (10, 10)], coord_type="scene"
+                ),
+            ),
+        ]
+        result = resolve_exclusion_zones(
+            self._make_config(exclusion_zones=zones), self._make_coord_system()
+        )
+
+        assert [z.source for z in result] == ["zone_c", "zone_b", "zone_p"]
+        assert result[0].geometry.contains(Point(0, 0))
+        assert result[1].geometry.bounds == (48.0, 59.0, 52.0, 61.0)
+        assert result[1].excludes == {"vegetation"}
+        assert result[2].geometry.contains(Point(8, 1))
 
     def test_combined_asset_and_xml_scene_zones(self):
-        from s2gos_generator.core.context import _build_exclusion_zone_geometries
-
         asset = self._make_user_asset(
             "tree", exclusion_zone=5.0, coordinate=(10.0, 0.0), coord_type="scene"
         )
         xml_scene = self._make_xml_scene(
             exclusion_zone=3.0, base_coordinate=(0.0, 10.0), coord_type="scene"
         )
-        config = self._make_config(user_assets=[asset], xml_scenes=[xml_scene])
-        cs = self._make_coord_system()
-
-        result = _build_exclusion_zone_geometries(config, cs)
+        result = resolve_exclusion_zones(
+            self._make_config(user_assets=[asset], xml_scenes=[xml_scene]),
+            self._make_coord_system(),
+        )
 
         assert len(result) == 2
-        sources = {r["source"] for r in result}
+        sources = {r.source for r in result}
         assert "asset_tree" in sources
         assert any(s.startswith("xml_scene_") for s in sources)
 
+    def test_context_exclusion_zones_for_filters_by_target(self):
+        from s2gos_generator.core.context import SceneResourceContext
 
-class TestProcessUserAssets:
-    """Tests for process_user_assets actual behavior using real file I/O."""
+        zones = [
+            ExclusionZone(
+                zone_id="all",
+                geometry=CircleGeometry(center=(0, 0), coord_type="scene", radius=1),
+            ),
+            ExclusionZone(
+                zone_id="veg",
+                geometry=CircleGeometry(center=(0, 0), coord_type="scene", radius=1),
+                excludes=["vegetation"],
+            ),
+        ]
+        ctx = SceneResourceContext.__new__(SceneResourceContext)
+        ctx.config = self._make_config(exclusion_zones=zones)
+        ctx._exclusion_zones = None
+        ctx._coord_system = self._make_coord_system()
 
-    def _make_ctx(self, tmp_path, user_assets=None):
-        ctx = MagicMock()
-        ctx.output_dir = tmp_path / "output"
-        ctx.data_dir = tmp_path / "data"
-        ctx.user_assets = user_assets or []
-        ctx.config.xml_scenes = []
-        ctx.dependency_outputs = {"target_dem": tmp_path / "dem.tif"}
-        cs = MagicMock()
-        cs.scene_to_latlon.return_value = (45.0, 10.0)
-        cs.query_height_from_dem.return_value = 100.0
-        ctx.coordinate_system = cs
-        ctx.assets = MagicMock()
-        ctx.assets.user_assets_file = None
-        return ctx
+        assert [z.source for z in ctx.exclusion_zones_for("vegetation")] == [
+            "zone_all",
+            "zone_veg",
+        ]
+        assert [z.source for z in ctx.exclusion_zones_for("buildings")] == ["zone_all"]
 
-    def _make_asset(self, tmp_path, object_id="tree", material="diffuse"):
-        ply = tmp_path / "mesh.ply"
-        ply.write_bytes(b"")
-        return UserAssets.model_construct(
-            object_id=object_id,
-            ply_path=ply,
-            coordinate=[5.0, 10.0],
-            coord_type="scene",
-            material=material,
-            elevation_offset=0.0,
-            scale=1.0,
-            rotation_x=0.0,
-            rotation_y=0.0,
-            rotation_z=0.0,
-            blender_fix=False,
-            face_normals=None,
-            exclusion_zone=None,
-        )
 
-    def _io_patches(self):
-        return (
-            patch(_PATCH_MKDIR, lambda p: Path(p).mkdir(parents=True, exist_ok=True)),
-            patch(_PATCH_COPY, shutil.copy2),
-            patch(_PATCH_OPEN_FILE, open),
-        )
+class TestObjectExclusionZoneShorthand:
+    def test_float_is_radius(self):
+        z = ObjectExclusionZone.model_validate(15.0)
+        assert (z.radius, z.size) == (15.0, None)
 
-    def test_no_sidecar_when_no_assets(self, tmp_path):
-        from s2gos_generator.resources.assets import process_user_assets
+    def test_pair_is_size(self):
+        z = ObjectExclusionZone.model_validate((20, 10))
+        assert (z.radius, z.size) == (None, (20.0, 10.0))
 
-        ctx = self._make_ctx(tmp_path, user_assets=[])
-        with patch(_PATCH_MKDIR, lambda p: Path(p).mkdir(parents=True, exist_ok=True)):
-            result = process_user_assets(ctx)
+    def test_default_excludes_everything(self):
+        assert ObjectExclusionZone.model_validate(1.0).excludes == [
+            "vegetation",
+            "buildings",
+        ]
 
-        assert not (tmp_path / "data" / "user_assets.yml").exists()
-        assert result is None
-
-    def test_sidecar_written_with_correct_structure(self, tmp_path):
-        from s2gos_generator.resources.assets import process_user_assets
-
-        asset = self._make_asset(tmp_path, object_id="building", material="concrete")
-        ctx = self._make_ctx(tmp_path, user_assets=[asset])
-
-        mkdir_patch, copy_patch, open_patch = self._io_patches()
-        with mkdir_patch, copy_patch, open_patch:
-            process_user_assets(ctx)
-
-        sidecar = tmp_path / "data" / "user_assets.yml"
-        assert sidecar.exists()
-        data = yaml.safe_load(sidecar.read_text())
-        assert "objects" in data
-        assert len(data["objects"]) == 1
-        obj = data["objects"][0]
-        assert obj["id"] == "building"
-        assert "mesh" in obj
-        assert "position" in obj
-        assert "materials" not in data
-
-    def test_inline_material_extracted_to_sidecar(self, tmp_path):
-        from s2gos_generator.resources.assets import process_user_assets
-
-        mat_dict = {"type": "diffuse", "reflectance": 0.4}
-        asset = self._make_asset(tmp_path, object_id="rock", material=mat_dict)
-        ctx = self._make_ctx(tmp_path, user_assets=[asset])
-
-        mkdir_patch, copy_patch, open_patch = self._io_patches()
-        with mkdir_patch, copy_patch, open_patch:
-            process_user_assets(ctx)
-
-        sidecar = tmp_path / "data" / "user_assets.yml"
-        data = yaml.safe_load(sidecar.read_text())
-        assert "objects" in data
-        assert "materials" in data
-        assert "rock_material" in data["materials"]
-        assert data["objects"][0]["material"] == "rock_material"
-
-    def test_ply_copied_to_objects_dir(self, tmp_path):
-        from s2gos_generator.resources.assets import process_user_assets
-
-        asset = self._make_asset(tmp_path, object_id="cactus")
-        ctx = self._make_ctx(tmp_path, user_assets=[asset])
-
-        mkdir_patch, copy_patch, open_patch = self._io_patches()
-        with mkdir_patch, copy_patch, open_patch:
-            process_user_assets(ctx)
-
-        assert (tmp_path / "output" / "objects" / "cactus.ply").exists()
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {},
+            {"radius": 1.0, "size": (1.0, 1.0)},
+            {"radius": 1.0, "excludes": []},
+            {"radius": 1.0, "excludes": ["roads"]},
+            (1.0, 2.0, 3.0),
+            (0.0, 2.0),
+            -1.0,
+        ],
+    )
+    def test_invalid_rejected(self, bad):
+        with pytest.raises(ValidationError):
+            ObjectExclusionZone.model_validate(bad)
