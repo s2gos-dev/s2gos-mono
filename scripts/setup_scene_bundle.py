@@ -7,7 +7,7 @@ which is in git. This unpacks one into the repo and generates `s2gos_settings.ya
 after which the example runs. Roads, the ephemeris and eradiate's atmosphere data are
 downloaded on first run and are not part of the bundle:
 
-    python3 scripts/setup_scene_bundle.py san_rossore_icos_bundle.tar.gz
+    pixi run --frozen python scripts/setup_scene_bundle.py san_rossore_icos_bundle.tar.gz
     pixi run --frozen -e dev python examples/san_rossore_icos.py
 
 The data lands in `s2gos_data/` next to this checkout, and nothing outside it and

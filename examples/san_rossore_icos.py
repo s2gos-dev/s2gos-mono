@@ -1,24 +1,9 @@
 """San Rossore pine plot: DHP hemispherical images, RGB context views and PAR flux.
 
-Generates the scene once, then simulates it twice: the fisheye grid and the two RGB
-context cameras in mono, the PAR flux in ckd. Two configs are needed because the eradiate
-mode is a per-config backend hint, and the cameras' delta SRF only works in mono while the
-PAR band needs ckd.
+Generates the scene once, then runs eradiate twice: the fisheye grid and RGB cameras in
+mono (their delta SRFs need it), the PAR flux in ckd (the 400-700 nm band needs it).
 
-Convert the rayshade forest first:
-
-    pixi run python scripts/convert_rayshade_scene_pov_ellipsoids.py
-    pixi run --frozen -e dev python examples/san_rossore_icos.py
-
-The fisheye sensor lives only in the locally built Mitsuba kernel, which pixi puts on
-PYTHONPATH on activation.
-
-Eradiate data: the two passes need the ``komodo`` (mono) and ``monotropa`` (ckd)
-absorption databases plus the aerosol, thermoprops and solar-irradiance datasets. The
-``core`` bundle covers all of them; install it once (``~/.cache/eradiate`` unless
-``ERADIATE_DATA_PATH`` is set):
-
-    pixi run eradiate data install core
+Setup: see SETUP.md. Run: pixi run --frozen -e dev python examples/san_rossore_icos.py
 """
 
 from datetime import datetime
