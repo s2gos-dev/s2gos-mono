@@ -338,23 +338,30 @@ else:
     print("Step 3: PAR flux above the plot (ckd)")
     print("=" * 60)
 
-    # Flux collectors just over the canopy: facing up reads incoming PAR, facing down
-    # the PAR reflected by the stand. height_offset_m is above the DEM.
-    par_location = HemisphericalMeasurementLocation(
-        target_x=fx + 10,
-        target_y=fy + 10,
-        target_z=24,
-        height_offset_m=24,
-        terrain_relative_height=True,
-        srf=SpectralResponse(type="uniform", wmin=400.0, wmax=700.0),
-        samples_per_pixel=PAR_SPP,
-    )
+    # Flux collectors at the tower sensor positions (absolute scene metres): facing up
+    # reads incoming PAR, facing down the PAR reflected by the stand below.
+    PAR_XY = (-4760.68, -4.1638)
+
+    def par_location(z: float) -> HemisphericalMeasurementLocation:
+        return HemisphericalMeasurementLocation(
+            target_x=PAR_XY[0],
+            target_y=PAR_XY[1],
+            target_z=z,
+            terrain_relative_height=False,
+            srf=SpectralResponse(type="uniform", wmin=400.0, wmax=700.0),
+            samples_per_pixel=PAR_SPP,
+        )
+
     par_config = SimulationConfig(
         name="san_rossore_icos_par",
         illumination=illumination,
         measurements=[
-            FluxConfig.upward("par_in", par_location, samples_per_pixel=PAR_SPP),
-            FluxConfig.downward("par_out", par_location, samples_per_pixel=PAR_SPP),
+            FluxConfig.upward(
+                "par_in", par_location(39.7436), samples_per_pixel=PAR_SPP
+            ),
+            FluxConfig.downward(
+                "par_out", par_location(38.7036), samples_per_pixel=PAR_SPP
+            ),
         ],
         backend_hints={"eradiate": {"mode": "ckd"}},
     )
