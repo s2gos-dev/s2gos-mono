@@ -272,6 +272,7 @@ class SurfaceBuilder:
             DielectricMaterial,
             DiffuseMaterial,
             MeasuredMaterial,
+            OceanGraspMaterial,
             OceanLegacyMaterial,
             PlasticMaterial,
             PrincipledMaterial,
@@ -292,6 +293,10 @@ class SurfaceBuilder:
                 mat_def = self.material_adapter.create_rpv_kdict(material)
                 mat_kdict = {f"_mat_{mat_name}": mat_def}
                 mat_kpmap = self.material_adapter.create_rpv_kpmap(material)
+            elif isinstance(material, OceanGraspMaterial):
+                mat_def = self.material_adapter.create_ocean_grasp_kdict(material)
+                mat_kdict = {f"_mat_{mat_name}": mat_def}
+                mat_kpmap = self.material_adapter.create_ocean_grasp_kpmap(material)
             elif isinstance(material, OceanLegacyMaterial):
                 mat_def = self.material_adapter.create_ocean_kdict(material)
                 mat_kdict = {f"_mat_{mat_name}": mat_def}

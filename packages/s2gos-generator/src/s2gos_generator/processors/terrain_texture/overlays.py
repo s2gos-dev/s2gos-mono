@@ -1,4 +1,4 @@
-"""Texture-array algorithms: painting material regions and roads onto an
+"""Texture-array algorithms: painting material regions and ways onto an
 in-memory selection texture, plus preview overlay."""
 
 import logging
@@ -90,38 +90,38 @@ def apply_region_materials(
     return texture_2d, modified
 
 
-def apply_roads(
+def apply_ways(
     texture_2d: np.ndarray,
     landcover_path: Path,
-    road_polygons_by_material: dict,
-    road_material_indices: dict[str, int],
+    way_polygons_by_material: dict,
+    way_material_indices: dict[str, int],
     texture_resolution_m: Optional[float] = None,
     area_name: str = "target",
 ) -> tuple[np.ndarray, Optional[np.ndarray]]:
-    """Rasterize road polygons onto an in-memory texture array.
+    """Rasterize way polygons onto an in-memory texture array.
 
     Args:
         texture_2d: 2-D uint8 array to modify (may be resized if texture_resolution_m
             is finer than the landcover resolution)
         landcover_path: Path to landcover zarr (for resolution/bounds)
-        road_polygons_by_material: Merged road polygon per material name
-            (from ``ctx.road_polygons_by_material``)
-        road_material_indices: Mapping of material_name to texture index
+        way_polygons_by_material: Merged way polygon per material name
+            (from ``ctx.way_polygons_by_material``)
+        way_material_indices: Mapping of material_name to texture index
         texture_resolution_m: Target texture resolution (from
             ``ctx.config.texture_resolution_m``); upsamples when finer than native
         area_name: Logging label
 
     Returns:
         (texture_2d, union_mask) — texture_2d may have new dimensions after
-        upsampling; ``union_mask`` is a boolean array of every painted road pixel
-        (same shape as the returned ``texture_2d``), or ``None`` if no roads were
-        applied. The caller can reuse it to overlay roads on the preview texture.
+        upsampling; ``union_mask`` is a boolean array of every painted way pixel
+        (same shape as the returned ``texture_2d``), or ``None`` if no ways were
+        applied. The caller can reuse it to overlay ways on the preview texture.
     """
     from rasterio.features import rasterize
     from rasterio.transform import from_bounds
 
-    road_geoms = road_polygons_by_material
-    if not road_geoms:
+    way_geoms = way_polygons_by_material
+    if not way_geoms:
         return texture_2d, None
 
     with xr.open_zarr(expand_mapper(landcover_path)) as ds:
@@ -159,12 +159,20 @@ def apply_roads(
         )
 
     union_mask = np.zeros((target_height, target_width), dtype=bool)
-    for material_name, merged_poly in road_geoms.items():
-        mat_idx = road_material_indices.get(material_name)
+    for material_name, merged_poly in way_geoms.items():
+        mat_idx = way_material_indices.get(material_name)
         if mat_idx is None:
+            logging.warning(
+                "Way material %r has no texture index — those segments keep the "
+                "underlying landcover material, even though the terrain under them "
+                "is still flattened and still excludes vegetation. Check that %r is "
+                "reachable from the way config and defined in the material library.",
+                material_name,
+                material_name,
+            )
             continue
 
-        road_mask = rasterize(
+        way_mask = rasterize(
             [(merged_poly, 1)],
             out_shape=(target_height, target_width),
             transform=transform,
@@ -172,14 +180,14 @@ def apply_roads(
             dtype=np.uint8,
             all_touched=True,
         )
-        road_mask = np.flipud(road_mask) > 0
+        way_mask = np.flipud(way_mask) > 0
 
-        pixels_modified = int(road_mask.sum())
+        pixels_modified = int(way_mask.sum())
         if pixels_modified > 0:
-            texture_2d[road_mask] = mat_idx
-            union_mask |= road_mask
+            texture_2d[way_mask] = mat_idx
+            union_mask |= way_mask
             logging.info(
-                "Applied roads [%s] to %s texture: %d pixels -> material index %d (%dx%d px @ %.1fm/px)",
+                "Applied ways [%s] to %s texture: %d pixels -> material index %d (%dx%d px @ %.1fm/px)",
                 material_name,
                 area_name,
                 pixels_modified,
@@ -192,17 +200,17 @@ def apply_roads(
     return texture_2d, (union_mask if union_mask.any() else None)
 
 
-def apply_roads_to_preview(
+def apply_ways_to_preview(
     preview_path: Path,
-    road_mask: np.ndarray,
+    way_mask: np.ndarray,
     debug_color: tuple[int, int, int] = (50, 50, 50),
 ) -> None:
-    """Resize the RGB preview to match ``road_mask`` and paint roads on it."""
-    target_h, target_w = road_mask.shape
+    """Resize the RGB preview to match ``way_mask`` and paint ways on it."""
+    target_h, target_w = way_mask.shape
     with Image.open(preview_path) as img:
         rgb = img.convert("RGB")
         if rgb.size != (target_w, target_h):
             rgb = rgb.resize((target_w, target_h), Image.NEAREST)
         arr = np.array(rgb)
-    arr[np.flipud(road_mask)] = debug_color
+    arr[np.flipud(way_mask)] = debug_color
     Image.fromarray(arr, mode="RGB").save(preview_path)

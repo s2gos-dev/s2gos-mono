@@ -23,8 +23,8 @@ Turn DEM elevation grids into 3D triangle meshes via an adaptive quadtree, orche
 ## Terrain flattening
 
 ::: s2gos_generator.processors.terrain_mesh.terraforming.GradientFilter
-::: s2gos_generator.processors.terrain_mesh.terraforming.RoadFlattenOperation
-::: s2gos_generator.processors.terrain_mesh.terraforming.apply_road_flatten_batch
+::: s2gos_generator.processors.terrain_mesh.terraforming.WayFlattenOperation
+::: s2gos_generator.processors.terrain_mesh.terraforming.apply_way_flatten_batch
 ::: s2gos_generator.processors.terrain_mesh.terraforming.make_refinement_predicate
 ::: s2gos_generator.processors.terrain_mesh.terraforming.make_roughness_predicate
 ::: s2gos_generator.processors.terrain_mesh.terraforming.compute_gradient

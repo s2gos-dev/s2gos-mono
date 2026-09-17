@@ -16,6 +16,7 @@ from upath import UPath
 from .geometry_utils import apply_asset_relative_transform, sanitize_sensor_id
 from ...config import (
     AngularFromOriginViewing,
+    AstroObjectIllumination,
     BHRConfig,
     BRFConfig,
     ConstantIllumination,
@@ -41,6 +42,23 @@ except ImportError:
     ERADIATE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+def _solar_irradiance_dict(illumination) -> Dict[str, Any]:
+    """Build the Eradiate solar irradiance spectrum dict for an illumination.
+
+    The observation datetime is forwarded only when set, so illuminations
+    without one keep an unscaled irradiance spectrum.
+    """
+    result: Dict[str, Any] = {
+        "type": "solar_irradiance",
+        "dataset": illumination.irradiance_dataset,
+    }
+
+    if illumination.irradiance_datetime is not None:
+        result["datetime"] = illumination.irradiance_datetime
+
+    return result
 
 
 class _AssetTransform(NamedTuple):
@@ -83,16 +101,22 @@ class EradiateTranslator:
         """
         illumination = self.simulation_config.illumination
 
-        if isinstance(illumination, DirectionalIllumination):
+        if isinstance(illumination, AstroObjectIllumination):
+            return {
+                "type": "astro_object",
+                "id": illumination.id,
+                "zenith": illumination.zenith * ureg.deg,
+                "azimuth": illumination.azimuth * ureg.deg,
+                "angular_diameter": illumination.angular_diameter * ureg.deg,
+                "irradiance": _solar_irradiance_dict(illumination),
+            }
+        elif isinstance(illumination, DirectionalIllumination):
             return {
                 "type": "directional",
                 "id": illumination.id,
                 "zenith": illumination.zenith * ureg.deg,
                 "azimuth": illumination.azimuth * ureg.deg,
-                "irradiance": {
-                    "type": "solar_irradiance",
-                    "dataset": illumination.irradiance_dataset,
-                },
+                "irradiance": _solar_irradiance_dict(illumination),
             }
         elif isinstance(illumination, ConstantIllumination):
             return {

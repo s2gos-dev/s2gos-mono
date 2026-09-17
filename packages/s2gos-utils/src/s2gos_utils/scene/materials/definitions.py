@@ -339,6 +339,45 @@ class OceanLegacyMaterial(Material, material_type="ocean_legacy"):
     )
 
 
+class OceanGraspMaterial(Material, material_type="ocean_grasp"):
+    """GRASP oceanic reflection model.
+
+    Based on the Mitsuba ``ocean_grasp`` plugin specification:
+    - ``wavelength`` is mandatory, all other parameters have plugin defaults
+    - Physical bounds follow the plugin documentation
+    """
+
+    wavelength: float = Field(
+        ...,
+        ge=200.0,
+        le=4000.0,
+        description="Evaluation wavelength in nm [200,4000]",
+    )
+    wind_speed: float = Field(
+        0.1, ge=0.0, le=37.54, description="Wind speed in m/s [0,37.54]"
+    )
+    eta: float = Field(
+        1.33, description="Real component of water's index of refraction"
+    )
+    k: float = Field(
+        0.0, description="Imaginary component of water's index of refraction"
+    )
+    ext_ior: float = Field(1.000277, description="Exterior index of refraction")
+    water_body_reflectance: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description="Diffuse reflectance of radiation that entered and exited the water body",
+    )
+    component: int = Field(
+        0,
+        ge=0,
+        le=4,
+        description="Debug component: 0=total, 1=whitecap, 2=sun glint, "
+        "3=underlight, 4=whitecap+underlight",
+    )
+
+
 class DielectricMaterial(Material, material_type="dielectric"):
     """Dielectric material (glass, plastic) based on Mitsuba specification.
 

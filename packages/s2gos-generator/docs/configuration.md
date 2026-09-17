@@ -8,7 +8,7 @@ Two layers configure a generation run:
    that layer.**
 2. **The scene config** ([`SceneGenConfig`][s2gos_generator.core.config.scene.SceneGenConfig],
    serialised to the generation JSON) — *what* to generate for a given run: location,
-   size, and the optional features (buildings, roads, spectral matching, mesh
+   size, and the optional features (buildings, ways, spectral matching, mesh
    refinement). Its full field reference lives on the
    [Scene Config API page](api/scene_config.md); the [Concepts](concepts.md) page
    explains what each feature does.
@@ -148,31 +148,31 @@ section covers only the **data and credentials** each one needs from your enviro
 
 See [Buildings](concepts.md#buildings) for what the feature does.
 
-### Roads
+### Ways
 
-Enable per run with a [`RoadsConfig`][s2gos_generator.core.config.roads.RoadsConfig] on the
-scene config. Road centrelines come from one of two sources:
+Enable per run with a [`WaysConfig`][s2gos_generator.core.config.ways.WaysConfig] on the
+scene config. Way centrelines come from one of two sources:
 
 - `source="overpass"` — fetched live from OpenStreetMap over the public
   [Overpass API](https://overpass-api.de/). No credentials or local data required.
 - `source="file"` — read from a local JSON file; point the config at your path.
 
 Width and surface material are resolved from OpenStreetMap tags where present, falling back to
-a built-in per-highway-type table and configurable defaults.
+a built-in per-road-type table and configurable defaults.
 
 !!! note
     Any published output derived from Overpass/OpenStreetMap data must attribute
     © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
 
-Enabling roads also engages the [adaptive terrain mesh](#adaptive-terrain-mesh) so roads sit on
-well-resolved, flattened geometry. See [Roads](concepts.md#roads) for what the feature does.
+Enabling ways also engages the [adaptive terrain mesh](#adaptive-terrain-mesh) so ways sit on
+well-resolved, flattened geometry. See [Ways](concepts.md#ways) for what the feature does.
 
 ### Adaptive terrain mesh
 
 Tuned per run with a
 [`MeshRefinementConfig`][s2gos_generator.core.config.mesh_refinement.MeshRefinementConfig] on the
 scene config. It is pure geometry processing — it needs nothing from your environment (no extra
-data or credentials) — and is also engaged automatically when roads are enabled. See
+data or credentials) — and is also engaged automatically when ways are enabled. See
 [Adaptive terrain mesh](concepts.md#adaptive-terrain-mesh) for what the feature does.
 
 ### Spectral material matching

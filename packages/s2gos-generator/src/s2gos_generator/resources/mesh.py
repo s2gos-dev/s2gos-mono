@@ -35,16 +35,16 @@ def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
 
     if refinement_cfg is not None and refinement_cfg.enabled:
         operations: list[TerraformOperation] = []
-        if ctx.config.roads is not None and ctx.config.roads.enabled:
-            from ..processors.roads import build_road_terraform_operations
+        if ctx.config.ways is not None and ctx.config.ways.enabled:
+            from ..processors.ways import build_way_terraform_operations
 
             operations.extend(
-                build_road_terraform_operations(
-                    ctx.roads,
+                build_way_terraform_operations(
+                    ctx.ways,
                     dem_data,
                     transition_buffer_m=refinement_cfg.transition_buffer_m,
-                    gradient_threshold=ctx.config.roads.mesh_gradient_threshold,
-                    thin_road_skip_m=ctx.config.roads.mesh_thin_road_skip_m,
+                    gradient_threshold=ctx.config.ways.mesh_gradient_threshold,
+                    thin_way_skip_m=ctx.config.ways.mesh_thin_way_skip_m,
                 )
             )
 

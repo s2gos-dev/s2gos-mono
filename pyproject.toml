@@ -33,6 +33,7 @@ s2gos-client = { git = "https://github.com/s2gos-dev/s2gos-controller.git", subd
 s2gos-server = { git = "https://github.com/s2gos-dev/s2gos-controller.git", subdirectory = "s2gos-server" }
 websockets = "*"
 pinttrs = ">=23.2.0,<26"
+websockets= "*"
 
 # ── feature: notebook ─────────────────────────────────────────
 [tool.pixi.feature.notebook.dependencies]

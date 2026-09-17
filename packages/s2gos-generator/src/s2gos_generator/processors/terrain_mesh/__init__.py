@@ -12,9 +12,9 @@ from .error_pyramid import DemErrorPyramid
 from .mesh_generator import MeshGenerator
 from .terraforming import (
     GradientFilter,
-    RoadFlattenOperation,
     TerraformOperation,
-    apply_road_flatten_batch,
+    WayFlattenOperation,
+    apply_way_flatten_batch,
     compute_gradient,
     make_refinement_predicate,
     make_roughness_predicate,
@@ -25,9 +25,9 @@ __all__ = [
     "DemErrorPyramid",
     "MeshGenerator",
     "GradientFilter",
-    "RoadFlattenOperation",
+    "WayFlattenOperation",
     "TerraformOperation",
-    "apply_road_flatten_batch",
+    "apply_way_flatten_batch",
     "compute_gradient",
     "make_refinement_predicate",
     "make_roughness_predicate",

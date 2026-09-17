@@ -31,7 +31,7 @@ class SceneAssets:
     vegetation_objects_file: Optional[UPath] = None
     user_assets_file: Optional[UPath] = None
     hamster_paths_file: Optional[UPath] = None
-    roads_file: Optional[UPath] = None
+    ways_file: Optional[UPath] = None
     buildings_objects_file: Optional[UPath] = None
 
     sentinel2_file: Optional[UPath] = None

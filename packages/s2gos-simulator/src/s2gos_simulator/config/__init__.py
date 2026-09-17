@@ -1,4 +1,10 @@
-from .illumination import ConstantIllumination, DirectionalIllumination, Illumination
+from .illumination import (
+    AbstractDirectionalIllumination,
+    AstroObjectIllumination,
+    ConstantIllumination,
+    DirectionalIllumination,
+    Illumination,
+)
 from .measurements import (
     BasePixelMeasurementConfig,
     BHRConfig,
@@ -48,6 +54,8 @@ from .viewing import (
 
 __all__ = [
     # illumination
+    "AbstractDirectionalIllumination",
+    "AstroObjectIllumination",
     "ConstantIllumination",
     "DirectionalIllumination",
     "Illumination",

@@ -219,12 +219,12 @@ class VegetationSpecies(BaseModel):
     }
 
 
-class RoadExclusionConfig(BaseModel):
-    """Controls how vegetation reacts to road geometry."""
+class WayExclusionConfig(BaseModel):
+    """Controls how vegetation reacts to way (road and railway) geometry."""
 
-    enabled: bool = Field(True, description="Exclude vegetation from road footprints")
+    enabled: bool = Field(True, description="Exclude vegetation from way footprints")
     buffer_m: float = Field(
-        2.0, ge=0.0, description="Extra buffer (m) around road polygons"
+        2.0, ge=0.0, description="Extra buffer (m) around way polygons"
     )
 
 
@@ -302,7 +302,7 @@ class VegetationPlacementConfig(BaseModel):
         ge=0,
         description="Random seed for reproducible scene generation. If None, uses system entropy.",
     )
-    road_exclusion: RoadExclusionConfig = Field(default_factory=RoadExclusionConfig)
+    way_exclusion: WayExclusionConfig = Field(default_factory=WayExclusionConfig)
 
     model_config = {
         "validate_assignment": True,

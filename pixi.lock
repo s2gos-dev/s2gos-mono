@@ -5640,7 +5640,7 @@ packages:
   - odc-stac
   - pystac-client
   - boto3
-  requires_python: '>=3.10,<3.12'
+  requires_python: '>=3.10,<3.13'
 - pypi: ./packages/s2gos-simulator
   name: s2gos-simulator
   requires_dist:
@@ -5655,7 +5655,7 @@ packages:
   - skyfield
   - scipy
   - matplotlib
-  requires_python: '>=3.10,<3.12'
+  requires_python: '>=3.10,<3.13'
 - pypi: ./packages/s2gos-utils
   name: s2gos-utils
   requires_dist:
@@ -5670,7 +5670,7 @@ packages:
   - attrs
   - universal-pathlib
   - dynaconf>=3
-  requires_python: '>=3.10,<3.12'
+  requires_python: '>=3.10,<3.13'
 - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-client#48a40072374e2af66b094609614f62067d2fbb5c
   name: s2gos-client
   version: 0.2.0.dev1

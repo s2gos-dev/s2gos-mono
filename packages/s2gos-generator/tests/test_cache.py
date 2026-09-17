@@ -113,7 +113,7 @@ def minimal_config() -> Any:
         buffer=None,
         background=None,
         snow=None,
-        roads=None,
+        ways=None,
         buildings=None,
         material_regions=[],
         user_assets=[],
