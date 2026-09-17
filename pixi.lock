@@ -224,8 +224,8 @@ environments:
       - pypi: ./packages/s2gos-generator
       - pypi: ./packages/s2gos-simulator
       - pypi: ./packages/s2gos-utils
-      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-client#5a83f7d6afb7adba9e72d9c11b1135004ea21082
-      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-server#5a83f7d6afb7adba9e72d9c11b1135004ea21082
+      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-client&rev=5a83f7d6afb7adba9e72d9c11b1135004ea21082#5a83f7d6afb7adba9e72d9c11b1135004ea21082
+      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-server&rev=5a83f7d6afb7adba9e72d9c11b1135004ea21082#5a83f7d6afb7adba9e72d9c11b1135004ea21082
       - pypi: https://files.pythonhosted.org/packages/00/4b/ccc026168948fec4f7555b9164c724cf4125eac006e176541483d2c959be/pydantic_settings-2.13.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/00/60/249e3444fcd9c833704741769981cd02fe2c7ce94126b1394e7a3b26e543/ipyfilechooser-0.6.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/01/8a/fd93f13a9b4b688b5ac8c8ec14ed6401db99166b7d55c41c9c96250398d9/odc_stac-0.5.2-py3-none-any.whl
@@ -267,7 +267,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/62/9d/32ab924b0b45e68e45046092993490ea5aeadd84ac1cf0088c6bcd2a563d/dessinemoi-26.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/65/f3/107a22063bf27bdccf2024833d3445f4eea42b2e598abfbd46f6a63b6cb0/typing_inspect-0.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/66/ce/3591411d90bf0f6829fec4403f77a63280c8eee942f55715ae1ed7ff8492/sf_hamilton-1.89.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/6e/13/65d5080f1f7a2a126518f67dc33cb4e059d06c171adfb274f8c7ab737922/eradiate_mitsuba-0.5.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/73/86/43fa9f15c5b9fb6e82620428827cd3c284aa933431405d1bcf5231ae3d3e/cligj-0.7.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/77/69/51f76c9ffea657ef6b8c8e5d5a408fdecefcaa3adf91fdc4c22b84c6acda/cuiman-0.1.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl
@@ -290,6 +289,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/9d/f3/a1d3a84ce5659fa89e8f6675eba4bb48cde44b2cea929b4fe19f460f1fac/procodile-0.1.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/9e/c9/b2622292ea83fbb4ec318f5b9ab867d0a28ab43c5717bb85b0a5f6b3b0a4/networkx-3.6.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a1/00/ff53f3a4d51e64e9137ce2408a43edf18fec96eebb61f87a6598578fa563/cerberus-1.3.8-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/a2/1a/44cb1b30886b0540c2e917ba615e46ca5e9cebfb5df2ce7f08e0e7e0b836/eradiate_mitsuba-0.5.1rc2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/a4/ed/1f1afb2e9e7f38a545d628f864d562a5ae64fe6f7a10e28ffb9b185b4e89/importlib_resources-6.5.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/aa/fa/723fa6a48a419b044146cd92fa6a66ead8532d96c352fbc2f2a1546cb5b6/rasterio-1.4.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/ab/88/550d41e81e6d43335603a960cd9c75c1d88f9cf01bc9d4ee8e86290aba7d/pint-0.25.2-py3-none-any.whl
@@ -303,7 +303,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/b4/de/88b3be5c31b22333b3ca2f6ff1de4e863d8fe45aaea7485f591970ec1d3e/linkify_it_py-2.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b8/0c/51f6841f1d84f404f92463fc2b1ba0da357ca1e3db6b7fbda26956c3b82a/ruamel_yaml-0.19.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c0/8c/a15d6fe97f81d6d5202b17838a9a298b5955b3e9971e20609195112829b5/netcdf4-1.7.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/c1/0e/1e1783a64e31eff27f47d59d8782147a6c309e4d3718504dd97f91827143/eradiate-1.2.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c8/be/8fed28dd0a180dca19e72c233cbf58efa36df055e5b9d90d64fd1740b828/pydantic_core-2.41.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/c9/ad/dbbefc7e8c97d8107cdcdd3ea80ee7a7b711a545fa72293eb822437717be/odc_geo-0.5.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/cd/89/4d606d1ed0c97c16b3b4e56104ed72ceff0bf201ca2c6606c4d2c40d7a8c/wraptile-0.1.1-py3-none-any.whl
@@ -317,6 +316,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/e7/05/c19819d5e3d95294a6f5947fb9b9629efb316b96de511b418c53d245aae6/cycler-0.12.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/e7/8a/f196038b2bea40c372d900803dac0d5e4eab578cb05b92ff7172ced4c1cf/skyfield-1.54-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f0/4a/86796859383d7d11fa5d4bcf1983f94c6cbb9eeb60fb3bab527fec4b32fa/mapbox_earcut-2.0.0-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/f3/df/053ac8b524eebe92d4c52441c7f4192978b59b793abaf5f4a5d1844d3c9f/eradiate-1.3.0rc1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f9/77/3ac8a9bbef6c3be222c71bbe9587ff85adfa3fb85d83edba89c10823ae03/ussa1976-0.3.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fb/86/dd6e5db36df29e76c7a7699123569a4a18c1623ce68d826ed96c62643cae/mdit_py_plugins-0.5.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fe/5e/3be305568fe5f34448807976dc82fc151d76c3e0e03958f34770286278c1/flexparser-0.4-py3-none-any.whl
@@ -630,8 +630,8 @@ environments:
       - pypi: ./packages/s2gos-generator
       - pypi: ./packages/s2gos-simulator
       - pypi: ./packages/s2gos-utils
-      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-client#5a83f7d6afb7adba9e72d9c11b1135004ea21082
-      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-server#5a83f7d6afb7adba9e72d9c11b1135004ea21082
+      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-client&rev=5a83f7d6afb7adba9e72d9c11b1135004ea21082#5a83f7d6afb7adba9e72d9c11b1135004ea21082
+      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-server&rev=5a83f7d6afb7adba9e72d9c11b1135004ea21082#5a83f7d6afb7adba9e72d9c11b1135004ea21082
       - pypi: https://files.pythonhosted.org/packages/00/4b/ccc026168948fec4f7555b9164c724cf4125eac006e176541483d2c959be/pydantic_settings-2.13.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/00/60/249e3444fcd9c833704741769981cd02fe2c7ce94126b1394e7a3b26e543/ipyfilechooser-0.6.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/01/8a/fd93f13a9b4b688b5ac8c8ec14ed6401db99166b7d55c41c9c96250398d9/odc_stac-0.5.2-py3-none-any.whl
@@ -675,7 +675,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/62/9d/32ab924b0b45e68e45046092993490ea5aeadd84ac1cf0088c6bcd2a563d/dessinemoi-26.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/65/f3/107a22063bf27bdccf2024833d3445f4eea42b2e598abfbd46f6a63b6cb0/typing_inspect-0.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/66/ce/3591411d90bf0f6829fec4403f77a63280c8eee942f55715ae1ed7ff8492/sf_hamilton-1.89.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/6e/13/65d5080f1f7a2a126518f67dc33cb4e059d06c171adfb274f8c7ab737922/eradiate_mitsuba-0.5.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/73/86/43fa9f15c5b9fb6e82620428827cd3c284aa933431405d1bcf5231ae3d3e/cligj-0.7.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/76/53/c16972708cbb79f2942922571a687c52bd109a7bd51175aeb7558dff2236/coverage-7.13.4-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/77/69/51f76c9ffea657ef6b8c8e5d5a408fdecefcaa3adf91fdc4c22b84c6acda/cuiman-0.1.1-py3-none-any.whl
@@ -700,6 +699,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/9d/f3/a1d3a84ce5659fa89e8f6675eba4bb48cde44b2cea929b4fe19f460f1fac/procodile-0.1.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/9e/c9/b2622292ea83fbb4ec318f5b9ab867d0a28ab43c5717bb85b0a5f6b3b0a4/networkx-3.6.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a1/00/ff53f3a4d51e64e9137ce2408a43edf18fec96eebb61f87a6598578fa563/cerberus-1.3.8-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/a2/1a/44cb1b30886b0540c2e917ba615e46ca5e9cebfb5df2ce7f08e0e7e0b836/eradiate_mitsuba-0.5.1rc2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/a4/ed/1f1afb2e9e7f38a545d628f864d562a5ae64fe6f7a10e28ffb9b185b4e89/importlib_resources-6.5.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/aa/fa/723fa6a48a419b044146cd92fa6a66ead8532d96c352fbc2f2a1546cb5b6/rasterio-1.4.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/ab/88/550d41e81e6d43335603a960cd9c75c1d88f9cf01bc9d4ee8e86290aba7d/pint-0.25.2-py3-none-any.whl
@@ -713,7 +713,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/b4/de/88b3be5c31b22333b3ca2f6ff1de4e863d8fe45aaea7485f591970ec1d3e/linkify_it_py-2.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b8/0c/51f6841f1d84f404f92463fc2b1ba0da357ca1e3db6b7fbda26956c3b82a/ruamel_yaml-0.19.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c0/8c/a15d6fe97f81d6d5202b17838a9a298b5955b3e9971e20609195112829b5/netcdf4-1.7.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/c1/0e/1e1783a64e31eff27f47d59d8782147a6c309e4d3718504dd97f91827143/eradiate-1.2.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c8/be/8fed28dd0a180dca19e72c233cbf58efa36df055e5b9d90d64fd1740b828/pydantic_core-2.41.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/c9/ad/dbbefc7e8c97d8107cdcdd3ea80ee7a7b711a545fa72293eb822437717be/odc_geo-0.5.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/cd/89/4d606d1ed0c97c16b3b4e56104ed72ceff0bf201ca2c6606c4d2c40d7a8c/wraptile-0.1.1-py3-none-any.whl
@@ -728,6 +727,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/e7/05/c19819d5e3d95294a6f5947fb9b9629efb316b96de511b418c53d245aae6/cycler-0.12.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/e7/8a/f196038b2bea40c372d900803dac0d5e4eab578cb05b92ff7172ced4c1cf/skyfield-1.54-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f0/4a/86796859383d7d11fa5d4bcf1983f94c6cbb9eeb60fb3bab527fec4b32fa/mapbox_earcut-2.0.0-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/f3/df/053ac8b524eebe92d4c52441c7f4192978b59b793abaf5f4a5d1844d3c9f/eradiate-1.3.0rc1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f9/77/3ac8a9bbef6c3be222c71bbe9587ff85adfa3fb85d83edba89c10823ae03/ussa1976-0.3.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fb/86/dd6e5db36df29e76c7a7699123569a4a18c1623ce68d826ed96c62643cae/mdit_py_plugins-0.5.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fe/5e/3be305568fe5f34448807976dc82fc151d76c3e0e03958f34770286278c1/flexparser-0.4-py3-none-any.whl
@@ -954,8 +954,8 @@ environments:
       - pypi: ./packages/s2gos-generator
       - pypi: ./packages/s2gos-simulator
       - pypi: ./packages/s2gos-utils
-      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-client#5a83f7d6afb7adba9e72d9c11b1135004ea21082
-      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-server#5a83f7d6afb7adba9e72d9c11b1135004ea21082
+      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-client&rev=5a83f7d6afb7adba9e72d9c11b1135004ea21082#5a83f7d6afb7adba9e72d9c11b1135004ea21082
+      - pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-server&rev=5a83f7d6afb7adba9e72d9c11b1135004ea21082#5a83f7d6afb7adba9e72d9c11b1135004ea21082
       - pypi: https://files.pythonhosted.org/packages/00/4b/ccc026168948fec4f7555b9164c724cf4125eac006e176541483d2c959be/pydantic_settings-2.13.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/00/60/249e3444fcd9c833704741769981cd02fe2c7ce94126b1394e7a3b26e543/ipyfilechooser-0.6.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/01/8a/fd93f13a9b4b688b5ac8c8ec14ed6401db99166b7d55c41c9c96250398d9/odc_stac-0.5.2-py3-none-any.whl
@@ -997,7 +997,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/62/9d/32ab924b0b45e68e45046092993490ea5aeadd84ac1cf0088c6bcd2a563d/dessinemoi-26.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/65/f3/107a22063bf27bdccf2024833d3445f4eea42b2e598abfbd46f6a63b6cb0/typing_inspect-0.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/66/ce/3591411d90bf0f6829fec4403f77a63280c8eee942f55715ae1ed7ff8492/sf_hamilton-1.89.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/6e/13/65d5080f1f7a2a126518f67dc33cb4e059d06c171adfb274f8c7ab737922/eradiate_mitsuba-0.5.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/73/86/43fa9f15c5b9fb6e82620428827cd3c284aa933431405d1bcf5231ae3d3e/cligj-0.7.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/76/53/c16972708cbb79f2942922571a687c52bd109a7bd51175aeb7558dff2236/coverage-7.13.4-cp311-cp311-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/77/69/51f76c9ffea657ef6b8c8e5d5a408fdecefcaa3adf91fdc4c22b84c6acda/cuiman-0.1.1-py3-none-any.whl
@@ -1021,6 +1020,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/9d/f3/a1d3a84ce5659fa89e8f6675eba4bb48cde44b2cea929b4fe19f460f1fac/procodile-0.1.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/9e/c9/b2622292ea83fbb4ec318f5b9ab867d0a28ab43c5717bb85b0a5f6b3b0a4/networkx-3.6.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a1/00/ff53f3a4d51e64e9137ce2408a43edf18fec96eebb61f87a6598578fa563/cerberus-1.3.8-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/a2/1a/44cb1b30886b0540c2e917ba615e46ca5e9cebfb5df2ce7f08e0e7e0b836/eradiate_mitsuba-0.5.1rc2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/a4/ed/1f1afb2e9e7f38a545d628f864d562a5ae64fe6f7a10e28ffb9b185b4e89/importlib_resources-6.5.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/aa/fa/723fa6a48a419b044146cd92fa6a66ead8532d96c352fbc2f2a1546cb5b6/rasterio-1.4.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/ab/88/550d41e81e6d43335603a960cd9c75c1d88f9cf01bc9d4ee8e86290aba7d/pint-0.25.2-py3-none-any.whl
@@ -1034,7 +1034,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/b4/de/88b3be5c31b22333b3ca2f6ff1de4e863d8fe45aaea7485f591970ec1d3e/linkify_it_py-2.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b8/0c/51f6841f1d84f404f92463fc2b1ba0da357ca1e3db6b7fbda26956c3b82a/ruamel_yaml-0.19.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c0/8c/a15d6fe97f81d6d5202b17838a9a298b5955b3e9971e20609195112829b5/netcdf4-1.7.4-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
-      - pypi: https://files.pythonhosted.org/packages/c1/0e/1e1783a64e31eff27f47d59d8782147a6c309e4d3718504dd97f91827143/eradiate-1.2.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c8/be/8fed28dd0a180dca19e72c233cbf58efa36df055e5b9d90d64fd1740b828/pydantic_core-2.41.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/c9/ad/dbbefc7e8c97d8107cdcdd3ea80ee7a7b711a545fa72293eb822437717be/odc_geo-0.5.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/cd/89/4d606d1ed0c97c16b3b4e56104ed72ceff0bf201ca2c6606c4d2c40d7a8c/wraptile-0.1.1-py3-none-any.whl
@@ -1048,6 +1047,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/e7/05/c19819d5e3d95294a6f5947fb9b9629efb316b96de511b418c53d245aae6/cycler-0.12.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/e7/8a/f196038b2bea40c372d900803dac0d5e4eab578cb05b92ff7172ced4c1cf/skyfield-1.54-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f0/4a/86796859383d7d11fa5d4bcf1983f94c6cbb9eeb60fb3bab527fec4b32fa/mapbox_earcut-2.0.0-cp311-cp311-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/f3/df/053ac8b524eebe92d4c52441c7f4192978b59b793abaf5f4a5d1844d3c9f/eradiate-1.3.0rc1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/f9/77/3ac8a9bbef6c3be222c71bbe9587ff85adfa3fb85d83edba89c10823ae03/ussa1976-0.3.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fb/86/dd6e5db36df29e76c7a7699123569a4a18c1623ce68d826ed96c62643cae/mdit_py_plugins-0.5.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fe/5e/3be305568fe5f34448807976dc82fc151d76c3e0e03958f34770286278c1/flexparser-0.4-py3-none-any.whl
@@ -5293,7 +5293,7 @@ packages:
   name: s2gos-simulator
   requires_dist:
   - s2gos-utils
-  - eradiate[kernel]==1.2.0
+  - eradiate[kernel]==1.3.0rc1
   - pydantic>=2
   - pyyaml
   - numpy<2
@@ -5319,14 +5319,14 @@ packages:
   - universal-pathlib
   - dynaconf>=3
   requires_python: '>=3.10,<3.12'
-- pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-client#5a83f7d6afb7adba9e72d9c11b1135004ea21082
+- pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-client&rev=5a83f7d6afb7adba9e72d9c11b1135004ea21082#5a83f7d6afb7adba9e72d9c11b1135004ea21082
   name: s2gos-client
   version: 0.1.0
   requires_dist:
   - cuiman>=0.1.0
   - gavicore>=0.1.0
   requires_python: '>=3.11'
-- pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-server#5a83f7d6afb7adba9e72d9c11b1135004ea21082
+- pypi: git+https://github.com/s2gos-dev/s2gos-controller.git?subdirectory=s2gos-server&rev=5a83f7d6afb7adba9e72d9c11b1135004ea21082#5a83f7d6afb7adba9e72d9c11b1135004ea21082
   name: s2gos-server
   version: 0.1.0
   requires_dist:
@@ -6043,14 +6043,6 @@ packages:
   - graphviz ; extra == 'visualization'
   - networkx ; extra == 'visualization'
   requires_python: '>=3.8.1,<4'
-- pypi: https://files.pythonhosted.org/packages/6e/13/65d5080f1f7a2a126518f67dc33cb4e059d06c171adfb274f8c7ab737922/eradiate_mitsuba-0.5.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
-  name: eradiate-mitsuba
-  version: 0.5.0
-  sha256: bcdc66b7c68f649f03cdf5dd8d632e7698cf0cb931fbf4f97c6e5802a2f69d6a
-  requires_dist:
-  - typing-extensions>=4.12 ; python_full_version < '3.11'
-  - drjit==1.2.0
-  requires_python: '>=3.9'
 - pypi: https://files.pythonhosted.org/packages/73/86/43fa9f15c5b9fb6e82620428827cd3c284aa933431405d1bcf5231ae3d3e/cligj-0.7.2-py3-none-any.whl
   name: cligj
   version: 0.7.2
@@ -6408,6 +6400,14 @@ packages:
   requires_dist:
   - importlib-metadata ; python_full_version < '3.8'
   requires_python: '>=3.7'
+- pypi: https://files.pythonhosted.org/packages/a2/1a/44cb1b30886b0540c2e917ba615e46ca5e9cebfb5df2ce7f08e0e7e0b836/eradiate_mitsuba-0.5.1rc2-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
+  name: eradiate-mitsuba
+  version: 0.5.1rc2
+  sha256: 646d6b100775c7fa79b22123e34adb698c8f28f1c013d92df8f698fc950befb3
+  requires_dist:
+  - typing-extensions>=4.12 ; python_full_version < '3.11'
+  - drjit==1.2.0
+  requires_python: '>=3.9'
 - pypi: https://files.pythonhosted.org/packages/a4/ed/1f1afb2e9e7f38a545d628f864d562a5ae64fe6f7a10e28ffb9b185b4e89/importlib_resources-6.5.2-py3-none-any.whl
   name: importlib-resources
   version: 6.5.2
@@ -6634,45 +6634,6 @@ packages:
   - typing-extensions>=4.15.0 ; extra == 'tests'
   - mpi4py ; extra == 'parallel'
   requires_python: '>=3.10'
-- pypi: https://files.pythonhosted.org/packages/c1/0e/1e1783a64e31eff27f47d59d8782147a6c309e4d3718504dd97f91827143/eradiate-1.2.0-py3-none-any.whl
-  name: eradiate
-  version: 1.2.0
-  sha256: 1c3e193177e347daa16a2980db6952729e2e4a7e40fbd739a8f598d3e2c4c85d
-  requires_dist:
-  - aenum
-  - axsdb>=0.1.2,<0.2
-  - attrs>=22.2
-  - cachetools>=5.3
-  - cerberus>=1.3
-  - click
-  - dessinemoi>=23.1.0
-  - dynaconf>=3.2
-  - joseki>=2.6.0
-  - lazy-loader>=0.1
-  - matplotlib>=3.3
-  - netcdf4
-  - networkx>=3.0
-  - numpy
-  - pint
-  - pinttrs>=23.2.0
-  - pooch
-  - rich
-  - ruamel-yaml
-  - scipy
-  - typer>=0.9.0
-  - tqdm
-  - shellingham!=1.5.1
-  - xarray>=2023
-  - eradiate-mitsuba>=0.5.0,<0.6.0 ; extra == 'kernel'
-  - aabbtree ; extra == 'recommended'
-  - skyfield ; extra == 'recommended'
-  - ipython ; extra == 'recommended'
-  - ipywidgets ; extra == 'recommended'
-  - jupyterlab ; extra == 'recommended'
-  - pydot ; extra == 'recommended'
-  - python-dateutil ; extra == 'recommended'
-  - seaborn ; extra == 'recommended'
-  requires_python: '>=3.9,<3.14'
 - pypi: https://files.pythonhosted.org/packages/c8/be/8fed28dd0a180dca19e72c233cbf58efa36df055e5b9d90d64fd1740b828/pydantic_core-2.41.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
   name: pydantic-core
   version: 2.41.5
@@ -6921,6 +6882,45 @@ packages:
   - numpy
   - pytest>=8.0 ; extra == 'dev'
   - mypy ; extra == 'dev'
+  requires_python: '>=3.9'
+- pypi: https://files.pythonhosted.org/packages/f3/df/053ac8b524eebe92d4c52441c7f4192978b59b793abaf5f4a5d1844d3c9f/eradiate-1.3.0rc1-py3-none-any.whl
+  name: eradiate
+  version: 1.3.0rc1
+  sha256: c28674990e3eebea9c1bbdb2d9c2f829583f242a13f9a50e17bd3768184a4e95
+  requires_dist:
+  - aenum
+  - axsdb>=0.1.2,<0.2
+  - attrs>=22.2
+  - cachetools>=5.3
+  - cerberus>=1.3
+  - click
+  - dessinemoi>=23.1.0
+  - dynaconf>=3.2
+  - joseki>=2.6.0
+  - lazy-loader>=0.1
+  - matplotlib>=3.3
+  - netcdf4
+  - networkx>=3.0
+  - numpy
+  - pint
+  - pinttrs>=23.2.0
+  - pooch
+  - rich
+  - ruamel-yaml
+  - scipy
+  - typer>=0.9.0
+  - tqdm
+  - shellingham!=1.5.1
+  - xarray>=2023
+  - eradiate-mitsuba>=0.5.1rc2,<0.6.0 ; extra == 'kernel'
+  - aabbtree ; extra == 'recommended'
+  - skyfield ; extra == 'recommended'
+  - ipython ; extra == 'recommended'
+  - ipywidgets ; extra == 'recommended'
+  - jupyterlab ; extra == 'recommended'
+  - pydot ; extra == 'recommended'
+  - python-dateutil ; extra == 'recommended'
+  - seaborn ; extra == 'recommended'
   requires_python: '>=3.9'
 - pypi: https://files.pythonhosted.org/packages/f9/77/3ac8a9bbef6c3be222c71bbe9587ff85adfa3fb85d83edba89c10823ae03/ussa1976-0.3.4-py3-none-any.whl
   name: ussa1976
