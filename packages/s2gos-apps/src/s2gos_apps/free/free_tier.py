@@ -2,7 +2,6 @@
 
 import logging
 import os
-from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import numpy as np
@@ -11,16 +10,20 @@ from s2gos_utils.coordinates import CoordinateSystem
 from s2gos_utils.io import PathRef, exists, open_dataset, to_upath
 from shapely import to_wkt
 
-from s2gos_apps.registry import registry
+from .registry import registry
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_BASE = (
-    Path(__file__).resolve().parents[3] / "example" / "precalculated_results"
-)
+#: The precalculated results on OVH Object Storage, read through credential ``s3ovh``.
+_DEFAULT_BASE = "s3://s2gos-output/free_tier"
+_DEFAULT_CID = "s3ovh"
 
-RESULTS_BASE: str = os.environ.get("S2GOS_DEMO_RESULTS") or str(_DEFAULT_BASE)
-RESULTS_CID: str | None = os.environ.get("S2GOS_DEMO_RESULTS_CID") or None
+# The default cid belongs to the default base only: overriding S2GOS_DEMO_RESULTS
+# (e.g. with a local ``precalculated_results`` folder) drops it unless set explicitly.
+RESULTS_BASE: str = os.environ.get("S2GOS_DEMO_RESULTS") or _DEFAULT_BASE
+RESULTS_CID: str | None = os.environ.get("S2GOS_DEMO_RESULTS_CID") or (
+    None if os.environ.get("S2GOS_DEMO_RESULTS") else _DEFAULT_CID
+)
 
 _Site = Literal["PNP", "Gobabeb", "Frascati", "Pisa", "Jaén"]
 _Season = Literal["December", "June"]
@@ -157,8 +160,8 @@ def _aoi_field(site: str) -> Any:
 
 
 @registry.process(
-    id="free-demo",
-    title="S2GOS Free Demo",
+    id="free-tier",
+    title="DTE-S2GOS Free tier Demo",
     outputs={
         "dataset": Field(description="Result dataset (Zarr), openable with xarray."),
         "image": Field(
@@ -167,7 +170,7 @@ def _aoi_field(site: str) -> Any:
         "metadata": Field(description="What was requested, and what was served."),
     },
 )
-def free_demo(
+def free_tier(
     site: Annotated[
         _Site,
         Field(
@@ -343,7 +346,7 @@ _BAND_COLOURS = {"B2": "#1f77b4", "B3": "#2ca02c", "B4": "#d62728", "B8": "#7f27
 
 def _unwrap(outputs, name: str) -> tuple:
     """The named output and its metadata, given any of: the client's ``JobResults``,
-    its ``.root`` dict, a plain ``free_demo()`` result dict, or just the one output
+    its ``.root`` dict, a plain ``free_tier()`` result dict, or just the one output
     named here.
 
     Every plotter takes any of these, so callers never need to remember which form a
@@ -383,7 +386,7 @@ def plot_bands(outputs, figsize=None, columns: int = 2):
     """Draw the ``brf_srf`` map of every band, one panel per band.
 
     Args:
-        outputs: A free-demo result -- JobResults, its .root dict, or just the dataset mapping.
+        outputs: A free-tier result -- JobResults, its .root dict, or just the dataset mapping.
         figsize: Figure size in inches. Defaults to 5 inches per panel.
         columns: Panels per row.
     """
@@ -488,7 +491,7 @@ def true_color(outputs, figsize=(8, 8)):
     """Draw a banded result as a true-colour composite: B4/B3/B2 as red/green/blue.
 
     Args:
-        outputs: A free-demo result -- JobResults, its .root dict, or just the dataset mapping.
+        outputs: A free-tier result -- JobResults, its .root dict, or just the dataset mapping.
         figsize: Figure size in inches.
     """
     import matplotlib.pyplot as plt
@@ -513,7 +516,7 @@ def plot_hypstar(outputs, figsize=(9, 4.5)):
     """Draw a HYPSTAR result: hemispherical-conical reflectance against wavelength.
 
     Args:
-        outputs: A free-demo result -- JobResults, its .root dict, or just the dataset reference.
+        outputs: A free-tier result -- JobResults, its .root dict, or just the dataset reference.
         figsize: Figure size in inches.
     """
     import matplotlib.pyplot as plt
@@ -540,7 +543,7 @@ def show_rgb_image(outputs, figsize=(12, 6.75)):
     """Draw the rendered image of an RGB camera result.
 
     Args:
-        outputs: A free-demo result -- JobResults, its .root dict, or just the image reference.
+        outputs: A free-tier result -- JobResults, its .root dict, or just the image reference.
         figsize: Figure size in inches, 16:9 to match the camera film.
     """
     import matplotlib.pyplot as plt
@@ -549,7 +552,7 @@ def show_rgb_image(outputs, figsize=(12, 6.75)):
     ref = _as_ref(image)
     if ref is None:
         raise ValueError(
-            "show_rgb_image() needs a whole free-demo result or its image reference, "
+            "show_rgb_image() needs a whole free-tier result or its image reference, "
             "and only the RGB camera runs render an image."
         )
 
@@ -566,7 +569,7 @@ __all__ = [
     "AOI_WKT",
     "RESULTS",
     "SITE_AOI",
-    "free_demo",
+    "free_tier",
     "lookup",
     "plot_bands",
     "plot_hypstar",
