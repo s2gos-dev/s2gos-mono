@@ -160,14 +160,27 @@ def _aoi_field(site: str) -> Any:
 
 
 @registry.process(
-    id="free-tier",
-    title="MIRROR/DTE-S2GOS Free tier Demo",
+    id="observation-simulation-demo",
+    title="Reference-site observation simulations (free tier)",
+    description=(
+            "Returns pre-computed S2GOS radiative-transfer simulation results for one of "
+            "five reference sites (Gobabeb, Frascati, Pisa, Jaén, Patagonia NP), a season "
+            "(December or June) and an instrument (Sentinel-2 MSI, HYPSTAR-XR, or an "
+            "oblique aerial RGB camera). No new simulation is run and the area of interest "
+            "is fixed per site: this is a browse-only demonstration of what the full, paid S2GOS "
+            "service produces, offered as the free-tier entry point. "
+    ),
     outputs={
-        "dataset": Field(description="Result dataset (Zarr), openable with xarray."),
+        "dataset": Field(description="Simulation result as a Zarr store, openable with xarray."),
         "image": Field(
             description="Rendered image. Only the RGB camera produces one; null otherwise."
         ),
-        "metadata": Field(description="What was requested, and what was served."),
+        "metadata": Field(
+            description=(
+                    "What was requested and what was served (site, season, instrument, "
+                    "acquisition time, dataset facts)."
+            )
+        ),
     },
 )
 def free_tier(

@@ -26,16 +26,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# eozilla from git until 0.3.0 is on PyPI, then pin "wraptile==0.3.0" "procodile==0.3.0"
-# "gavicore==0.3.0" instead. All three come from the same ref: wraptile on main requires
-# the gavicore/procodile of main. Pass a commit SHA as EOZILLA_REF for a reproducible
-# build. The branch archive needs no git in the image.
-ARG EOZILLA_REF=main
-RUN Z=https://github.com/eo-tools/eozilla/archive/${EOZILLA_REF}.zip \
-    && pip install \
-    "gavicore @ ${Z}#subdirectory=gavicore" \
-    "procodile @ ${Z}#subdirectory=procodile" \
-    "wraptile @ ${Z}#subdirectory=wraptile"
+# eozilla from PyPI. All three are pinned to the same version: wraptile requires the
+# gavicore/procodile of the same release.
+RUN pip install \
+    "gavicore==0.3.0" \
+    "procodile==0.3.0" \
+    "wraptile==0.3.0"
+
+# Previous source: the eozilla git archive, used while 0.3.0 was unreleased (it built
+# 0.3.0.dev0 from main). Kept for a quick revert, and for testing an unreleased fix:
+# uncomment this and comment out the pip install above. All three must come from the
+# same ref. Pass a commit SHA as EOZILLA_REF for a reproducible build; the branch
+# archive needs no git in the image.
+#
+# ARG EOZILLA_REF=main
+# RUN Z=https://github.com/eo-tools/eozilla/archive/${EOZILLA_REF}.zip \
+#     && pip install \
+#     "gavicore @ ${Z}#subdirectory=gavicore" \
+#     "procodile @ ${Z}#subdirectory=procodile" \
+#     "wraptile @ ${Z}#subdirectory=wraptile"
 
 # Runtime dependencies of the free tier, pinned to the versions tested in the pixi dev
 # env. zarr stays below 3: the precalculated stores are zarr v2.
@@ -62,10 +71,11 @@ RUN printf '%s\n' \
     '    credential_provider: "environment"' \
     > /app/s2gos_settings.yaml
 
-# Fail the build, not the pod, if the service cannot be imported.
+# Fail the build, not the pod, if the service cannot be imported. The id below is the
+# public process id (free_tier.py); keep the two in step — a rename fails here first.
 RUN python -c "import sys; \
 from s2gos_apps.free_tier.service import service; \
-assert list(service.process_registry) == ['free-tier'], list(service.process_registry); \
+assert list(service.process_registry) == ['observation-simulation-demo'], list(service.process_registry); \
 heavy = [m for m in sys.modules if m.startswith(('s2gos_generator', 's2gos_simulator', 'eradiate'))]; \
 assert not heavy, heavy"
 
