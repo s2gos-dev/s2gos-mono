@@ -27,6 +27,7 @@ from .buildings import BuildingsConfig
 from .material_match import SpectralMatchingConfig
 from .mesh_refinement import MeshRefinementConfig
 from .vegetation import VegetationExclusionZone, VegetationPlacementConfig
+from .water import WaterConfig
 from .ways import WaysConfig
 from ..._version import get_version
 from ...dataset import IndexedGeoTiff, Zarr, dataset_factory
@@ -256,6 +257,10 @@ class SceneGenConfig(BaseModel):
     ways: Optional[WaysConfig] = Field(
         None,
         description="Way infrastructure configuration (None disables ways). See [WaysConfig][s2gos_generator.core.config.ways.WaysConfig].",
+    )
+    water: Optional[WaterConfig] = Field(
+        None,
+        description="Water body configuration (None disables water). See [WaterConfig][s2gos_generator.core.config.water.WaterConfig].",
     )
     spectral_matching: Optional[SpectralMatchingConfig] = Field(
         None,

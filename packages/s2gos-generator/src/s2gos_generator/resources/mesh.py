@@ -34,6 +34,18 @@ def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
     refinement_cfg = ctx.config.mesh_refinement
 
     if refinement_cfg is not None and refinement_cfg.enabled:
+        if ctx.config.water is not None and ctx.config.water.enabled:
+            from ..processors.water import smooth_dem_along_linear_bodies
+
+            linear_bodies = [b for b in ctx.water_bodies if b.centerline is not None]
+            if linear_bodies:
+                dem_data = smooth_dem_along_linear_bodies(
+                    dem_data,
+                    linear_bodies,
+                    smooth_window_m=ctx.config.water.centerline_smoothing_window_m,
+                    outlier_reject_m=ctx.config.water.outlier_reject_m,
+                )
+
         operations: list[TerraformOperation] = []
         if ctx.config.ways is not None and ctx.config.ways.enabled:
             from ..processors.ways import build_way_terraform_operations
@@ -45,6 +57,24 @@ def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
                     transition_buffer_m=refinement_cfg.transition_buffer_m,
                     gradient_threshold=ctx.config.ways.mesh_gradient_threshold,
                     thin_way_skip_m=ctx.config.ways.mesh_thin_way_skip_m,
+                )
+            )
+
+        if ctx.config.water is not None and ctx.config.water.enabled:
+            from ..processors.water import build_water_terraform_operations
+
+            operations.extend(
+                build_water_terraform_operations(
+                    ctx.water_bodies,
+                    dem_data,
+                    transition_buffer_m=refinement_cfg.transition_buffer_m,
+                    gradient_threshold=ctx.config.water.mesh_gradient_threshold,
+                    thin_water_skip_m=ctx.config.water.mesh_thin_water_skip_m,
+                    erosion_margin_m=ctx.config.water.erosion_margin_m,
+                    outlier_reject_m=ctx.config.water.outlier_reject_m,
+                    default_sea_level_m=ctx.config.water.default_sea_level_m,
+                    dem_resolution_m=ctx.dem_resolution_m,
+                    drop_m=ctx.config.water.drop_m,
                 )
             )
 
