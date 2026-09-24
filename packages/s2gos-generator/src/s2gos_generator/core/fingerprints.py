@@ -113,6 +113,19 @@ class ResourceFingerprints:
         }
 
     @staticmethod
+    def _target_water(config) -> dict:
+        return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "aoi_size_km": config.location.aoi_size_km,
+            # Landcover completion reads landcover; reference-elevation
+            # sampling reads the DEM — both at these resolutions.
+            "landcover_resolution_m": config.landcover_resolution_m,
+            "dem_resolution_m": config.dem_resolution_m,
+            "water": config.water.model_dump() if config.water else None,
+        }
+
+    @staticmethod
     def _target_buildings(config) -> dict:
         building_tiles = getattr(config.data_sources, "building_tiles", None)
         return {

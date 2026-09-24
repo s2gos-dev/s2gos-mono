@@ -9,7 +9,7 @@ from shapely.geometry import box
 from upath import UPath
 
 from .assets import SceneAssets
-from .config import SceneGenConfig, WaysConfig
+from .config import SceneGenConfig
 
 
 class SceneResourceContext:
@@ -71,6 +71,8 @@ class SceneResourceContext:
         self._ways: Optional[list] = None
         self._building_footprints: Optional[list] = None
         self._way_polygons_by_material: Optional[dict] = None
+        self._water_bodies: Optional[list] = None
+        self._water_polygons_by_material: Optional[dict] = None
         self._matched_materials: Optional[dict] = None
 
     @property
@@ -190,6 +192,8 @@ class SceneResourceContext:
         if self._way_polygons_by_material is None:
             from shapely.ops import unary_union
 
+            from .config.ways import WaysConfig
+
             by_mat: dict[str, list] = {}
             for way in self.ways:
                 poly = way.centerline.buffer(way.width / 2, cap_style="flat")
@@ -204,6 +208,65 @@ class SceneResourceContext:
                 mat: unary_union(by_mat[mat]) for mat in ordered_mats
             }
         return self._way_polygons_by_material
+
+    def _load_water_bodies_from_sidecar(self) -> list:
+        from ..processors.water import water_bodies_from_sidecar
+
+        if self.assets.water_file is None:
+            return []
+        try:
+            with open(str(self.assets.water_file), "r") as f:
+                data = json.load(f)
+            return water_bodies_from_sidecar(data)
+        except (json.JSONDecodeError, KeyError) as exc:
+            logging.warning("Failed to load water bodies from sidecar: %s", exc)
+            return []
+
+    @property
+    def water_bodies(self) -> list:
+        """All water bodies, lazily loaded from the water sidecar."""
+        if self._water_bodies is None:
+            self._water_bodies = self._load_water_bodies_from_sidecar()
+        return self._water_bodies
+
+    @property
+    def water_polygons_by_material(self) -> dict:
+        """Merged water body footprints per material, derived from the water bodies list.
+
+        Computed once and cached. Each value is the unary_union of all body
+        polygons for that material — the geometry the texture painter needs.
+        Unlike ways, no buffering step is needed here since
+        ``WaterBody.geometry`` is already the full footprint.
+
+        Wherever a way crosses a water body (a bridge, out of scope to model
+        explicitly) the way footprint is subtracted from the water footprint
+        here, so the texture painter leaves the already-painted way material
+        showing through instead of overwriting it with water. This only
+        affects the *texture* footprint -- mesh elevation is computed from
+        ``water_bodies`` directly and is unaffected, so the water body's
+        flattened elevation still applies under the way at the crossing.
+        """
+        if self._water_polygons_by_material is None:
+            from shapely.ops import unary_union
+
+            by_mat: dict[str, list] = {}
+            for body in self.water_bodies:
+                by_mat.setdefault(body.material, []).append(body.geometry)
+            merged = {mat: unary_union(polys) for mat, polys in by_mat.items()}
+
+            way_polys = [
+                p
+                for p in self.way_polygons_by_material.values()
+                if p is not None and not p.is_empty
+            ]
+            if way_polys:
+                way_union = unary_union(way_polys)
+                merged = {
+                    mat: poly.difference(way_union) for mat, poly in merged.items()
+                }
+
+            self._water_polygons_by_material = merged
+        return self._water_polygons_by_material
 
     def _load_matched_materials_sidecar(self) -> dict:
         from ..processors.spectral.diversify import matched_materials_from_sidecar

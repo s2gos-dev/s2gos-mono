@@ -5,7 +5,13 @@ seasonal input); `overlays` provides the `apply_*` primitives that paint materia
 ways onto that texture. All three read/write the same selection-texture artifact.
 """
 
-from .overlays import apply_region_materials, apply_ways, apply_ways_to_preview
+from .overlays import (
+    apply_region_materials,
+    apply_ways,
+    apply_ways_to_preview,
+    strip_steep_water_pixels,
+    strip_unvetted_water_pixels,
+)
 from .snow import calculate_snow_probability_map
 from .terrain_material import TerrainMaterialGenerator
 
@@ -14,5 +20,7 @@ __all__ = [
     "apply_region_materials",
     "apply_ways",
     "apply_ways_to_preview",
+    "strip_steep_water_pixels",
+    "strip_unvetted_water_pixels",
     "calculate_snow_probability_map",
 ]

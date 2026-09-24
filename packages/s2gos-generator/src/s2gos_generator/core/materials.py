@@ -56,6 +56,10 @@ def build_material_index_map(ctx: SceneResourceContext) -> dict[str, int]:
     overlay_candidates = set(r.material_name for r in ctx.config.material_regions)
     if ctx.config.ways is not None and ctx.config.ways.enabled:
         overlay_candidates |= way_material_candidates(ctx.config.ways)
+    if ctx.config.water is not None and ctx.config.water.enabled:
+        # only if a user sets a non-default WaterConfig.default_material.
+        overlay_candidates.add(ctx.config.water.default_material)
+        overlay_candidates.add(ctx.config.water.landcover_leak_fallback_material)
 
     assert landcover_map, "landcover_map must not be empty"
     next_index = max(landcover_map.values()) + 1
