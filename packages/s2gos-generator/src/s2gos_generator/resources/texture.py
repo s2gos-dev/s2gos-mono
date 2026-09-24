@@ -18,6 +18,8 @@ from ..processors.terrain_texture import (
     apply_region_materials,
     apply_ways,
     apply_ways_to_preview,
+    strip_steep_water_pixels,
+    strip_unvetted_water_pixels,
 )
 
 
@@ -131,6 +133,7 @@ def _generate_texture(
         dirty |= changed
 
     way_mask: Optional[np.ndarray] = None
+    way_snapshot: Optional[np.ndarray] = None
     if ctx.dependency_outputs.get("target_ways") is not None and area_name == "target":
         texture_2d, way_mask = apply_ways(
             texture_2d,
@@ -142,12 +145,88 @@ def _generate_texture(
         )
         if way_mask is not None:
             dirty = True
+            # Snapshot every pixel ways touched so it can be restored after
+            # water paints -- see note below on why water can otherwise
+            # reclaim a rim of it back.
+            way_snapshot = texture_2d.copy()
+
+    water_mask: Optional[np.ndarray] = None
+    if ctx.dependency_outputs.get("target_water") is not None and area_name == "target":
+        water_cfg = ctx.config.water
+        water_material_idx = material_index_map.get(water_cfg.default_material)
+        fallback_idx = material_index_map.get(
+            water_cfg.landcover_leak_fallback_material
+        )
+        if water_material_idx is not None and fallback_idx is not None:
+            # Water-body geometry (OSM + landcover-completion, already vetted
+            # for slope/area) is the sole source of truth for water texture
+            # footprint once water is enabled -- strip any raw per-pixel
+            # landcover water classification that falls outside every vetted
+            # body, before painting the bodies themselves.
+            texture_2d, stripped = strip_unvetted_water_pixels(
+                texture_2d,
+                landcover_path,
+                ctx.water_polygons_by_material,
+                water_material_idx,
+                fallback_idx,
+                ctx.config.texture_resolution_m,
+                area_name,
+            )
+            dirty |= stripped
+
+        # apply_ways() is fully generic over any dict[material_name, Polygon] --
+        # reused as-is for water body polygons, same rasterize-and-paint logic.
+        texture_2d, water_mask = apply_ways(
+            texture_2d,
+            landcover_path,
+            ctx.water_polygons_by_material,
+            material_index_map,
+            ctx.config.texture_resolution_m,
+            area_name,
+        )
+        if water_mask is not None:
+            dirty = True
+
+            if water_material_idx is not None and dem_file_path is not None:
+                # Repaint water pixels that are too steep before the (unrelated) road-restore step below.
+                texture_2d, steep_stripped = strip_steep_water_pixels(
+                    texture_2d,
+                    dem_file_path,
+                    landcover_path,
+                    water_mask,
+                    water_material_idx,
+                    np.tan(np.radians(water_cfg.max_water_render_slope_deg)),
+                    ctx.config.texture_resolution_m,
+                    area_name,
+                )
+                dirty |= steep_stripped
+            elif water_material_idx is not None:
+                logging.warning(
+                    "Water: DEM not available -- skipping steep-water repaint (%s texture)",
+                    area_name,
+                )
+
+        if way_mask is not None and way_snapshot is not None:
+            # ctx.water_polygons_by_material already vector-subtracts the
+            # way footprint (see SceneResourceContext.water_polygons_by_material),
+            # but apply_ways() rasterizes each polygon independently with
+            # all_touched=True -- that inflates each polygon's raster footprint
+            # by up to ~1px along its boundary, independently of the other, so
+            # water's own raster can still reclaim a thin rim from the way's
+            # raster right at a crossing even though the vector geometries
+            # don't overlap. Restore every pixel ways touched to what ways
+            # painted there, so a way never loses width to water.
+            texture_2d[way_mask] = way_snapshot[way_mask]
 
     if dirty:
         Image.fromarray(texture_2d, mode="L").save(selection_texture_path)
 
     if way_mask is not None and preview_texture_path is not None:
         apply_ways_to_preview(preview_texture_path, way_mask)
+    if water_mask is not None and preview_texture_path is not None:
+        apply_ways_to_preview(
+            preview_texture_path, water_mask, debug_color=(0, 100, 200)
+        )
 
     return selection_texture_path, preview_texture_path
 
@@ -233,7 +312,9 @@ def _generate_area_texture(
         logging.warning("%s landcover file not found from dependencies", spec.name)
         return None
 
-    dem_file_path = season_month = snow_material_index = snow_thermoprops = None
+    # DEM is resolved independent of snow -- the steep-water repaint pass below needs it too.
+    dem_file_path = ctx.dependency_outputs.get(spec.dem_key) if spec.dem_key else None
+    season_month = snow_material_index = snow_thermoprops = None
     random_seed = None
     if spec.applies_snow and ctx.config.snow is not None:
         (

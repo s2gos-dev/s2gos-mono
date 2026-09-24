@@ -426,6 +426,71 @@ class TestWaysSidecarIntegration:
         assert materials == ["asphalt", "gravel_road"]
 
 
+def _write_ways_sidecar_multi_material(path, materials_in_order):
+    """A ways.json with one way per material, laid out in the given
+    (sidecar) order -- independent of WaysConfig.MATERIAL_PAINT_PRIORITY."""
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "way_layers": [
+                    {
+                        "material_name": mat,
+                        "ways": [
+                            {
+                                "centerline": mapping(
+                                    LineString([(0.0, 0.0), (0.0, 100.0)])
+                                ),
+                                "width": 7.0,
+                            }
+                        ],
+                    }
+                    for mat in materials_in_order
+                ],
+            }
+        )
+    )
+
+
+class TestWayPolygonsPaintOrder:
+    """apply_ways() paints way_polygons_by_material.items() in dict order,
+    overwriting earlier materials with later ones at shared pixels -- so the
+    dict must be ordered by real-world paint priority, not sidecar order."""
+
+    def test_dict_order_follows_material_paint_priority_not_sidecar_order(
+        self, make_minimal_config, tmp_path
+    ):
+        from s2gos_generator.core.context import SceneResourceContext
+
+        # Sidecar lists gravel_road before asphalt -- the opposite of paint
+        # priority -- to prove the property doesn't just preserve input order.
+        sidecar = tmp_path / "ways.json"
+        _write_ways_sidecar_multi_material(
+            sidecar, ["gravel_road", "grassland", "asphalt", "baresoil"]
+        )
+        ctx = SceneResourceContext(make_minimal_config())
+        ctx.assets.ways_file = sidecar
+
+        ordered = list(ctx.way_polygons_by_material.keys())
+        assert ordered == [
+            m for m in WaysConfig.MATERIAL_PAINT_PRIORITY if m in ordered
+        ]
+        # asphalt (highest priority) must be painted last -- i.e. it wins
+        # any overlap with the other, lower-priority materials.
+        assert ordered[-1] == "asphalt"
+
+    def test_unknown_material_painted_last(self, make_minimal_config, tmp_path):
+        from s2gos_generator.core.context import SceneResourceContext
+
+        sidecar = tmp_path / "ways.json"
+        _write_ways_sidecar_multi_material(sidecar, ["custom_material", "asphalt"])
+        ctx = SceneResourceContext(make_minimal_config())
+        ctx.assets.ways_file = sidecar
+
+        ordered = list(ctx.way_polygons_by_material.keys())
+        assert ordered[-1] == "custom_material"
+
+
 class TestWaysWiring:
     """`target_ways` is registered only when ways are enabled."""
 

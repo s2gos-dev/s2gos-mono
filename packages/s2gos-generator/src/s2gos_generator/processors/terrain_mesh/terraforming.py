@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 import numpy as np
 import shapely
 from scipy.ndimage import map_coordinates
-from shapely.geometry import LineString, MultiLineString
+from shapely.geometry import LineString, MultiLineString, Polygon
 from shapely.strtree import STRtree
 
 
@@ -87,8 +87,10 @@ class WayFlattenOperation:
         self._centerline = centerline
         self._half_width = half_width
         self._buffer_m = buffer_m
+        # cap_style="round" here, Round caps match the distance test's
+        # own (naturally round) endpoint behavior.
         self._influence_zone: shapely.Geometry = shapely.buffer(
-            centerline, half_width + buffer_m, cap_style="flat"
+            centerline, half_width + buffer_m, cap_style="round"
         )
         # Prepare once at construction — prepare is idempotent and fast
         shapely.prepare(self._influence_zone)
@@ -170,6 +172,101 @@ class WayFlattenOperation:
         return nearest_xy, alpha, alpha > 0
 
 
+class WaterFlattenOperation:
+    """Flatten terrain under a single water body footprint."""
+
+    def __init__(
+        self,
+        polygon: Polygon,
+        buffer_m: float,
+        anchor_xy: tuple[float, float],
+        reference_z: float,
+    ) -> None:
+        self._polygon = polygon
+        self._buffer_m = buffer_m
+        self._anchor_xy = np.array([anchor_xy], dtype=np.float64)
+        self._reference_z = reference_z
+        self._influence_zone: shapely.Geometry = shapely.buffer(polygon, buffer_m)
+        # Prepare once at construction — prepare is idempotent and fast
+        shapely.prepare(self._influence_zone)
+
+    @property
+    def influence_zone(self) -> shapely.Geometry:
+        return self._influence_zone
+
+    @property
+    def reference_z(self) -> float:
+        """The precomputed robust reference elevation for this body."""
+        return self._reference_z
+
+    def apply(
+        self,
+        vertices: np.ndarray,
+        elevation_fn: Callable[[np.ndarray], np.ndarray],
+    ) -> np.ndarray:
+        """Apply flattening.  For single-op use; prefer :func:`apply_way_flatten_batch`
+        when applying multiple operations to avoid recreating shapely points per body."""
+        xy = vertices[:, :2]
+        points = shapely.points(xy[:, 0], xy[:, 1])
+        inside_mask = shapely.intersects(self._influence_zone, points)
+        inside_indices = np.nonzero(inside_mask)[0]
+
+        if inside_indices.size == 0:
+            return vertices
+
+        self.apply_to_subset(
+            vertices, inside_indices, points[inside_indices], elevation_fn
+        )
+        return vertices
+
+    def apply_to_subset(
+        self,
+        vertices: np.ndarray,
+        vertex_indices: np.ndarray,
+        inside_points,  # shapely geometry array
+        elevation_fn: Callable[[np.ndarray], np.ndarray],
+    ) -> None:
+        """Apply flattening for a pre-filtered subset of vertices (in-place).
+
+        Called by both :meth:`apply` and :func:`apply_way_flatten_batch`.
+        """
+        nearest_xy, alpha, mask_apply = self._geometry_and_alpha(
+            vertex_indices, inside_points
+        )
+        if not mask_apply.any():
+            return
+        ref_z = elevation_fn(nearest_xy)
+        apply_indices = vertex_indices[mask_apply]
+        a = alpha[mask_apply]
+        vertices[apply_indices, 2] = (
+            a * ref_z[mask_apply] + (1.0 - a) * vertices[apply_indices, 2]
+        )
+
+    def _geometry_and_alpha(
+        self,
+        vertex_indices: np.ndarray,
+        inside_points,  # shapely geometry array
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Compute the (repeated) anchor XY, blend weights, and apply mask.
+
+        Returns:
+            nearest_xy:  (M, 2) XY coordinates
+            alpha:       (M,) blend weight in [0, 1].
+            mask_apply:  (M,) boolean; True where alpha > 0.
+        """
+        dist = shapely.distance(self._polygon, inside_points)
+
+        alpha = np.zeros(len(vertex_indices), dtype=np.float64)
+        alpha[dist <= 0.0] = 1.0
+
+        if self._buffer_m > 0:
+            mask_blend = (dist > 0.0) & (dist <= self._buffer_m)
+            alpha[mask_blend] = 1.0 - dist[mask_blend] / self._buffer_m
+
+        nearest_xy = np.tile(self._anchor_xy, (len(vertex_indices), 1))
+        return nearest_xy, alpha, alpha > 0
+
+
 def apply_way_flatten_batch(
     vertices: np.ndarray,
     operations: list[WayFlattenOperation],
@@ -179,7 +276,8 @@ def apply_way_flatten_batch(
 
     Args:
         vertices:     (N, 3) mesh vertex array — modified in-place.
-        operations:   List of :class:`WayFlattenOperation` to apply.
+        operations:   List of :class:`TerraformOperation` (e.g.
+                      :class:`WayFlattenOperation`, :class:`WaterFlattenOperation`) to apply.
         elevation_fn: ``(M, 2) XY -> (M,) Z`` elevation sampler.
 
     Returns:
