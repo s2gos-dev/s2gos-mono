@@ -167,17 +167,25 @@ class SceneResourceContext:
 
         Computed once and cached. Each value is the unary_union of all buffered
         centerlines for that material — the geometry the texture painter needs,
-        without storing it redundantly in the sidecar.
+        without storing it redundantly in the sidecar. 
         """
         if self._way_polygons_by_material is None:
             from shapely.ops import unary_union
+
+            from .config.ways import WaysConfig
 
             by_mat: dict[str, list] = {}
             for way in self.ways:
                 poly = way.centerline.buffer(way.width / 2, cap_style="flat")
                 by_mat.setdefault(way.material, []).append(poly)
+
+            priority = WaysConfig.MATERIAL_PAINT_PRIORITY
+            ordered_mats = sorted(
+                by_mat.keys(),
+                key=lambda m: priority.index(m) if m in priority else len(priority),
+            )
             self._way_polygons_by_material = {
-                mat: unary_union(polys) for mat, polys in by_mat.items()
+                mat: unary_union(by_mat[mat]) for mat in ordered_mats
             }
         return self._way_polygons_by_material
 

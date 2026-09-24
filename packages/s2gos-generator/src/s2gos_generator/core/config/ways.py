@@ -150,6 +150,15 @@ class WaysConfig(BaseModel):
         "grass_paver": "grassland",
     }
 
+    # Paint-order priority for way materials, lowest to highest.
+    MATERIAL_PAINT_PRIORITY: ClassVar[list[str]] = [
+        "grassland",
+        "baresoil",
+        "gravel_road",
+        "concrete",
+        "asphalt",
+    ]
+
     enabled: bool = Field(True, description="Enable way (road and railway) processing")
     source: Literal["overpass", "file"] = Field(
         "overpass", description="Data source for way geometry"
