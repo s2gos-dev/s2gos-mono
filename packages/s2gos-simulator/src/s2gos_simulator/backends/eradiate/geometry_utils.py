@@ -114,12 +114,17 @@ class GeometryUtils:
         return origin, target
 
     def calculate_target_from_angles(
-        self, view: AngularFromOriginViewing
+        self,
+        view: AngularFromOriginViewing,
+        origin: Optional[list[float]] = None,
     ) -> tuple[list[float], list[float]]:
         """Calculate a target point and direction vector from angular viewing.
 
         Args:
             view: AngularFromOriginViewing object with origin, zenith, and azimuth
+            origin: Absolute origin to aim from. Pass the terrain-adjusted origin when
+                ``view.terrain_relative_height`` is set, since ``view.origin`` still holds
+                the terrain-relative z. Defaults to ``view.origin``.
 
         Returns:
             A tuple containing (target_position, direction_vector).
@@ -135,7 +140,7 @@ class GeometryUtils:
             ]
         )
 
-        origin_vec = np.array(view.origin)
+        origin_vec = np.array(view.origin if origin is None else origin)
         target_vec = origin_vec + direction * 1000.0
 
         return target_vec.tolist(), direction.tolist()
@@ -187,7 +192,7 @@ class GeometryUtils:
         )
 
         if isinstance(viewing, AngularFromOriginViewing) and target is None:
-            target, _ = self.calculate_target_from_angles(viewing)
+            target, _ = self.calculate_target_from_angles(viewing, origin)
 
         return origin, target
 

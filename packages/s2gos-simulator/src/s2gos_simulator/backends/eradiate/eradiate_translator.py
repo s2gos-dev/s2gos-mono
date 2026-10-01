@@ -409,6 +409,7 @@ class EradiateTranslator:
         }
 
         if hasattr(view, "relative_to_asset") and view.relative_to_asset is not None:
+            view = view.model_copy(deep=True)
             asset_name = self._resolve_asset_reference(
                 view.relative_to_asset, asset_transforms
             )
@@ -488,7 +489,7 @@ class EradiateTranslator:
 
             elif isinstance(view, AngularFromOriginViewing):
                 target, direction = self.geometry_utils.calculate_target_from_angles(
-                    view
+                    view, origin
                 )
                 base_measure["target"] = target
 

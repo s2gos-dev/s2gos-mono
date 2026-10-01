@@ -3,7 +3,9 @@ import math
 import numpy as np
 import pytest
 
-from s2gos_simulator.backends.eradiate.eradiate_translator import EradiateTranslator
+from s2gos_simulator.backends.eradiate.eradiate_translator import (
+    EradiateTranslator,
+)
 from s2gos_simulator.backends.eradiate.geometry_utils import (
     GeometryUtils,
     sanitize_sensor_id,
@@ -443,6 +445,38 @@ class TestTerrainRelativeAdjustment:
 
         assert result["origin"][2] == pytest.approx(6.0)
         assert result["target"][2] == pytest.approx(5.0)
+
+    def test_angular_from_origin_terrain_relative_keeps_direction(
+        self, translator, minimal_scene, scene_dir, monkeypatch
+    ):
+        # The target must be built from the terrain-adjusted origin; otherwise the
+        # terrain elevation leaks into the pointing direction.
+        monkeypatch.setattr(
+            translator.geometry_utils,
+            "query_terrain_elevation",
+            lambda *args, **kwargs: 500.0,
+        )
+        zenith, azimuth = 120.0, 337.0
+        sensor = GroundSensor(
+            id="hyp",
+            instrument=GroundInstrumentType.HYPSTAR,
+            viewing=AngularFromOriginViewing(
+                origin=[0.0, 0.0, 10.0],
+                zenith=zenith,
+                azimuth=azimuth,
+                terrain_relative_height=True,
+            ),
+        )
+        result = translator.translate_ground_sensor(
+            sensor, minimal_scene, scene_dir, {}
+        )
+
+        assert result["origin"] == pytest.approx([0.0, 0.0, 510.0])
+        direction = np.array(result["target"]) - np.array(result["origin"])
+        direction /= np.linalg.norm(direction)
+        zen, az = np.deg2rad(zenith), np.deg2rad(azimuth)
+        expected = [np.sin(zen) * np.cos(az), np.sin(zen) * np.sin(az), np.cos(zen)]
+        assert direction == pytest.approx(expected, abs=1e-9)
 
     def test_mdistant_point_target_terrain_adjusted(
         self, translator, minimal_scene, scene_dir, monkeypatch
