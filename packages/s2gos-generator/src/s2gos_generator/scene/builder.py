@@ -7,15 +7,18 @@ from s2gos_utils.scene.materials import Material, get_landcover_mapping, load_ma
 from upath import UPath
 
 
-def _convert_atmosphere_config_to_dict(atmosphere_config) -> dict:
+def _convert_atmosphere_config_to_dict(atmosphere_config) -> Optional[dict]:
     """Convert to scene description dictionary format.
 
     Args:
         atmosphere_config: Atmosphere config object from scene generation configuration
 
     Returns:
-        Dictionary format suitable for scene description
+        Dictionary format suitable for scene description, or None when no
+        atmosphere is configured
     """
+    if atmosphere_config is None:
+        return None
 
     base_dict = {
         "boa": atmosphere_config.boa,

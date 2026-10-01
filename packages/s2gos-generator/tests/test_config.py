@@ -22,7 +22,9 @@ from s2gos_generator.core.config import (
     UserAssets,
     VegetationPlacementConfig,
     VegetationSpecies,
+    create_molecular_atmosphere_config,
 )
+from s2gos_generator.scene.builder import _convert_atmosphere_config_to_dict
 
 # Apply mock_path_validation to every test in this file
 pytestmark = pytest.mark.usefixtures("mock_path_validation")
@@ -278,3 +280,15 @@ def test_scene_config_round_trip(tmp_path):
 
     assert reconstructed.scene_name == original.scene_name
     assert reconstructed.location.center_lat == original.location.center_lat
+    assert original.atmosphere is None
+    assert reconstructed.atmosphere is None
+
+
+def test_no_atmosphere_converts_to_none():
+    assert _convert_atmosphere_config_to_dict(None) is None
+
+
+def test_molecular_atmosphere_helper():
+    atmosphere = create_molecular_atmosphere_config()
+    assert atmosphere.details.type == "molecular"
+    assert _convert_atmosphere_config_to_dict(atmosphere)["type"] == "molecular"

@@ -43,14 +43,13 @@ class AtmosphereBuilder:
             Geometry dictionary with TOA altitude
         """
         atmosphere = scene_description.atmosphere
-        toa = atmosphere["toa"]
+        if not atmosphere:
+            return {"type": "plane_parallel"}
 
-        geometry = {
+        return {
             "type": "plane_parallel",
-            "toa_altitude": toa,
+            "toa_altitude": atmosphere["toa"],
         }
-
-        return geometry
 
     def create_atmosphere_from_config(self, scene_description: SceneDescription):
         """Create atmosphere based on scene description format.
@@ -59,12 +58,17 @@ class AtmosphereBuilder:
             scene_description: Scene description containing atmosphere config
 
         Returns:
-            Eradiate atmosphere object (MolecularAtmosphere, HomogeneousAtmosphere, or HeterogeneousAtmosphere)
+            Eradiate atmosphere object (MolecularAtmosphere, HomogeneousAtmosphere, or
+            HeterogeneousAtmosphere), or None if the scene has no atmosphere
 
         Raises:
             ValueError: If atmosphere type is unknown or not specified
         """
         atmosphere = scene_description.atmosphere
+        if not atmosphere:
+            logger.info("No atmosphere configured, running without atmosphere")
+            return None
+
         atmosphere_type = atmosphere["type"] if "type" in atmosphere else None
 
         if not atmosphere_type:

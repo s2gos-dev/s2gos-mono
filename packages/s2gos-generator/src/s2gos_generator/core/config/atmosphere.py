@@ -337,18 +337,6 @@ class AtmosphereConfig(BaseModel):
         return self
 
 
-def _default_atmosphere_config() -> AtmosphereConfig:
-    """Create a default atmosphere configuration matching eradiate defaults."""
-    return AtmosphereConfig(
-        details=MolecularAtmosphereConfig(
-            thermoprops=ThermophysicalConfig(identifier="afgl_1986-us_standard"),
-            absorption_database=None,  # No absorption by default
-            has_absorption=False,  # Match eradiate sigma_a=0.0 default
-            has_scattering=True,  # Air scattering like eradiate sigma_s default
-        ),
-    )
-
-
 def create_molecular_atmosphere_config(
     identifier: str = "afgl_1986-us_standard",
     altitude_max: float = 120000.0,
