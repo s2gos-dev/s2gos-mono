@@ -67,9 +67,9 @@ def _filter_by_buildings(
 ) -> List[Dict[str, Any]]:
     """Exclude vegetation positions that fall on or near a building footprint.
 
-    Buildings have priority over vegetation: any instance whose point lies inside
-    a footprint (grown by ``buffer_m``) is dropped. ``intersects`` is
-    boundary-safe, so a point exactly on a footprint edge is excluded.
+    Buildings have priority over vegetation: any instance within ``buffer_m`` of a
+    footprint is dropped (exact distance, so invalid footprints are handled and points
+    on an edge are excluded).
 
     Args:
         instances: Vegetation placement dicts with a ``"position"`` (x, y).
@@ -82,13 +82,10 @@ def _filter_by_buildings(
     if not instances or not footprints:
         return instances
 
-    polys = (
-        [f.buffer(buffer_m) for f in footprints] if buffer_m > 0 else list(footprints)
-    )
-    tree = STRtree(polys)
+    tree = STRtree(footprints)
     xy = np.array([[inst["position"][0], inst["position"][1]] for inst in instances])
     points = shapely.points(xy[:, 0], xy[:, 1])
-    pt_idx, _ = tree.query(points, predicate="intersects")
+    pt_idx, _ = tree.query(points, predicate="dwithin", distance=buffer_m)
     keep = np.ones(len(instances), dtype=bool)
     keep[pt_idx] = False
 

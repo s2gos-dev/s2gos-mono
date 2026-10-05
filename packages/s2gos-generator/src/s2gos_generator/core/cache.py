@@ -133,7 +133,8 @@ def _validate_vegetation_files(
 
 
 def _validate_building_files(output_dir: UPath, asset_paths: Dict[str, UPath]) -> bool:
-    """Check that every .ply mesh referenced in buildings.yml exists."""
+    """Check that every .ply mesh referenced in buildings.yml exists, and that the
+    footprint sidecar exists with the current schema version."""
     sidecar = asset_paths.get("buildings_objects_file")
     if sidecar is None or not sidecar.exists():
         return False
@@ -143,6 +144,16 @@ def _validate_building_files(output_dir: UPath, asset_paths: Dict[str, UPath]) -
         return False
     try:
         from s2gos_utils.io.paths import open_file
+
+        from ..processors.buildings.footprints import SIDECAR_VERSION
+
+        with open_file(footprints, "r") as f:
+            version = json.load(f).get("version", SIDECAR_VERSION)
+        if version != SIDECAR_VERSION:
+            logging.info(
+                "Cache miss: target_buildings (footprint sidecar version %s)", version
+            )
+            return False
 
         with open_file(sidecar, "r") as f:
             data = yaml.safe_load(f)

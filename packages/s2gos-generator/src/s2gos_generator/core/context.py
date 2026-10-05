@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Dict, List, Optional
 
+from s2gos_utils.io.paths import open_file
 from shapely.geometry import box
 from upath import UPath
 
@@ -167,13 +168,8 @@ class SceneResourceContext:
 
         if self.assets.building_footprints_file is None:
             return []
-        try:
-            with open(str(self.assets.building_footprints_file), "r") as f:
-                data = json.load(f)
-            return footprints_from_sidecar(data)
-        except (json.JSONDecodeError, OSError) as exc:
-            logging.warning("Failed to load building footprints from sidecar: %s", exc)
-            return []
+        with open_file(self.assets.building_footprints_file, "r") as f:
+            return footprints_from_sidecar(json.load(f))
 
     @property
     def building_footprints(self) -> list:

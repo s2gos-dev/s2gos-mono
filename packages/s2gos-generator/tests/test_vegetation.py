@@ -271,6 +271,17 @@ class TestFilterByBuildings:
     def test_noop_when_no_instances(self):
         assert _filter_by_buildings([], _footprint()) == []
 
+    def test_invalid_footprint_fully_excluded(self):
+        """A self-intersecting (bow-tie) footprint excludes trees in both lobes."""
+        from shapely.geometry import Polygon
+
+        bowtie = Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
+        left, right = _instance(2.0, 5.0), _instance(8.0, 5.0)
+        outside = _instance(50.0, 50.0)
+
+        result = _filter_by_buildings([left, right, outside], [bowtie])
+        assert result == [outside]
+
 
 class TestBatchElevationLookup:
     def _make_dem(self):
