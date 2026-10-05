@@ -11,9 +11,6 @@ from s2gos_utils.io.paths import expand_mapper
 from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import distance_transform_edt
 
-# Clearance in metres around every building footprint before excluding vegetation.
-_BUILDING_EXCLUSION_BUFFER_M = 1.0
-
 
 def _filter_by_ways(
     instances: List[Dict[str, Any]],
@@ -63,23 +60,24 @@ def _filter_by_buildings(
     instances: List[Dict[str, Any]],
     footprints: list,
     *,
-    buffer_m: float = _BUILDING_EXCLUSION_BUFFER_M,
+    enabled: bool,
+    buffer_m: float,
 ) -> List[Dict[str, Any]]:
     """Exclude vegetation positions that fall on or near a building footprint.
 
-    Buildings have priority over vegetation: any instance within ``buffer_m`` of a
-    footprint is dropped (exact distance, so invalid footprints are handled and points
-    on an edge are excluded).
+    Any instance within ``buffer_m`` of a footprint is dropped (exact distance, so
+    invalid footprints are handled and points on an edge are excluded).
 
     Args:
         instances: Vegetation placement dicts with a ``"position"`` (x, y).
         footprints: Scene-local building footprint polygons.
-        buffer_m: Extra clearance in metres grown around each footprint.
+        enabled: When False, ``instances`` is returned unchanged.
+        buffer_m: Clearance in metres around each footprint.
     """
     import shapely
     from shapely.strtree import STRtree
 
-    if not instances or not footprints:
+    if not enabled or not instances or not footprints:
         return instances
 
     tree = STRtree(footprints)

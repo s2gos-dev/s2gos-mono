@@ -91,9 +91,12 @@ def process_target_vegetation(
         buffer_m=way_exclusion.buffer_m,
     )
 
-    # Buildings always have priority over vegetation.
+    building_exclusion = ctx.config.vegetation_placement.building_exclusion
     vegetation_instances = _filter_by_buildings(
-        vegetation_instances, ctx.building_footprints
+        vegetation_instances,
+        ctx.building_footprints,
+        enabled=building_exclusion.enabled,
+        buffer_m=building_exclusion.buffer_m,
     )
 
     if not vegetation_instances:
