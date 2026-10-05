@@ -6,6 +6,7 @@ from s2gos_generator.processors.vegetation import (
     _apply_spacing_filter_optimized,
     _batch_elevation_lookup,
     _calculate_max_instances_per_pixel,
+    _filter_by_buildings,
     _filter_by_exclusion_zones,
     _filter_by_ways,
     _generate_pixel_vegetation_positions,
@@ -232,6 +233,63 @@ class TestFilterByWays:
     def test_noop_when_no_ways(self):
         instances = [_instance(0.0, 0.0)]
         assert _filter_by_ways(instances, [], enabled=True, buffer_m=0.0) is instances
+
+
+def _footprint():
+    """A single 20 m x 20 m square building centred on the origin."""
+    from shapely.geometry import Polygon
+
+    return [Polygon([(-10, -10), (10, -10), (10, 10), (-10, 10)])]
+
+
+class TestFilterByBuildings:
+    def test_excludes_positions_inside_footprint_keeps_others(self):
+        inside = _instance(0.0, 0.0)
+        edge = _instance(10.0, 0.0)  # exactly on the edge -> boundary-safe exclusion
+        outside = _instance(50.0, 50.0)
+
+        result = _filter_by_buildings(
+            [inside, edge, outside], _footprint(), enabled=True, buffer_m=0.0
+        )
+        assert result == [outside]
+
+    def test_buffer_widens_exclusion(self):
+        near = _instance(10.5, 0.0)  # 0.5 m outside the footprint
+        kept = _filter_by_buildings([near], _footprint(), enabled=True, buffer_m=0.0)
+        excluded = _filter_by_buildings(
+            [near], _footprint(), enabled=True, buffer_m=1.0
+        )
+        assert kept == [near]
+        assert excluded == []
+
+    def test_noop_when_disabled(self):
+        instances = [_instance(0.0, 0.0)]  # squarely inside the footprint
+        assert (
+            _filter_by_buildings(instances, _footprint(), enabled=False, buffer_m=0.0)
+            is instances
+        )
+
+    def test_noop_when_no_footprints(self):
+        instances = [_instance(0.0, 0.0)]
+        assert (
+            _filter_by_buildings(instances, [], enabled=True, buffer_m=0.0) is instances
+        )
+
+    def test_noop_when_no_instances(self):
+        assert _filter_by_buildings([], _footprint(), enabled=True, buffer_m=0.0) == []
+
+    def test_invalid_footprint_fully_excluded(self):
+        """A self-intersecting (bow-tie) footprint excludes trees in both lobes."""
+        from shapely.geometry import Polygon
+
+        bowtie = Polygon([(0, 0), (10, 10), (10, 0), (0, 10)])
+        left, right = _instance(2.0, 5.0), _instance(8.0, 5.0)
+        outside = _instance(50.0, 50.0)
+
+        result = _filter_by_buildings(
+            [left, right, outside], [bowtie], enabled=True, buffer_m=1.0
+        )
+        assert result == [outside]
 
 
 class TestBatchElevationLookup:

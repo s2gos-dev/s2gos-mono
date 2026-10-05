@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -16,6 +17,7 @@ from s2gos_generator.core.cache import (
     MANIFEST_VERSION,
     CachedDAGExecutor,
     CacheManifest,
+    _validate_building_files,
     _validate_user_asset_files,
     _validate_vegetation_files,
     capture_asset_paths,
@@ -308,6 +310,23 @@ class TestDeepValidators:
         assert _validate_user_asset_files(
             UPath(tmp_path), {"user_assets_file": UPath(assets_yaml)}
         )
+
+    def test_building_validation(self, tmp_path):
+        buildings_yaml = tmp_path / "buildings.yml"
+        buildings_yaml.write_text("objects: []\n")
+        footprints = tmp_path / "building_footprints.json"
+        assets = {
+            "buildings_objects_file": UPath(buildings_yaml),
+            "building_footprints_file": UPath(footprints),
+        }
+
+        footprints.write_text(json.dumps({"version": 1}))
+        assert _validate_building_files(UPath(tmp_path), assets)
+        footprints.write_text(json.dumps({"version": 99}))
+        assert not _validate_building_files(UPath(tmp_path), assets)
+        # Manifests from before the footprint sidecar existed must rebuild.
+        del assets["building_footprints_file"]
+        assert not _validate_building_files(UPath(tmp_path), assets)
 
 
 class TestCachedDAGExecutor:
