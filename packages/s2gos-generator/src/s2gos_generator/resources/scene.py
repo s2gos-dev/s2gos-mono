@@ -4,8 +4,9 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import xarray as xr
 import yaml
-from s2gos_utils.io.paths import open_file
+from s2gos_utils.io.paths import expand_mapper, open_file
 from upath import UPath
 
 from ..core.context import SceneResourceContext
@@ -19,6 +20,12 @@ def _read_sidecar_yaml(path: Optional[UPath]) -> dict:
         return {}
     with open_file(path, "r") as f:
         return yaml.safe_load(f) or {}
+
+
+def _dem_min_elevation(dem_file: UPath) -> float:
+    """Lowest elevation of a DEM in meters."""
+    with xr.open_zarr(expand_mapper(dem_file)) as dem:
+        return float(dem["elevation"].min())
 
 
 def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
@@ -73,8 +80,12 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         background_size_km = ctx.config.background.size_km
 
     buffer_dem_file = None
+    terrain_min_elevation = _dem_min_elevation(ctx.assets.dem_file)
     if ctx.has_buffer and ctx.assets.buffer_dem_file:
         buffer_dem_file = str(ctx.assets.buffer_dem_file.relative_to(ctx.output_dir))
+        terrain_min_elevation = min(
+            terrain_min_elevation, _dem_min_elevation(ctx.assets.buffer_dem_file)
+        )
 
     hamster_data_paths = {
         k: UPath(v)
@@ -147,6 +158,7 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         material_config_path=ctx.config.data_sources.material_config_path.upath,
         landcover_mapping_overrides={},
         atmosphere_config=ctx.config.atmosphere,
+        terrain_min_elevation=terrain_min_elevation,
         hamster_data_paths=hamster_data_paths,
         additional_material_libraries=additional_material_libraries,
         region_material_indices=region_material_indices,

@@ -1,6 +1,7 @@
 """Atmosphere configuration builder for Eradiate backend."""
 
 import logging
+import math
 
 import numpy as np
 from s2gos_utils.io.paths import open_dataset, to_upath
@@ -9,6 +10,10 @@ from s2gos_utils.scene import SceneDescription
 logger = logging.getLogger(__name__)
 
 try:
+    import joseki
+    import pint
+    import pinttrs
+    from eradiate.attrs import define
     from eradiate.radprops import get_default_absdb
     from eradiate.scenes.atmosphere import (
         ExponentialParticleDistribution,
@@ -19,130 +24,43 @@ try:
         ParticleLayer,
         UniformParticleDistribution,
     )
+    from eradiate.units import unit_context_config as ucc
     from eradiate.units import unit_registry as ureg
+    from joseki.profiles.core import extrapolate
 
     ERADIATE_AVAILABLE = True
 except ImportError:
     ERADIATE_AVAILABLE = False
 
-def _resolve_ground_altitude(
-    scene_description: SceneDescription,
-    scene_dir,
-    toa_altitude: float,
-) -> float:
-    """Adjust the atmosphere ground altitude.
 
-    Adjusts the plane-parallel medium volume floor so below-sea-level terrain
-    stays inside it. Above-sea-level scenes clamp to 0.0 and are not affected.
+if ERADIATE_AVAILABLE:
 
-    We have a 10% pad in case buffer has a lower altitude than the DEM:
-        z_min = scene DEM minimum elevation
-        z0    = z_min - 0.10 * |z_min|      (10% depth pad)
-        z0    = min(0.0, z0)                no changes if the min z is above sea level
-    at -0.01 * toa_altitude (see PlaneParallelGeometry.atmosphere_shape).
+    @define(eq=False, slots=False, init=False)
+    class _ParticleLayer(ParticleLayer):
+        """Particle layer whose bottom may lie below sea level."""
 
-    Args:
-        scene_description: Scene description.
-        scene_dir: Scene directory containing data/dem_*.zarr.
-        toa_altitude: Top-of-atmosphere altitude in meters.
-
-    Returns:
-        Ground altitude in meters (<= 0.0).
-    """
-    from s2gos_simulator.terrain_query import TerrainQuery
-
-    z_min = TerrainQuery(scene_description, scene_dir).min_elevation()
-    if z_min is None:
-        logger.warning(
-            "Could not determine scene minimum elevation; "
-            "defaulting ground_altitude to 0.0 m."
-        )
-        return 0.0
-
-    z0 = z_min - 0.10 * abs(z_min)
-    z0 = min(0.0, z0)
-
-    floor_ = -0.01 * toa_altitude
-    if z0 <= floor_:
-        raise ValueError(
-            f"Resolved ground_altitude ({z0:.1f} m) is at or below the "
-            f"plane-parallel atmosphere cuboid floor ({floor_:.1f} m = "
-            f"-0.01 * toa_altitude, see PlaneParallelGeometry.atmosphere_shape). "
-            f"Below-sea terrain would leave the medium shape. "
-            f"Raise toa_altitude (currently {toa_altitude:.0f} m) so that "
-            f"-0.01 * toa < {z0:.1f} m."
+        bottom: pint.Quantity = pinttrs.field(
+            default=ureg.Quantity(0.0, ureg.km), units=ucc.deferred("length")
         )
 
-    logger.info(
-        f"Resolved ground_altitude = {z0:.1f} m "
-        f"(scene z_min = {z_min:.1f} m, toa = {toa_altitude:.0f} m)."
-    )
-    return z0
 
-def _build_thermoprops(identifier, altitude_max, altitude_step, ground_altitude):
-    """Build a thermophysical profile, extended below MSL when needed.
+def _extend_below(thermoprops, altitude):
+    """Extend a profile down to altitude, linearly extrapolated by joseki.
 
-    Above sea level (ground_altitude None or >= 0) this returns the legacy
-    ``{"identifier", "z"}`` dict, identical to the previous behaviour.
-
-    Below sea level (ground_altitude < 0) the joseki ``{identifier, z}`` dict
-    path cannot be used: it forwards to ``joseki.make`` which rejects negative
-    altitudes. Instead we build the profile as an ``xr.Dataset`` — make the
-    native profile, linearly extrapolate p/t/n/x_* down to ground_altitude,
-    then resample onto a grid pinned at ground_altitude and reaching >= toa.
-    ``MolecularAtmosphere`` accepts the resulting dataset directly.
-
-    The interp grid is constructed so its bottom is exactly ground_altitude
-    (required: PlaneParallelGeometry raises if zgrid bottom != ground_altitude)
-    and its top is >= altitude_max (required: check_geometry_atmosphere raises
-    if the profile does not cover the zgrid top).
-
-    Args:
-        identifier: joseki atmosphere identifier (e.g. 'afgl_1986-us_standard').
-        altitude_max: profile/geometry top in meters.
-        altitude_step: vertical step in meters.
-        ground_altitude: resolved ground altitude in meters (<= 0), or None.
-
-    Returns:
-        dict for the legacy path, or an xr.Dataset for the extended path.
+    Levels are prepended in steps of the lowest level spacing, so regularly
+    spaced profiles (as Eradiate requires) stay regular.
     """
-    if ground_altitude is None or ground_altitude >= 0.0:
-        num_steps = int((altitude_max - 0.0) / altitude_step) + 1
-        return {
-            "identifier": identifier,
-            "z": np.linspace(0.0, altitude_max, num_steps) * ureg.m,
-        }
-
-    # Below-MSL: build and extend as an xr.Dataset.
-    import joseki
-    from joseki.units import ureg as jureg
-    from joseki.profiles.core import extrapolate, interp
-
-    ds = joseki.make(identifier)
-
-    # Extra levels strictly below 0, down to ground_altitude.
-    z_extra = np.arange(ground_altitude, 0.0, altitude_step) * jureg.m
-    ds = extrapolate(ds, z_extra=z_extra, direction="down")
-
-    # Native profile top (m), after downward extrapolation (joseki z is in km).
-    z_units = ds["z"].attrs.get("units", "m")
-    native_top_m = float(ds["z"].values.max()) * (1000.0 if z_units == "km" else 1.0)
-    grid_top = min(altitude_max, native_top_m)
-
-    # Regularly-spaced grid (eradiate's ZGrid requires equal steps), pinned
-    # exactly at both ends: bottom = ground_altitude, top = grid_top. Using
-    # linspace guarantees regular spacing and lands on native data (no NaN).
-    # Number of intervals ~ target step, at least 1.
-    n_intervals = max(1, int(round((grid_top - ground_altitude) / altitude_step)))
-    z_new = np.linspace(ground_altitude, grid_top, n_intervals + 1)
-    ds = interp(ds, z_new=z_new * jureg.m)
-
+    jureg = joseki.unit_registry
+    z = jureg.Quantity(thermoprops.z.values, thermoprops.z.attrs["units"]).m_as("m")
+    if altitude >= z[0]:
+        return thermoprops
+    dz = z[1] - z[0]
+    z_extra = z[0] - dz * np.arange(math.ceil((z[0] - altitude) / dz), 0, -1)
     logger.info(
-        f"Extended thermoprops below MSL: floor={ground_altitude:.1f} m, "
-        f"top={z_new[-1]:.1f} m ({len(z_new)} levels, "
-        f"step~{(z_new[1]-z_new[0]):.1f} m)."
+        f"Extending thermophysical profile below {z[0]:.0f} m to reach {altitude:.0f} m"
     )
-    return ds
+    return extrapolate(thermoprops, z_extra=z_extra * jureg.m, direction="down")
+
 
 class AtmosphereBuilder:
     """Builder for creating Eradiate atmosphere configurations from scene descriptions."""
@@ -151,40 +69,40 @@ class AtmosphereBuilder:
         """Initialize atmosphere builder."""
         pass
 
-    def create_geometry_from_atmosphere(
-        self, scene_description: SceneDescription, ground_altitude=None
-    ):
+    def create_geometry_from_atmosphere(self, scene_description: SceneDescription):
         """Create geometry with bounds matching the atmosphere configuration.
 
         Args:
             scene_description: Scene description containing atmosphere config
-            ground_altitude: Resolved ground altitude in meters (see
-                _resolve_ground_altitude), or None for the Eradiate default
 
         Returns:
             Geometry dictionary with TOA and ground altitudes
+
+        Raises:
+            ValueError: If the bottom of atmosphere is below Eradiate's
+                plane-parallel atmosphere cuboid, which reaches down to -1 % of TOA
         """
         atmosphere = scene_description.atmosphere
         if not atmosphere:
             return {"type": "plane_parallel"}
 
-        geometry = {
+        if atmosphere["boa"] <= -0.01 * atmosphere["toa"]:
+            raise ValueError(
+                f"Bottom of atmosphere ({atmosphere['boa']} m) must be above -1 % "
+                f"of toa ({-0.01 * atmosphere['toa']} m); increase toa."
+            )
+
+        return {
             "type": "plane_parallel",
             "toa_altitude": atmosphere["toa"],
+            "ground_altitude": atmosphere["boa"],
         }
-        if ground_altitude is not None:
-            geometry["ground_altitude"] = ground_altitude
-        return geometry
 
-    def create_atmosphere_from_config(
-        self, scene_description: SceneDescription, ground_altitude=None
-    ):
+    def create_atmosphere_from_config(self, scene_description: SceneDescription):
         """Create atmosphere based on scene description format.
 
         Args:
             scene_description: Scene description containing atmosphere config
-            ground_altitude: Resolved ground altitude in meters, used as the
-                molecular profile floor (extended below MSL when negative)
 
         Returns:
             Eradiate atmosphere object (MolecularAtmosphere, HomogeneousAtmosphere, or
@@ -193,8 +111,6 @@ class AtmosphereBuilder:
         Raises:
             ValueError: If atmosphere type is unknown or not specified
         """
-        self._ground_altitude = ground_altitude
-
         atmosphere = scene_description.atmosphere
         if not atmosphere:
             logger.info("No atmosphere configured, running without atmosphere")
@@ -214,33 +130,35 @@ class AtmosphereBuilder:
         else:
             raise ValueError(f"Unknown atmosphere type: {atmosphere_type}")
 
-    def _create_molecular_atmosphere_from_dict(self, mol_dict):
+    def _create_molecular_atmosphere_from_dict(self, mol_dict, boa, toa):
         """Create molecular atmosphere from dictionary.
 
-        Supports either joseki identifiers or CAMS NetCDF files.
+        Supports either joseki identifiers or CAMS NetCDF files. Identifier
+        profiles are evaluated from boa to toa every altitude_step; file profiles
+        keep their own levels and are extended down to boa.
 
         Args:
             mol_dict: Dictionary with molecular atmosphere configuration
+            boa: Bottom of atmosphere altitude in meters
+            toa: Top of atmosphere altitude in meters
 
         Returns:
             MolecularAtmosphere object
         """
         if "thermoprops_file" in mol_dict:
             thermoprops_file = to_upath(mol_dict["thermoprops_file"])
-            thermoprops = open_dataset(thermoprops_file).squeeze(drop=True)
+            thermoprops = _extend_below(
+                open_dataset(thermoprops_file).squeeze(drop=True), boa
+            )
         else:
             thermoprops_id = mol_dict.get(
                 "thermoprops_identifier", "afgl_1986-us_standard"
             )
-            altitude_max = mol_dict["altitude_max"]
-            altitude_step = mol_dict["altitude_step"]
-            ground_altitude = getattr(self, "_ground_altitude", None)
+            num_steps = int((toa - boa) / mol_dict["altitude_step"]) + 1
 
-            thermoprops = _build_thermoprops(
-                identifier=thermoprops_id,
-                altitude_max=altitude_max,
-                altitude_step=altitude_step,
-                ground_altitude=ground_altitude,
+            thermoprops = joseki.interp(
+                _extend_below(joseki.make(identifier=thermoprops_id), boa),
+                z_new=np.linspace(boa, toa, num_steps) * ureg.m,
             )
 
         absorption_data = mol_dict.get("absorption_database") or get_default_absdb()
@@ -257,51 +175,49 @@ class AtmosphereBuilder:
     def _create_particle_layer_from_dict(self, layer_dict):
         """Create particle layer from dictionary.
 
+        Distribution parameters are given in meters (exponential rate in 1/m
+        or scale in m, Gaussian center altitude and width in m) and converted
+        to Eradiate's coordinate normalized over the layer thickness.
+
         Args:
             layer_dict: Dictionary with particle layer configuration
 
         Returns:
             ParticleLayer object
         """
-        # Core fields always present from config
-        dist_type = layer_dict["distribution_type"]  # Always serialized
+        bottom = layer_dict["altitude_bottom"]
+        top = layer_dict["altitude_top"]
+        thickness = top - bottom
+        dist_type = layer_dict["distribution_type"]
 
         if dist_type == "exponential":
-            # Distribution params are optional, use defaults if not present
-            if "rate" in layer_dict.keys():
-                if "scale" in layer_dict.keys():
-                    logger.warning(
-                        "scale and rate should be mutually exclusive in exponential distribution, using rate"
-                    )
+            if "rate" in layer_dict:
                 distribution = ExponentialParticleDistribution(
-                    scale=layer_dict.get("rate", 5.0)
+                    rate=layer_dict["rate"] * thickness
+                )
+            elif "scale" in layer_dict:
+                distribution = ExponentialParticleDistribution(
+                    rate=thickness / layer_dict["scale"]
                 )
             else:
-                distribution = ExponentialParticleDistribution(
-                    rate=layer_dict.get("scale", 0.2)
-                )
+                distribution = ExponentialParticleDistribution()
         elif dist_type == "gaussian":
-            # Gaussian params may not be present, use defaults
             distribution = GaussianParticleDistribution(
-                mean=layer_dict.get("center_altitude", 0.5),
-                std=layer_dict.get("width", 1 / 6),
+                mean=(layer_dict["center_altitude"] - bottom) / thickness,
+                std=layer_dict["width"] / thickness,
             )
         else:
-            distribution = UniformParticleDistribution(
-                {"bounds": layer_dict.get("bounds", [0, 1])}
-            )
+            distribution = UniformParticleDistribution()
 
-        layer = ParticleLayer(
+        return _ParticleLayer(
             dataset=layer_dict["aerosol_dataset"],
             tau_ref=layer_dict["optical_thickness"],
             w_ref=layer_dict["reference_wavelength"],
-            bottom=layer_dict["altitude_bottom"],
-            top=layer_dict["altitude_top"],
+            bottom=bottom,
+            top=top,
             distribution=distribution,
             has_absorption=layer_dict["has_absorption"],
         )
-
-        return layer
 
     def _create_molecular_atmosphere_from_scene(self, atmosphere_dict):
         """Create molecular atmosphere from scene description.
@@ -312,14 +228,17 @@ class AtmosphereBuilder:
         Returns:
             MolecularAtmosphere object
         """
-        if "molecular_atmosphere" in atmosphere_dict:
-            mol_dict = atmosphere_dict["molecular_atmosphere"]
-            return self._create_molecular_atmosphere_from_dict(mol_dict)
-        else:
-            return self._create_molecular_atmosphere_from_dict({})
+        return self._create_molecular_atmosphere_from_dict(
+            atmosphere_dict["molecular_atmosphere"],
+            atmosphere_dict["boa"],
+            atmosphere_dict["toa"],
+        )
 
     def _create_homogeneous_atmosphere_from_scene(self, atmosphere_dict):
         """Create homogeneous atmosphere from scene description.
+
+        A uniform medium spanning the geometry. A null scattering coefficient
+        selects Eradiate's standard air scattering coefficient.
 
         Args:
             atmosphere_dict: Atmosphere configuration dictionary
@@ -327,21 +246,13 @@ class AtmosphereBuilder:
         Returns:
             HomogeneousAtmosphere object
         """
-        atmosphere = HomogeneousAtmosphere(
-            boa=atmosphere_dict["boa"],
-            toa=atmosphere_dict["toa"],
-            particle_layers=[
-                ParticleLayer(
-                    dataset=atmosphere_dict["aerosol_ds"],
-                    optical_thickness=atmosphere_dict["aerosol_ot"],
-                    altitude_bottom=atmosphere_dict["boa"],
-                    altitude_top=atmosphere_dict["toa"],
-                    reference_wavelength=atmosphere_dict["reference_wavelength"],
-                )
-            ],
-        )
-
-        return atmosphere
+        kwargs = {
+            "sigma_a": atmosphere_dict["sigma_a"],
+            "phase": {"type": atmosphere_dict["phase"]},
+        }
+        if atmosphere_dict["sigma_s"] is not None:
+            kwargs["sigma_s"] = atmosphere_dict["sigma_s"]
+        return HomogeneousAtmosphere(**kwargs)
 
     def _create_heterogeneous_atmosphere_from_scene(self, atmosphere_dict):
         """Create heterogeneous atmosphere from scene description.
@@ -352,56 +263,21 @@ class AtmosphereBuilder:
         Returns:
             HeterogeneousAtmosphere object
         """
-        has_molecular = (
-            atmosphere_dict.get("has_molecular_atmosphere", False)
-            or "molecular_atmosphere" in atmosphere_dict
-        )
-        has_particles = (
-            atmosphere_dict.get("has_particle_layers", False)
-            or "particle_layers" in atmosphere_dict
-        )
-
         molecular_atmosphere = None
-        particle_layers = []
+        if "molecular_atmosphere" in atmosphere_dict:
+            molecular_atmosphere = self._create_molecular_atmosphere_from_dict(
+                atmosphere_dict["molecular_atmosphere"],
+                atmosphere_dict["boa"],
+                atmosphere_dict["toa"],
+            )
 
-        if has_molecular:
-            mol_dict = atmosphere_dict["molecular_atmosphere"]
-            molecular_atmosphere = self._create_molecular_atmosphere_from_dict(mol_dict)
-
-        if has_particles:
-            for layer_dict in atmosphere_dict["particle_layers"]:
-                layer = self._create_particle_layer_from_dict(layer_dict)
-                if layer:
-                    particle_layers.append(layer)
+        particle_layers = [
+            self._create_particle_layer_from_dict(layer_dict)
+            for layer_dict in atmosphere_dict.get("particle_layers", [])
+        ]
 
         atmosphere = HeterogeneousAtmosphere(
             molecular_atmosphere=molecular_atmosphere, particle_layers=particle_layers
-        )
-
-        return atmosphere
-
-    def create_simple_mono_atmosphere(self, ground_altitude=None):
-        """Create simple molecular atmosphere for mono mode debugging.
-
-        Uses US Standard atmosphere with GECKO absorption database.
-        Suitable for fast RGB sanity checks in mono mode.
-
-        Returns:
-            MolecularAtmosphere object
-        """
-        # US Standard atmosphere, extended below MSL when ground_altitude < 0.
-        thermoprops = _build_thermoprops(
-            identifier="afgl_1986-us_standard",
-            altitude_max=120000.0,
-            altitude_step=1000.0,
-            ground_altitude=ground_altitude,
-        )
-
-        atmosphere = MolecularAtmosphere(
-            thermoprops=thermoprops,
-            absorption_data="gecko",
-            has_absorption=True,
-            has_scattering=True,
         )
 
         return atmosphere

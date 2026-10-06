@@ -323,7 +323,7 @@ def build_scene_config(resolved_paths: dict) -> object:
                 optical_thickness=aod,
                 altitude_bottom=500.0,
                 altitude_top=500.0 + aer_h,
-                distribution=ExponentialDistribution(rate=5.0),
+                distribution=ExponentialDistribution(scale=aer_h / 5.0),
                 has_absorption=True,
             )
         ],

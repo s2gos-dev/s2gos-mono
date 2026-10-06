@@ -630,23 +630,10 @@ class EradiateBackend(SimulationBackend):
 
         self.surface_builder.add_scene_objects(kdict, scene_description, scene_dir)
 
-        # Resolve ground altitude once: the same value feeds both the
-        # atmosphere profile floor and the geometry medium-volume floor.
-        # Without an atmosphere there is no medium to keep terrain inside.
-        ground_altitude = None
-        if scene_description.atmosphere:
-            from s2gos_simulator.backends.eradiate.atmosphere_builder import (
-                _resolve_ground_altitude,
-            )
-
-            ground_altitude = _resolve_ground_altitude(
-                scene_description, scene_dir, scene_description.atmosphere["toa"]
-            )
-
         # Create atmosphere (or use None for BRF measurements)
         if atmosphere == "auto":
             atmosphere_obj = self.atmosphere_builder.create_atmosphere_from_config(
-                scene_description, ground_altitude=ground_altitude
+                scene_description
             )
         else:
             atmosphere_obj = atmosphere  # None for BRF
@@ -667,7 +654,7 @@ class EradiateBackend(SimulationBackend):
         )
 
         geometry = self.atmosphere_builder.create_geometry_from_atmosphere(
-            scene_description, ground_altitude=ground_altitude
+            scene_description
         )
 
         self.surface_builder.validate_material_ids(kdict, scene_description)

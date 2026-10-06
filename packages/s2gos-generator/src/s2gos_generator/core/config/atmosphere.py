@@ -57,21 +57,12 @@ class ThermophysicalConfig(BaseModel):
         None,
         description="Path to CAMS thermoprops NetCDF file (alternative to identifier)",
     )
-    altitude_min: float = Field(0.0, ge=-2000.0, description="Minimum altitude in meters")
-    altitude_max: float = Field(
-        120000.0, gt=0.0, description="Maximum altitude in meters"
+    altitude_step: float = Field(
+        1000.0,
+        gt=0.0,
+        description="Profile level spacing in meters (identifier profiles; file "
+        "profiles keep their own levels)",
     )
-    altitude_step: float = Field(1000.0, gt=0.0, description="Altitude step in meters")
-    constituent_scaling: Optional[dict[str, float]] = Field(
-        None, description="Constituent concentration scaling (e.g., {'CO2': 400.0})"
-    )
-
-    @model_validator(mode="after")
-    def validate_altitude_range(self):
-        """Validate altitude configuration."""
-        if self.altitude_max <= self.altitude_min:
-            raise ValueError("Maximum altitude must be greater than minimum altitude")
-        return self
 
     @field_validator("thermoprops_file", mode="before")
     @classmethod
@@ -122,34 +113,25 @@ class MolecularAtmosphereConfig(BaseModel):
 
 
 class HomogeneousAtmosphereConfig(BaseModel):
-    """Configuration for a spatially uniform (homogeneous) aerosol atmosphere.
+    """Configuration for a homogeneous atmosphere: a uniform medium, as in
+    Eradiate's ``HomogeneousAtmosphere``.
 
     Attributes:
         type: Discriminator literal fixed to ``"homogeneous"``.
-        aerosol_dataset: Aerosol dataset defining scattering (``sigma_s``) and
-            absorption (``sigma_a``) phase-function properties.
-        optical_thickness: Aerosol optical depth at the reference wavelength.
-        scale_height: Exponential decay scale height (metres) for the vertical
-            aerosol profile.
-        reference_wavelength: Wavelength (nm) at which ``optical_thickness``
-            is specified.
-        has_absorption: Enable aerosol absorption.
+        sigma_s: Scattering coefficient (1/m). ``None`` uses Eradiate's
+            standard air scattering coefficient.
+        sigma_a: Absorption coefficient (1/m).
+        phase: Scattering phase function.
     """
 
     type: Literal["homogeneous"] = "homogeneous"
-    aerosol_dataset: AerosolDataset = Field(
-        AerosolDataset.SIXSV_CONTINENTAL, description="Aerosol dataset to use"
+    sigma_s: Optional[float] = Field(
+        None, ge=0.0, description="Scattering coefficient in 1/m (None: standard air)"
     )
-    optical_thickness: float = Field(
-        0.1, ge=0.0, le=5.0, description="Aerosol optical thickness"
+    sigma_a: float = Field(0.0, ge=0.0, description="Absorption coefficient in 1/m")
+    phase: Literal["rayleigh", "isotropic"] = Field(
+        "rayleigh", description="Scattering phase function"
     )
-    scale_height: float = Field(
-        1000.0, gt=0.0, description="Aerosol scale height in meters"
-    )
-    reference_wavelength: float = Field(
-        550.0, gt=0.0, description="Reference wavelength in nm"
-    )
-    has_absorption: bool = Field(True, description="Enable absorption by aerosols")
 
 
 class ParticleDistribution(BaseModel):
@@ -159,21 +141,24 @@ class ParticleDistribution(BaseModel):
 
 
 class ExponentialDistribution(ParticleDistribution):
-    """Exponential vertical decay profile for particle concentration,
-    see Eradiate documentation for more details.
+    """Exponential vertical decay profile for particle concentration, starting
+    at the layer bottom.
 
     Attributes:
         type: Discriminator literal fixed to ``"exponential"``.
         rate: Decay rate ``λ`` (1/m). Mutually exclusive with ``scale``.
-        scale: Scale parameter ``β = 1/λ`` (m). Mutually exclusive with
+        scale: Scale height ``β = 1/λ`` (m). Mutually exclusive with
             ``rate``.
+
+    With neither set, Eradiate's default applies: a decay rate of 5 per layer
+    thickness.
     """
 
     type: Literal["exponential"] = "exponential"
-    rate: Optional[float] = Field(
-        None, gt=0.0, description="Eradiate decay rate λ (default 5.0)"
+    rate: Optional[float] = Field(None, gt=0.0, description="Decay rate λ in 1/m")
+    scale: Optional[float] = Field(
+        None, gt=0.0, description="Scale height β = 1/λ in m"
     )
-    scale: Optional[float] = Field(None, gt=0.0, description="Eradiate scale β = 1/λ")
 
     @model_validator(mode="after")
     def validate_exclusive_params(self):
@@ -236,7 +221,9 @@ class ParticleLayerConfig(BaseModel):
     optical_thickness: float = Field(
         ..., ge=0.0, description="Aerosol optical thickness"
     )
-    altitude_bottom: float = Field(..., ge=0.0, description="Bottom altitude in meters")
+    altitude_bottom: float = Field(
+        ..., description="Bottom altitude in meters (may be below sea level)"
+    )
     altitude_top: float = Field(..., gt=0.0, description="Top altitude in meters")
     distribution: DistributionType = Field(
         ..., description="Particle distribution configuration"
@@ -291,7 +278,7 @@ class HeterogeneousAtmosphereConfig(BaseModel):
     """
 
     type: Literal["heterogeneous"] = "heterogeneous"
-    molecular: MolecularAtmosphereConfig = Field(
+    molecular: Optional[MolecularAtmosphereConfig] = Field(
         None, description="Molecular atmosphere configuration"
     )
     particle_layers: list[ParticleLayerConfig] = Field(
@@ -319,7 +306,10 @@ class AtmosphereConfig(BaseModel):
     """Comprehensive atmosphere configuration supporting multiple types."""
 
     boa: float = Field(
-        0.0, ge=-2000.0, description="Bottom of atmosphere altitude in meters"
+        0.0,
+        le=0.0,
+        description="Bottom of atmosphere altitude in meters, the terrain floor "
+        "is used when lower",
     )
     toa: float = Field(
         75000.0, gt=0.0, description="Top of atmosphere altitude in meters"
@@ -339,34 +329,27 @@ class AtmosphereConfig(BaseModel):
 
 def create_molecular_atmosphere_config(
     identifier: str = "afgl_1986-us_standard",
-    altitude_max: float = 120000.0,
+    toa: float = 120000.0,
     absorption_database: Optional[AbsorptionDatabase] = None,
-    co2_concentration: Optional[float] = None,
 ) -> AtmosphereConfig:
     """Create molecular atmosphere configuration.
 
     Args:
         identifier: Standard atmosphere identifier
-        altitude_max: Maximum altitude in meters
+        toa: Top of atmosphere altitude in meters
         absorption_database: Absorption database to use
-        co2_concentration: CO2 concentration in ppm (if different from standard)
 
     Returns:
         AtmosphereConfig for molecular atmosphere
     """
-    thermoprops = ThermophysicalConfig(
-        identifier=identifier,
-        altitude_max=altitude_max,
-        constituent_scaling={"CO2": co2_concentration} if co2_concentration else None,
-    )
-
     molecular_config = MolecularAtmosphereConfig(
-        thermoprops=thermoprops, absorption_database=absorption_database
+        thermoprops=ThermophysicalConfig(identifier=identifier),
+        absorption_database=absorption_database,
     )
 
     return AtmosphereConfig(
         boa=0.0,
-        toa=altitude_max,
+        toa=toa,
         details=molecular_config,
     )
 
