@@ -46,7 +46,7 @@ class WaysConfig(BaseModel):
     """Configuration for road and railway infrastructure in scenes.
 
     ``MATERIAL_PAINT_PRIORITY`` ranks way materials for texture painting, lowest
-    to highest; unlisted materials rank lowest.
+    to highest; unlisted materials rank lowest. Tunnels are skipped.
     """
 
     ROAD_TYPE_TABLE: ClassVar[dict[str, RoadDefaults]] = {

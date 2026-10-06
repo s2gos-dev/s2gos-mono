@@ -304,6 +304,15 @@ class TestParseWays:
         assert {w.material for w in ways} == {"asphalt"}
         assert len({w.width for w in ways}) == 1
 
+    @pytest.mark.parametrize("tunnel", ["yes", "building_passage"])
+    def test_tunnels_are_skipped(self, tunnel):
+        nodes = [(45.0, 15.0), (45.002, 15.0)]
+        assert self._parse(self._way(nodes, highway="primary", tunnel=tunnel)) == []
+
+    def test_tunnel_no_is_kept(self):
+        nodes = [(45.0, 15.0), (45.002, 15.0)]
+        assert len(self._parse(self._way(nodes, highway="primary", tunnel="no"))) == 1
+
 
 class TestWaysConfig:
     @pytest.mark.parametrize(
