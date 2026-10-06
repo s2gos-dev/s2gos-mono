@@ -47,8 +47,6 @@ def sample_processing_options():
 def sample_thermophysical_config():
     return ThermophysicalConfig(
         identifier="afgl_1986-us_standard",
-        altitude_min=0.0,
-        altitude_max=120000.0,
         altitude_step=1000.0,
     )
 
@@ -64,11 +62,7 @@ def sample_molecular_atmosphere():
 
 @pytest.fixture
 def sample_homogeneous_atmosphere():
-    return HomogeneousAtmosphereConfig(
-        aerosol_dataset=AerosolDataset.SIXSV_CONTINENTAL,
-        optical_thickness=0.1,
-        scale_height=1000.0,
-    )
+    return HomogeneousAtmosphereConfig(sigma_a=1e-6)
 
 
 @pytest.fixture
@@ -291,4 +285,29 @@ def test_no_atmosphere_converts_to_none():
 def test_molecular_atmosphere_helper():
     atmosphere = create_molecular_atmosphere_config()
     assert atmosphere.details.type == "molecular"
-    assert _convert_atmosphere_config_to_dict(atmosphere)["type"] == "molecular"
+    converted = _convert_atmosphere_config_to_dict(atmosphere)
+    assert converted["type"] == "molecular"
+    assert set(converted["molecular_atmosphere"]) == {
+        "thermoprops_identifier",
+        "altitude_step",
+        "absorption_database",
+        "has_absorption",
+        "has_scattering",
+    }
+
+
+@pytest.mark.parametrize(
+    "config_boa, terrain_min_elevation, expected_boa",
+    [
+        (0.0, 350.0, 0.0),
+        (0.0, -0.62, -100.0),
+        (0.0, -427.0, -500.0),
+        (0.0, -100.0, -200.0),
+        (-1000.0, -427.0, -1000.0),
+    ],
+)
+def test_boa_lies_below_terrain(config_boa, terrain_min_elevation, expected_boa):
+    atmosphere = create_molecular_atmosphere_config()
+    atmosphere.boa = config_boa
+    converted = _convert_atmosphere_config_to_dict(atmosphere, terrain_min_elevation)
+    assert converted["boa"] == expected_boa

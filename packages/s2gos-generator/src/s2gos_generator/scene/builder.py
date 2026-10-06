@@ -1,4 +1,5 @@
 import logging
+import math
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -7,11 +8,43 @@ from s2gos_utils.scene.materials import Material, get_landcover_mapping, load_ma
 from upath import UPath
 
 
-def _convert_atmosphere_config_to_dict(atmosphere_config) -> Optional[dict]:
+def _terrain_floor(terrain_min_elevation: float) -> float:
+    """Lowest atmosphere bottom keeping all terrain inside the atmosphere.
+
+    0 m unless the terrain dips below sea level, then at least 10 m below its
+    lowest point, rounded down to 100 m (Eradiate's default altitude grid step).
+    """
+    if terrain_min_elevation >= 0.0:
+        return 0.0
+    return math.floor((terrain_min_elevation - 10.0) / 100.0) * 100.0
+
+
+def _molecular_atmosphere_dict(mol_config) -> dict:
+    """Convert a molecular atmosphere config to scene description format."""
+    thermoprops = mol_config.thermoprops
+    mol_dict = {
+        "absorption_database": mol_config.absorption_database.value
+        if mol_config.absorption_database
+        else None,
+        "has_absorption": mol_config.has_absorption,
+        "has_scattering": mol_config.has_scattering,
+    }
+    if thermoprops.thermoprops_file:
+        mol_dict["thermoprops_file"] = str(thermoprops.thermoprops_file)
+    else:
+        mol_dict["thermoprops_identifier"] = thermoprops.identifier
+        mol_dict["altitude_step"] = thermoprops.altitude_step
+    return mol_dict
+
+
+def _convert_atmosphere_config_to_dict(
+    atmosphere_config, terrain_min_elevation: float = 0.0
+) -> Optional[dict]:
     """Convert to scene description dictionary format.
 
     Args:
         atmosphere_config: Atmosphere config object from scene generation configuration
+        terrain_min_elevation: Lowest terrain elevation of the scene in meters
 
     Returns:
         Dictionary format suitable for scene description, or None when no
@@ -21,80 +54,33 @@ def _convert_atmosphere_config_to_dict(atmosphere_config) -> Optional[dict]:
         return None
 
     base_dict = {
-        "boa": atmosphere_config.boa,
+        "boa": min(atmosphere_config.boa, _terrain_floor(terrain_min_elevation)),
         "toa": atmosphere_config.toa,
         "type": atmosphere_config.details.type,
     }
 
     if atmosphere_config.details.type == "molecular":
-        mol_config = atmosphere_config.details
-        mol_atm_dict = {
-            "altitude_min": mol_config.thermoprops.altitude_min,
-            "altitude_max": mol_config.thermoprops.altitude_max,
-            "altitude_step": mol_config.thermoprops.altitude_step,
-            "constituent_scaling": mol_config.thermoprops.constituent_scaling,
-            "absorption_database": mol_config.absorption_database.value
-            if mol_config.absorption_database
-            else None,
-            "has_absorption": mol_config.has_absorption,
-            "has_scattering": mol_config.has_scattering,
-        }
-
-        if mol_config.thermoprops.thermoprops_file:
-            mol_atm_dict["thermoprops_file"] = str(
-                mol_config.thermoprops.thermoprops_file
-            )
-        else:
-            mol_atm_dict["thermoprops_identifier"] = mol_config.thermoprops.identifier
-
-        base_dict["molecular_atmosphere"] = mol_atm_dict
+        base_dict["molecular_atmosphere"] = _molecular_atmosphere_dict(
+            atmosphere_config.details
+        )
 
     elif atmosphere_config.details.type == "homogeneous":
         homogeneous_config = atmosphere_config.details
         base_dict.update(
             {
-                "aerosol_ot": homogeneous_config.optical_thickness,
-                "aerosol_scale": homogeneous_config.scale_height,
-                "aerosol_ds": homogeneous_config.aerosol_dataset.value,
-                "reference_wavelength": homogeneous_config.reference_wavelength,
-                "has_absorption": homogeneous_config.has_absorption,
+                "sigma_s": homogeneous_config.sigma_s,
+                "sigma_a": homogeneous_config.sigma_a,
+                "phase": homogeneous_config.phase,
             }
         )
 
     elif atmosphere_config.details.type == "heterogeneous":
         heterogeneous_config = atmosphere_config.details
-        base_dict.update(
-            {
-                "has_molecular_atmosphere": heterogeneous_config.molecular is not None,
-                "has_particle_layers": heterogeneous_config.particle_layers is not None
-                and len(heterogeneous_config.particle_layers) > 0,
-            }
-        )
 
         if heterogeneous_config.molecular:
-            mol_config = heterogeneous_config.molecular
-            mol_atm_dict = {
-                "altitude_min": mol_config.thermoprops.altitude_min,
-                "altitude_max": mol_config.thermoprops.altitude_max,
-                "altitude_step": mol_config.thermoprops.altitude_step,
-                "constituent_scaling": mol_config.thermoprops.constituent_scaling,
-                "absorption_database": mol_config.absorption_database.value
-                if mol_config.absorption_database
-                else None,
-                "has_absorption": mol_config.has_absorption,
-                "has_scattering": mol_config.has_scattering,
-            }
-
-            if mol_config.thermoprops.thermoprops_file:
-                mol_atm_dict["thermoprops_file"] = str(
-                    mol_config.thermoprops.thermoprops_file
-                )
-            else:
-                mol_atm_dict["thermoprops_identifier"] = (
-                    mol_config.thermoprops.identifier
-                )
-
-            base_dict["molecular_atmosphere"] = mol_atm_dict
+            base_dict["molecular_atmosphere"] = _molecular_atmosphere_dict(
+                heterogeneous_config.molecular
+            )
 
         if heterogeneous_config.particle_layers:
             base_dict["particle_layers"] = []
@@ -230,9 +216,6 @@ def create_s2gos_scene(
         else:
             target["hamster_data"] = str(hamster_data_paths["target"])
 
-    atmosphere_config = kwargs.get("atmosphere_config")
-    atmosphere = _convert_atmosphere_config_to_dict(atmosphere_config)
-
     buffer = None
     background = None
     if buffer_mesh_path and buffer_texture_path and buffer_size_km:
@@ -314,6 +297,13 @@ def create_s2gos_scene(
                 )
             else:
                 background["hamster_data"] = str(hamster_data_paths["background"])
+
+    terrain_min_elevation = kwargs.get("terrain_min_elevation", 0.0)
+    if background:
+        terrain_min_elevation = min(terrain_min_elevation, background["elevation"])
+    atmosphere = _convert_atmosphere_config_to_dict(
+        kwargs.get("atmosphere_config"), terrain_min_elevation
+    )
 
     materials = load_materials(material_config_path)
 

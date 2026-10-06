@@ -373,17 +373,15 @@ class SceneGenConfig(BaseModel):
 
     def set_atmosphere_homogeneous(
         self,
-        aerosol_dataset,
-        optical_thickness: float = 0.1,
-        scale_height: float = 1000.0,
+        sigma_s: Optional[float] = None,
+        sigma_a: float = 0.0,
+        phase: str = "rayleigh",
     ):
         """Set atmosphere using homogeneous configuration."""
         from .atmosphere import HomogeneousAtmosphereConfig
 
         homogeneous_config = HomogeneousAtmosphereConfig(
-            aerosol_dataset=aerosol_dataset,
-            optical_thickness=optical_thickness,
-            scale_height=scale_height,
+            sigma_s=sigma_s, sigma_a=sigma_a, phase=phase
         )
         self.atmosphere = AtmosphereConfig(
             details=homogeneous_config,
