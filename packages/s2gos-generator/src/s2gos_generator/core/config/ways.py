@@ -43,7 +43,11 @@ class RailwayOverride(BaseModel):
 
 
 class WaysConfig(BaseModel):
-    """Configuration for road and railway infrastructure in scenes."""
+    """Configuration for road and railway infrastructure in scenes.
+
+    ``MATERIAL_PAINT_PRIORITY`` ranks way materials for texture painting, lowest
+    to highest; unlisted materials rank lowest. Tunnels are skipped.
+    """
 
     ROAD_TYPE_TABLE: ClassVar[dict[str, RoadDefaults]] = {
         "motorway": RoadDefaults(
@@ -149,6 +153,14 @@ class WaysConfig(BaseModel):
         "grass": "grassland",
         "grass_paver": "grassland",
     }
+
+    MATERIAL_PAINT_PRIORITY: ClassVar[list[str]] = [
+        "grassland",
+        "baresoil",
+        "gravel_road",
+        "concrete",
+        "asphalt",
+    ]
 
     enabled: bool = Field(True, description="Enable way (road and railway) processing")
     source: Literal["overpass", "file"] = Field(

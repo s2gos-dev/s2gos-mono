@@ -281,7 +281,10 @@ def parse_ways(
     coordinate_system,
     scene_bounds,
 ) -> list[Way]:
-    """Parse OSM ways (roads and railways) into Way segments, clipped to scene bounds."""
+    """Parse OSM ways (roads and railways) into Way segments, clipped to scene bounds.
+
+    Tunnels (any ``tunnel`` value other than "no") are skipped.
+    """
     elements = osm_data.get("elements", [])
     ways: list[Way] = []
 
@@ -305,6 +308,8 @@ def parse_ways(
         hw_type = tags.get("highway")
         rail_type = tags.get("railway")
         if hw_type is None and rail_type is None:
+            continue
+        if tags.get("tunnel", "no") != "no":
             continue
         if hw_type is not None and (
             ways_cfg.road_types is not None and hw_type not in ways_cfg.road_types

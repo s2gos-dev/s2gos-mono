@@ -105,7 +105,8 @@ def apply_ways(
             is finer than the landcover resolution)
         landcover_path: Path to landcover zarr (for resolution/bounds)
         way_polygons_by_material: Merged way polygon per material name
-            (from ``ctx.way_polygons_by_material``)
+            (from ``ctx.way_polygons_by_material``); painted in order, so later
+            materials win overlaps
         way_material_indices: Mapping of material_name to texture index
         texture_resolution_m: Target texture resolution (from
             ``ctx.config.texture_resolution_m``); upsamples when finer than native

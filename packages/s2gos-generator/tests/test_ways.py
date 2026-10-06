@@ -304,6 +304,15 @@ class TestParseWays:
         assert {w.material for w in ways} == {"asphalt"}
         assert len({w.width for w in ways}) == 1
 
+    @pytest.mark.parametrize("tunnel", ["yes", "building_passage"])
+    def test_tunnels_are_skipped(self, tunnel):
+        nodes = [(45.0, 15.0), (45.002, 15.0)]
+        assert self._parse(self._way(nodes, highway="primary", tunnel=tunnel)) == []
+
+    def test_tunnel_no_is_kept(self):
+        nodes = [(45.0, 15.0), (45.002, 15.0)]
+        assert len(self._parse(self._way(nodes, highway="primary", tunnel="no"))) == 1
+
 
 class TestWaysConfig:
     @pytest.mark.parametrize(
@@ -330,14 +339,15 @@ class TestFetchOsmData:
         assert fetch_osm_data(cfg, 0.0, 0.0, 1.0, 1.0) is None
 
 
-def _write_ways_sidecar(path, *, version=1):
+def _write_ways_sidecar(path, *, version=1, materials=("asphalt",)):
+    """A ways.json with one way per material, layers in the given order."""
     path.write_text(
         json.dumps(
             {
                 "version": version,
                 "way_layers": [
                     {
-                        "material_name": "asphalt",
+                        "material_name": mat,
                         "ways": [
                             {
                                 "centerline": mapping(
@@ -347,6 +357,7 @@ def _write_ways_sidecar(path, *, version=1):
                             }
                         ],
                     }
+                    for mat in materials
                 ],
             }
         )
@@ -424,6 +435,45 @@ class TestWaysSidecarIntegration:
         assert data["version"] == 2
         materials = [layer["material_name"] for layer in data["way_layers"]]
         assert materials == ["asphalt", "gravel_road"]
+
+
+class TestWayPolygonsPaintOrder:
+    """apply_ways() paints way_polygons_by_material.items() in dict order,
+    overwriting earlier materials with later ones at shared pixels -- so the
+    dict must be ordered by real-world paint priority, not sidecar order."""
+
+    def test_dict_order_follows_material_paint_priority_not_sidecar_order(
+        self, make_minimal_config, tmp_path
+    ):
+        from s2gos_generator.core.context import SceneResourceContext
+
+        # Sidecar lists gravel_road before asphalt -- the opposite of paint
+        # priority -- to prove the property doesn't just preserve input order.
+        sidecar = tmp_path / "ways.json"
+        _write_ways_sidecar(
+            sidecar, materials=["gravel_road", "grassland", "asphalt", "baresoil"]
+        )
+        ctx = SceneResourceContext(make_minimal_config())
+        ctx.assets.ways_file = sidecar
+
+        ordered = list(ctx.way_polygons_by_material.keys())
+        assert ordered == [
+            m for m in WaysConfig.MATERIAL_PAINT_PRIORITY if m in ordered
+        ]
+        # asphalt (highest priority) must be painted last -- i.e. it wins
+        # any overlap with the other, lower-priority materials.
+        assert ordered[-1] == "asphalt"
+
+    def test_unknown_material_painted_first(self, make_minimal_config, tmp_path):
+        from s2gos_generator.core.context import SceneResourceContext
+
+        sidecar = tmp_path / "ways.json"
+        _write_ways_sidecar(sidecar, materials=["asphalt", "custom_material"])
+        ctx = SceneResourceContext(make_minimal_config())
+        ctx.assets.ways_file = sidecar
+
+        ordered = list(ctx.way_polygons_by_material.keys())
+        assert ordered[0] == "custom_material"
 
 
 class TestWaysWiring:
