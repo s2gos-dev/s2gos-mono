@@ -43,7 +43,11 @@ class RailwayOverride(BaseModel):
 
 
 class WaysConfig(BaseModel):
-    """Configuration for road and railway infrastructure in scenes."""
+    """Configuration for road and railway infrastructure in scenes.
+
+    ``MATERIAL_PAINT_PRIORITY`` ranks way materials for texture painting, lowest
+    to highest; unlisted materials rank lowest.
+    """
 
     ROAD_TYPE_TABLE: ClassVar[dict[str, RoadDefaults]] = {
         "motorway": RoadDefaults(
@@ -150,7 +154,6 @@ class WaysConfig(BaseModel):
         "grass_paver": "grassland",
     }
 
-    # Paint-order priority for way materials, lowest to highest.
     MATERIAL_PAINT_PRIORITY: ClassVar[list[str]] = [
         "grassland",
         "baresoil",
