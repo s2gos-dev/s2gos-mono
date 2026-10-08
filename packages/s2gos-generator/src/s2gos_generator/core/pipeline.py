@@ -107,7 +107,6 @@ class SceneGenerationPipeline:
                 "target_sentinel2", ["target_landcover"], process_target_sentinel2
             )
 
-        # target_dem is required unconditionally: the steep-water repaint pass needs it regardless of snow config.
         target_texture_deps = ["target_landcover", "target_dem"]
         if self.config.spectral_matching is not None:
             target_texture_deps.append("target_sentinel2")
@@ -154,7 +153,12 @@ class SceneGenerationPipeline:
                 "target_vegetation",
                 ["target_landcover", "target_dem"],
                 process_target_vegetation,
-                optional=["user_assets", "target_ways", "target_buildings"],
+                optional=[
+                    "user_assets",
+                    "target_ways",
+                    "target_buildings",
+                    "target_water",
+                ],
             )
 
         # Scene description (dependencies will be updated by update_scene_dependencies)

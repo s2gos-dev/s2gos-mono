@@ -19,6 +19,7 @@ class TerraformOperation(Protocol):
 
     Implementations must provide:
     - ``influence_zone``: the spatial region this operation may alter.
+    - ``refinement_zone``: the region where the mesh needs full refinement.
     - ``apply()``: modifies ``vertices`` in-place and returns the array.
     - ``apply_to_subset()``: same, but for a pre-filtered vertex subset (used
       by :func:`apply_way_flatten_batch` for the STRtree fast path).
@@ -27,6 +28,11 @@ class TerraformOperation(Protocol):
     @property
     def influence_zone(self) -> shapely.Geometry:
         """Region where this operation may modify vertices."""
+        ...
+
+    @property
+    def refinement_zone(self) -> shapely.Geometry:
+        """Region where the mesh is refined to full depth for this operation."""
         ...
 
     def apply(
@@ -97,6 +103,10 @@ class WayFlattenOperation:
 
     @property
     def influence_zone(self) -> shapely.Geometry:
+        return self._influence_zone
+
+    @property
+    def refinement_zone(self) -> shapely.Geometry:
         return self._influence_zone
 
     def apply(
@@ -173,51 +183,36 @@ class WayFlattenOperation:
 
 
 class WaterFlattenOperation:
-    """Flatten terrain under a single water body footprint."""
+    """Flatten terrain under a water body footprint to the constant ``reference_z``.
 
-    def __init__(
-        self,
-        polygon: Polygon,
-        buffer_m: float,
-        anchor_xy: tuple[float, float],
-        reference_z: float,
-    ) -> None:
+    Vertices inside the polygon take ``reference_z``; within ``buffer_m`` outside
+    it they blend linearly back to their original elevation. Only the shoreline
+    band is refined, since the interior is flat.
+    """
+
+    def __init__(self, polygon: Polygon, buffer_m: float, reference_z: float) -> None:
         self._polygon = polygon
         self._buffer_m = buffer_m
-        self._anchor_xy = np.array([anchor_xy], dtype=np.float64)
-        self._reference_z = reference_z
-        self._influence_zone: shapely.Geometry = shapely.buffer(polygon, buffer_m)
-        # Prepare once at construction — prepare is idempotent and fast
-        shapely.prepare(self._influence_zone)
+        self.reference_z = reference_z
+        self.influence_zone: shapely.Geometry = shapely.buffer(polygon, buffer_m)
+        shapely.prepare(self.influence_zone)
+        self.refinement_zone: shapely.Geometry = (
+            shapely.buffer(polygon.boundary, buffer_m)
+            if buffer_m > 0
+            else polygon.boundary
+        )
 
-    @property
-    def influence_zone(self) -> shapely.Geometry:
-        return self._influence_zone
-
-    @property
-    def reference_z(self) -> float:
-        """The precomputed robust reference elevation for this body."""
-        return self._reference_z
+    def surface_only(self) -> "WaterFlattenOperation":
+        """The same flattening without its transition blend."""
+        return WaterFlattenOperation(self._polygon, 0.0, self.reference_z)
 
     def apply(
         self,
         vertices: np.ndarray,
         elevation_fn: Callable[[np.ndarray], np.ndarray],
     ) -> np.ndarray:
-        """Apply flattening.  For single-op use; prefer :func:`apply_way_flatten_batch`
-        when applying multiple operations to avoid recreating shapely points per body."""
-        xy = vertices[:, :2]
-        points = shapely.points(xy[:, 0], xy[:, 1])
-        inside_mask = shapely.intersects(self._influence_zone, points)
-        inside_indices = np.nonzero(inside_mask)[0]
-
-        if inside_indices.size == 0:
-            return vertices
-
-        self.apply_to_subset(
-            vertices, inside_indices, points[inside_indices], elevation_fn
-        )
-        return vertices
+        """Apply flattening to ``vertices`` (in-place)."""
+        return apply_way_flatten_batch(vertices, [self], elevation_fn)
 
     def apply_to_subset(
         self,
@@ -226,45 +221,23 @@ class WaterFlattenOperation:
         inside_points,  # shapely geometry array
         elevation_fn: Callable[[np.ndarray], np.ndarray],
     ) -> None:
-        """Apply flattening for a pre-filtered subset of vertices (in-place).
-
-        Called by both :meth:`apply` and :func:`apply_way_flatten_batch`.
-        """
-        nearest_xy, alpha, mask_apply = self._geometry_and_alpha(
-            vertex_indices, inside_points
-        )
-        if not mask_apply.any():
-            return
-        ref_z = elevation_fn(nearest_xy)
-        apply_indices = vertex_indices[mask_apply]
-        a = alpha[mask_apply]
-        vertices[apply_indices, 2] = (
-            a * ref_z[mask_apply] + (1.0 - a) * vertices[apply_indices, 2]
-        )
+        """Apply flattening for a pre-filtered subset of vertices (in-place)."""
+        _, alpha, mask = self._geometry_and_alpha(vertex_indices, inside_points)
+        idx, a = vertex_indices[mask], alpha[mask]
+        vertices[idx, 2] = a * self.reference_z + (1.0 - a) * vertices[idx, 2]
 
     def _geometry_and_alpha(
         self,
         vertex_indices: np.ndarray,
         inside_points,  # shapely geometry array
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Compute the (repeated) anchor XY, blend weights, and apply mask.
-
-        Returns:
-            nearest_xy:  (M, 2) XY coordinates
-            alpha:       (M,) blend weight in [0, 1].
-            mask_apply:  (M,) boolean; True where alpha > 0.
-        """
+    ) -> tuple[None, np.ndarray, np.ndarray]:
+        """Return ``(None, alpha, alpha > 0)``; ``None`` marks the constant ``reference_z`` target."""
         dist = shapely.distance(self._polygon, inside_points)
-
-        alpha = np.zeros(len(vertex_indices), dtype=np.float64)
-        alpha[dist <= 0.0] = 1.0
-
         if self._buffer_m > 0:
-            mask_blend = (dist > 0.0) & (dist <= self._buffer_m)
-            alpha[mask_blend] = 1.0 - dist[mask_blend] / self._buffer_m
-
-        nearest_xy = np.tile(self._anchor_xy, (len(vertex_indices), 1))
-        return nearest_xy, alpha, alpha > 0
+            alpha = np.clip(1.0 - dist / self._buffer_m, 0.0, 1.0)
+        else:
+            alpha = (dist <= 0.0).astype(np.float64)
+        return None, alpha, alpha > 0
 
 
 def apply_way_flatten_batch(
@@ -272,7 +245,10 @@ def apply_way_flatten_batch(
     operations: list[WayFlattenOperation],
     elevation_fn: Callable[[np.ndarray], np.ndarray],
 ) -> np.ndarray:
-    """Apply way-flatten operations efficiently with a single batched elevation sample.
+    """Apply terraform operations with a single batched elevation sample.
+
+    Operations whose ``_geometry_and_alpha`` returns ``None`` for ``nearest_xy``
+    flatten to their constant ``reference_z`` instead of a sampled elevation.
 
     Args:
         vertices:     (N, 3) mesh vertex array — modified in-place.
@@ -288,8 +264,9 @@ def apply_way_flatten_batch(
 
     xy = vertices[:, :2]
     points = shapely.points(xy[:, 0], xy[:, 1])
-    buf_tree = STRtree([op.influence_zone for op in operations])
-    pt_indices, buf_indices = buf_tree.query(points, predicate="intersects")
+    buf_indices, pt_indices = STRtree(points).query(
+        [op.influence_zone for op in operations], predicate="intersects"
+    )
 
     if len(buf_indices) == 0:
         return vertices
@@ -300,34 +277,29 @@ def apply_way_flatten_batch(
     unique_bufs, first_idx = np.unique(buf_sorted, return_index=True)
     split_pts = np.split(pt_sorted, first_idx[1:])
 
-    pending: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []
-    all_nearest_xy: list[np.ndarray] = []
+    pending = []
+    sample_xy: list[np.ndarray] = []
 
     for op_idx, vertex_idx_arr in zip(unique_bufs, split_pts):
         op = operations[int(op_idx)]
-        inside_pts = points[vertex_idx_arr]
         nearest_xy, alpha, mask_apply = op._geometry_and_alpha(
-            vertex_idx_arr, inside_pts
+            vertex_idx_arr, points[vertex_idx_arr]
         )
-        pending.append((vertex_idx_arr, alpha, mask_apply))
-        all_nearest_xy.append(nearest_xy)
-
-    concat_xy = np.concatenate(all_nearest_xy)
-    all_ref_z = elevation_fn(concat_xy) if len(concat_xy) else np.empty(0)
-
-    z_offset = 0
-    for (vertex_idx_arr, alpha, mask_apply), nearest_xy in zip(pending, all_nearest_xy):
-        n_pts = len(nearest_xy)
-        ref_z = all_ref_z[z_offset : z_offset + n_pts]
-        z_offset += n_pts
-
         if not mask_apply.any():
             continue
-        apply_indices = vertex_idx_arr[mask_apply]
-        a = alpha[mask_apply]
-        vertices[apply_indices, 2] = (
-            a * ref_z[mask_apply] + (1.0 - a) * vertices[apply_indices, 2]
-        )
+        ref_z = op.reference_z if nearest_xy is None else None
+        if ref_z is None:
+            sample_xy.append(nearest_xy[mask_apply])
+        pending.append((vertex_idx_arr[mask_apply], alpha[mask_apply], ref_z))
+
+    sampled_z = elevation_fn(np.concatenate(sample_xy)) if sample_xy else None
+
+    offset = 0
+    for apply_indices, a, ref_z in pending:
+        if ref_z is None:
+            ref_z = sampled_z[offset : offset + len(apply_indices)]
+            offset += len(apply_indices)
+        vertices[apply_indices, 2] = a * ref_z + (1.0 - a) * vertices[apply_indices, 2]
 
     return vertices
 

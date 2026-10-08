@@ -93,7 +93,11 @@ class ResourceFingerprints:
 
     @staticmethod
     def _target_mesh(config) -> dict:
-        fp = {"handle_dem_nans": config.processing.handle_dem_nans}
+        fp = {
+            "handle_dem_nans": config.processing.handle_dem_nans,
+            "texture_resolution_m": config.texture_resolution_m,
+            "landcover_resolution_m": config.landcover_resolution_m,
+        }
         mesh_ref = getattr(config, "mesh_refinement", None)
         if mesh_ref is not None:
             fp["mesh_refinement"] = mesh_ref.model_dump()
@@ -118,8 +122,6 @@ class ResourceFingerprints:
             "center_lat": config.location.center_lat,
             "center_lon": config.location.center_lon,
             "aoi_size_km": config.location.aoi_size_km,
-            # Landcover completion reads landcover; reference-elevation
-            # sampling reads the DEM — both at these resolutions.
             "landcover_resolution_m": config.landcover_resolution_m,
             "dem_resolution_m": config.dem_resolution_m,
             "water": config.water.model_dump() if config.water else None,
@@ -231,6 +233,9 @@ class ResourceFingerprints:
             ),
             "texture_resolution_m": config.texture_resolution_m,
             "landcover_resolution_m": config.landcover_resolution_m,
+            "mesh_refinement": (
+                config.mesh_refinement.model_dump() if config.mesh_refinement else None
+            ),
         }
 
     @staticmethod

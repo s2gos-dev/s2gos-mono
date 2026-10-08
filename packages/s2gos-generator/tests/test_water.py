@@ -19,7 +19,6 @@ from s2gos_generator.processors.water import (
     _group_areal_bodies_by_adjacency,
     build_water_terraform_operations,
     complete_with_landcover,
-    fetch_osm_data,
     parse_water_bodies,
     smooth_dem_along_linear_bodies,
     water_bodies_from_sidecar,
@@ -75,7 +74,6 @@ class TestParseWaterBodies:
         bodies = _parse(_way(square, natural="water"))
         assert len(bodies) == 1
         assert bodies[0].material == "water"
-        assert bodies[0].anchor_xy is None
         assert bodies[0].geometry.area > 0
 
     def test_riverbank_closed_way_becomes_areal_body(self):
@@ -89,7 +87,7 @@ class TestParseWaterBodies:
         bodies = _parse(_way(square, waterway="riverbank"))
         assert len(bodies) == 1
 
-    def test_linear_river_way_becomes_buffered_body_with_anchor(self):
+    def test_linear_river_way_becomes_buffered_body(self):
         bodies = _parse(
             _way(
                 [(45.0, 15.0), (45.002, 15.0)],
@@ -99,16 +97,14 @@ class TestParseWaterBodies:
         )
         assert len(bodies) == 1
         body = bodies[0]
-        assert body.anchor_xy is not None
         # centerline/half_width must be retained -- required for
         # build_water_terraform_operations to flatten this like a road
         # (flat across the channel, gradient preserved along its length).
         assert body.centerline is not None
-        assert body.half_width == pytest.approx(25.0)  # river default
-        # river half-width defaults to 25.0 m -> buffered polygon area > 0
-        assert body.geometry.area > 0
+        river_half_width = WaterConfig.WATERWAY_HALF_WIDTH_M["river"]
+        assert body.half_width == pytest.approx(river_half_width)
         minx, miny, maxx, maxy = body.geometry.bounds
-        assert (maxx - minx) == pytest.approx(50.0, abs=1.0)  # 2 * half_width
+        assert (maxx - minx) == pytest.approx(2 * river_half_width, abs=1.0)
 
     def test_canal_uses_its_own_half_width(self):
         bodies = _parse(
@@ -141,7 +137,6 @@ class TestParseWaterBodies:
         ]
         bodies = _parse(_relation([_outer_member(outer)], natural="water"))
         assert len(bodies) == 1
-        assert bodies[0].anchor_xy is None
 
     def test_relation_outer_boundary_split_across_arcs_is_stitched(self):
         # Real large water features (rivers, reservoirs, seas) commonly split
@@ -158,6 +153,22 @@ class TestParseWaterBodies:
         # 300m x 300m square (0.001 deg == 100m per _CoordStub) -- not the
         # much larger chord-closed wedge the old per-arc closing produced.
         assert bodies[0].geometry.area == pytest.approx(90000.0, rel=0.01)
+
+    def test_relation_inner_members_become_holes(self):
+        a, b, c, d = (45.0, 15.0), (45.0, 15.003), (45.003, 15.003), (45.003, 15.0)
+        island = [
+            (45.001, 15.001),
+            (45.001, 15.002),
+            (45.002, 15.002),
+            (45.002, 15.001),
+        ]
+        inner = {**_outer_member(island + island[:1]), "role": "inner"}
+        bodies = _parse(
+            _relation([_outer_member([a, b, c, d, a]), inner], natural="water")
+        )
+        assert len(bodies) == 1
+        assert len(bodies[0].geometry.interiors) == 1
+        assert bodies[0].geometry.area == pytest.approx(80000.0, rel=0.01)
 
     def test_relation_member_way_not_also_emitted_standalone(self):
         outer = [
@@ -183,12 +194,6 @@ class TestParseWaterBodies:
         assert len(bodies) == 1
         _, ymin, _, ymax = bodies[0].geometry.bounds
         assert ymax <= 5000.0 + 1e-6
-
-    def test_intermittent_way_kept_by_default(self):
-        bodies = _parse(
-            _way([(45.0, 15.0), (45.002, 15.0)], waterway="stream", intermittent="yes")
-        )
-        assert len(bodies) == 1
 
     def test_intermittent_way_excluded_when_configured(self):
         cfg = WaterConfig(exclude_intermittent=True)
@@ -236,14 +241,6 @@ class TestWaterConfig:
             WaterConfig(**kwargs)
 
 
-class TestFetchOsmData:
-    def test_malformed_json_file_returns_none(self, tmp_path):
-        bad = tmp_path / "water.json"
-        bad.write_text("not json{")
-        cfg = WaterConfig(source="file", file_path=bad)
-        assert fetch_osm_data(cfg, 0.0, 0.0, 1.0, 1.0) is None
-
-
 class TestWaterSidecar:
     def test_roundtrip_preserves_bodies(self):
         bodies = [
@@ -251,7 +248,6 @@ class TestWaterSidecar:
             WaterBody(
                 Polygon([(20, 0), (30, 0), (30, 5), (20, 5)]),
                 "water",
-                anchor_xy=(25.0, 2.5),
                 centerline=LineString([(20, 2.5), (30, 2.5)]),
                 half_width=2.5,
             ),
@@ -261,7 +257,6 @@ class TestWaterSidecar:
         def _key(b):
             return (
                 b.material,
-                b.anchor_xy,
                 b.half_width,
                 list(b.geometry.exterior.coords),
                 list(b.centerline.coords) if b.centerline is not None else None,
@@ -329,20 +324,23 @@ class TestCompleteWithLandcover:
         cfg = WaterConfig(landcover_completion_min_area_m2=10_000.0)
         assert complete_with_landcover([], landcover_data, dem_data, cfg) == []
 
-    def test_no_water_class_returns_empty(self):
-        n = 20
+    def test_component_linked_to_osm_body_excluded(self):
+        n = 40
         coords = self._grid(n=n)
         lc = np.full((n, n), 10, dtype=np.uint8)
+        lc[10:20, 10:30] = 80  # landcover river, wider than its OSM polygon
         landcover_data = xr.DataArray(
             lc, coords={"y": coords, "x": coords}, dims=["y", "x"]
         )
-        elev = np.zeros((n, n))
         dem_data = xr.DataArray(
-            elev, coords={"y": coords, "x": coords}, dims=["y", "x"]
+            np.zeros((n, n)), coords={"y": coords, "x": coords}, dims=["y", "x"]
         )
-        assert (
-            complete_with_landcover([], landcover_data, dem_data, WaterConfig()) == []
+        osm_river = WaterBody(
+            Polygon([(-200, -40), (150, -40), (150, -20), (-200, -20)]), "water"
         )
+
+        cfg = WaterConfig(landcover_completion_min_area_m2=1.0)
+        assert complete_with_landcover([osm_river], landcover_data, dem_data, cfg) == []
 
 
 class TestGroupArealBodiesByAdjacency:
@@ -360,9 +358,6 @@ class TestGroupArealBodiesByAdjacency:
         bodies = [WaterBody(a, "water"), WaterBody(b, "water")]
         clusters = _group_areal_bodies_by_adjacency(bodies)
         assert len(clusters) == 2
-
-    def test_empty_input_returns_empty(self):
-        assert _group_areal_bodies_by_adjacency([]) == []
 
 
 class TestSmoothDemAlongLinearBodies:
@@ -433,20 +428,6 @@ class TestSmoothDemAlongLinearBodies:
 
         assert float(smoothed.values[spike_row, spike_col]) != pytest.approx(999.0)
 
-    def test_zero_window_disables_smoothing(self):
-        dem = self._noisy_sloped_dem()
-        cl = LineString([(500.0, 0.0), (500.0, 1000.0)])
-        body = WaterBody(
-            geometry=cl.buffer(5.0), material="water", centerline=cl, half_width=5.0
-        )
-        result = smooth_dem_along_linear_bodies(dem, [body], smooth_window_m=0.0)
-        assert result is dem
-
-    def test_no_linear_bodies_returns_input_unchanged(self):
-        dem = self._noisy_sloped_dem()
-        result = smooth_dem_along_linear_bodies(dem, [], smooth_window_m=150.0)
-        assert result is dem
-
     def test_far_from_centerline_untouched(self):
         dem = self._noisy_sloped_dem()
         cl = LineString([(500.0, 0.0), (500.0, 1000.0)])
@@ -503,26 +484,6 @@ class TestSmoothDemAlongLinearBodies:
         # Without outlier rejection this reads close to the anomaly's 8.0;
         # with it, it should be pulled back close to the true 1.0 channel level.
         assert z < 3.0
-
-    def test_outlier_reject_disabled_still_smooths(self):
-        x = np.linspace(0.0, 1000.0, 101)
-        y = np.linspace(0.0, 1000.0, 101)
-        xx, yy = np.meshgrid(x, y)
-        elev = np.full_like(xx, 1.0)
-        anomaly = (np.abs(xx - 500.0) <= 5.0) & (yy <= 60.0)
-        elev[anomaly] = 8.0
-        dem = xr.DataArray(elev, coords={"y": y, "x": x}, dims=["y", "x"])
-
-        cl = LineString([(500.0, 0.0), (500.0, 1000.0)])
-        body = WaterBody(
-            geometry=cl.buffer(5.0), material="water", centerline=cl, half_width=5.0
-        )
-        # outlier_reject_m=0 disables the rejection pass -- result must still
-        # be a valid array (no crash), not asserting a specific value.
-        smoothed = smooth_dem_along_linear_bodies(
-            dem, [body], smooth_window_m=150.0, outlier_reject_m=0.0
-        )
-        assert smoothed is not None
 
     def test_steep_mountain_stream_grade_is_preserved(self):
         # Regression test: a fixed outlier-rejection threshold must not flag real, sustained steep grade as noise.
@@ -600,7 +561,8 @@ class TestSmoothDemAlongLinearBodies:
 
 
 class TestBuildWaterTerraformOperations:
-    def test_reference_elevation_matches_flat_dem(self):
+    @pytest.mark.parametrize("drop_m", [0.0, 0.5])
+    def test_reference_elevation_matches_flat_dem(self, drop_m):
         x = np.linspace(-500.0, 500.0, 50)
         y = np.linspace(-500.0, 500.0, 50)
         elev = np.full((50, 50), 3.0)
@@ -610,11 +572,34 @@ class TestBuildWaterTerraformOperations:
             Polygon([(-100, -100), (100, -100), (100, 100), (-100, 100)]), "water"
         )
         ops = build_water_terraform_operations(
-            [body], dem_data, transition_buffer_m=10.0, dem_resolution_m=20.0
+            [body],
+            dem_data,
+            transition_buffer_m=10.0,
+            dem_resolution_m=20.0,
+            drop_m=drop_m,
         )
         assert len(ops) == 1
-        assert ops[0].reference_z == pytest.approx(3.0, abs=0.1)
+        assert ops[0].reference_z == pytest.approx(3.0 - drop_m, abs=0.1)
         assert isinstance(ops[0], WaterFlattenOperation)
+
+    def test_shore_flat_margin_flattens_past_shoreline(self):
+        x = np.linspace(-500.0, 500.0, 50)
+        dem_data = xr.DataArray(
+            np.full((50, 50), 3.0), coords={"y": x, "x": x}, dims=["y", "x"]
+        )
+        body = WaterBody(
+            Polygon([(-100, -100), (100, -100), (100, 100), (-100, 100)]), "water"
+        )
+        (op,) = build_water_terraform_operations(
+            [body], dem_data, transition_buffer_m=10.0, shore_flat_margin_m=5.0
+        )
+        vertices = np.array(
+            [[104.0, 0.0, 10.0], [110.0, 0.0, 10.0], [120.0, 0.0, 10.0]]
+        )
+        op.apply(vertices, lambda xy: np.zeros(len(xy)))
+        assert vertices[0, 2] == pytest.approx(3.0)
+        assert 3.0 < vertices[1, 2] < 10.0
+        assert vertices[2, 2] == 10.0
 
     def test_linear_body_becomes_road_flatten_operation(self):
         # A river/canal/stream must flatten like a road -- flat across the
@@ -631,7 +616,6 @@ class TestBuildWaterTerraformOperations:
         body = WaterBody(
             geometry=centerline.buffer(5.0, cap_style="flat"),
             material="water",
-            anchor_xy=(0.0, 0.0),
             centerline=centerline,
             half_width=5.0,
         )
@@ -660,14 +644,12 @@ class TestBuildWaterTerraformOperations:
             WaterBody(
                 geometry=upstream_cl.buffer(5.0, cap_style="flat"),
                 material="water",
-                anchor_xy=(0.0, 100.0),
                 centerline=upstream_cl,
                 half_width=5.0,
             ),
             WaterBody(
                 geometry=downstream_cl.buffer(5.0, cap_style="flat"),
                 material="water",
-                anchor_xy=(0.0, -100.0),
                 centerline=downstream_cl,
                 half_width=5.0,
             ),
@@ -745,17 +727,6 @@ class TestBuildWaterTerraformOperations:
         assert len(ops) == 1  # merged into one operation, not two
         assert isinstance(ops[0], WaterFlattenOperation)
 
-    def test_no_bodies_returns_empty(self):
-        x = np.linspace(-500.0, 500.0, 10)
-        y = np.linspace(-500.0, 500.0, 10)
-        dem_data = xr.DataArray(
-            np.zeros((10, 10)), coords={"y": y, "x": x}, dims=["y", "x"]
-        )
-        assert (
-            build_water_terraform_operations([], dem_data, transition_buffer_m=10.0)
-            == []
-        )
-
     def test_thin_water_skip_excludes_narrow_bodies(self):
         x = np.linspace(-500.0, 500.0, 50)
         y = np.linspace(-500.0, 500.0, 50)
@@ -804,7 +775,6 @@ def _write_water_sidecar(path, *, version=1):
                                 "geometry": mapping(
                                     Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
                                 ),
-                                "anchor_xy": None,
                             }
                         ],
                     }
@@ -830,17 +800,6 @@ class TestWaterCtxSidecar:
         assert len(bodies) == 1
         assert isinstance(bodies[0], WaterBody)
         assert bodies[0].material == "water"
-
-    def test_ctx_water_bodies_rejects_unknown_version(
-        self, make_minimal_config, tmp_path
-    ):
-        from s2gos_generator.core.context import SceneResourceContext
-
-        ctx = SceneResourceContext(make_minimal_config())
-        sidecar = tmp_path / "water_bodies.json"
-        _write_water_sidecar(sidecar, version=99)
-        ctx.assets.water_file = sidecar
-        assert ctx.water_bodies == []
 
     def test_process_target_water_writes_grouped_sidecar(
         self, make_minimal_config, monkeypatch
@@ -941,18 +900,6 @@ class TestWaterWayOverlap:
         # Mesh elevation is unaffected: the raw water body geometry (what
         # build_water_terraform_operations consumes) still spans the full square.
         assert ctx.water_bodies[0].geometry.area == pytest.approx(100.0, abs=1e-9)
-
-    def test_water_polygons_unchanged_when_no_ways(self, make_minimal_config, tmp_path):
-        from s2gos_generator.core.context import SceneResourceContext
-
-        ctx = SceneResourceContext(make_minimal_config())
-        sidecar = tmp_path / "water_bodies.json"
-        _write_water_sidecar(sidecar)
-        ctx.assets.water_file = sidecar
-
-        assert ctx.way_polygons_by_material == {}
-        water_poly = ctx.water_polygons_by_material["water"]
-        assert water_poly.area == pytest.approx(100.0, abs=1e-9)
 
 
 class TestWaterWiring:

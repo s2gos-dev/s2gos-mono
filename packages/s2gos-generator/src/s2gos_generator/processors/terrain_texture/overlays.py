@@ -286,11 +286,16 @@ def strip_steep_water_pixels(
     texture_resolution_m: Optional[float] = None,
     area_name: str = "target",
 ) -> tuple[np.ndarray, bool]:
-    """Repaint water-material pixels whose underlying DEM slope exceeds max_slope with the nearest non-water material."""
+    """Repaint water-material pixels whose underlying DEM slope exceeds max_slope with the nearest non-water material.
+
+    Texture row 0 is ``ymin``. Slope is sampled only at ``water_mask`` pixels and
+    the fill comes from the nearest land pixel bordering water, never from water.
+    """
     if water_mask is None or not water_mask.any():
         return texture_2d, False
 
-    from scipy.ndimage import distance_transform_edt, map_coordinates
+    from scipy.ndimage import binary_dilation, map_coordinates
+    from scipy.spatial import cKDTree
 
     from ..terrain_mesh import compute_gradient, extract_dem
 
@@ -306,33 +311,36 @@ def strip_steep_water_pixels(
     height, width = texture_2d.shape
     raster_res = texture_resolution_m if texture_resolution_m else native_res
     half_px = native_res / 2
-    # Pixel-centre world coordinates of texture_2d, which has row 0 = ymin (matches apply_ways' own flipud convention).
     xs = np.linspace(
         xmin - half_px + raster_res / 2, xmax + half_px - raster_res / 2, width
     )
     ys = np.linspace(
         ymin - half_px + raster_res / 2, ymax + half_px - raster_res / 2, height
     )
-    xx, yy = np.meshgrid(xs, ys)
-
     dx = (dem_x[-1] - dem_x[0]) / (len(dem_x) - 1)
     dy = (dem_y[-1] - dem_y[0]) / (len(dem_y) - 1)
-    x_idx = (xx - dem_x[0]) / dx
-    y_idx = (yy - dem_y[0]) / dy
-    slope_on_texture = map_coordinates(
-        slope, np.vstack((y_idx.ravel(), x_idx.ravel())), order=1, mode="nearest"
-    ).reshape(xx.shape)
 
-    remove_mask = water_mask & (slope_on_texture > max_slope)
-    n_removed = int(remove_mask.sum())
+    rows, cols = np.nonzero(water_mask)
+    water_slope = map_coordinates(
+        slope,
+        np.vstack(((ys[rows] - dem_y[0]) / dy, (xs[cols] - dem_x[0]) / dx)),
+        order=1,
+        mode="nearest",
+    )
+    steep = water_slope > max_slope
+    n_removed = int(steep.sum())
     if n_removed == 0:
         return texture_2d, False
+    rows, cols = rows[steep], cols[steep]
 
-    # Nearest-fill from actual land only, never from another water pixel.
     is_water = texture_2d == water_material_index
-    _, nearest_idx = distance_transform_edt(is_water, return_indices=True)
-    texture_2d = texture_2d.copy()
-    texture_2d[remove_mask] = texture_2d[tuple(idx[remove_mask] for idx in nearest_idx)]
+    land_rows, land_cols = np.nonzero(binary_dilation(is_water) & ~is_water)
+    if land_rows.size == 0:
+        return texture_2d, False
+    _, nearest = cKDTree(np.column_stack((land_rows, land_cols))).query(
+        np.column_stack((rows, cols))
+    )
+    texture_2d[rows, cols] = texture_2d[land_rows[nearest], land_cols[nearest]]
 
     logging.info(
         "Water: repainted %d steep water pixel(s) (slope > %.3f m/m) with "
@@ -346,15 +354,15 @@ def strip_steep_water_pixels(
 
 def apply_ways_to_preview(
     preview_path: Path,
-    way_mask: np.ndarray,
-    debug_color: tuple[int, int, int] = (50, 50, 50),
+    layers: list[tuple[np.ndarray, tuple[int, int, int]]],
 ) -> None:
-    """Resize the RGB preview to match ``way_mask`` and paint ways on it."""
-    target_h, target_w = way_mask.shape
+    """Resize the RGB preview to the mask shape and paint each ``(mask, color)`` layer in order."""
+    target_h, target_w = layers[0][0].shape
     with Image.open(preview_path) as img:
         rgb = img.convert("RGB")
         if rgb.size != (target_w, target_h):
             rgb = rgb.resize((target_w, target_h), Image.NEAREST)
         arr = np.array(rgb)
-    arr[np.flipud(way_mask)] = debug_color
+    for mask, color in layers:
+        arr[np.flipud(mask)] = color
     Image.fromarray(arr, mode="RGB").save(preview_path)

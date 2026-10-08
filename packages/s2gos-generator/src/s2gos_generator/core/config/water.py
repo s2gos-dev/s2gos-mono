@@ -3,26 +3,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import ClassVar, Literal, NamedTuple, Optional
+from typing import ClassVar, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
-
-
-class WaterwayDefaults(NamedTuple):
-    """Per-waterway-type half-width default."""
-
-    half_width_m: float
 
 
 class WaterConfig(BaseModel):
     """Configuration for water bodies: shape comes from OSM, landcover only adds whole bodies OSM misses."""
 
-    WATERWAY_TYPE_TABLE: ClassVar[dict[str, WaterwayDefaults]] = {
-        "river": WaterwayDefaults(half_width_m=25.0),
-        "canal": WaterwayDefaults(half_width_m=5.0),
-        "stream": WaterwayDefaults(half_width_m=3.0),
-        "drain": WaterwayDefaults(half_width_m=1.5),
-        "ditch": WaterwayDefaults(half_width_m=1.0),
+    WATERWAY_HALF_WIDTH_M: ClassVar[dict[str, float]] = {
+        "river": 5.0,
+        "canal": 5.0,
+        "stream": 3.0,
+        "drain": 1.5,
+        "ditch": 1.0,
     }
 
     enabled: bool = Field(True, description="Enable water body processing")
@@ -38,7 +32,7 @@ class WaterConfig(BaseModel):
     default_waterway_half_width_m: float = Field(
         8.0,
         gt=0.0,
-        description="Fallback half-width (m) for waterway types not in WATERWAY_TYPE_TABLE.",
+        description="Fallback half-width (m) for waterway types not in WATERWAY_HALF_WIDTH_M.",
     )
     exclude_intermittent: bool = Field(
         False,
@@ -109,6 +103,15 @@ class WaterConfig(BaseModel):
         1.5,
         ge=0.0,
         description="Reject DEM samples further than this (m) from the median when computing a body's reference elevation.",
+    )
+    shore_flat_margin_m: Optional[float] = Field(
+        None,
+        ge=0.0,
+        description=(
+            "Distance (m) areal water flattening extends past the shoreline so every "
+            "painted water texel lies on flat mesh; None derives it as one texel "
+            "diagonal plus one refined mesh-cell diagonal, 0.0 disables."
+        ),
     )
     drop_m: float = Field(
         0.0,

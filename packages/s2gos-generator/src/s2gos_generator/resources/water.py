@@ -9,8 +9,8 @@ import xarray as xr
 from s2gos_utils.io.paths import expand_mapper
 
 from ..core.context import SceneResourceContext
+from ..processors.osm import OverpassFetchError
 from ..processors.water import (
-    WaterFetchError,
     complete_with_landcover,
     fetch_osm_data,
     parse_water_bodies,
@@ -30,7 +30,7 @@ def process_target_water(ctx: SceneResourceContext) -> Optional[Path]:
         osm_data = fetch_osm_data(
             water_cfg, bbox_south, bbox_west, bbox_north, bbox_east
         )
-    except WaterFetchError as exc:
+    except OverpassFetchError as exc:
         logging.error("Water fetch failed, skipping water bodies: %s", exc)
         return None
 

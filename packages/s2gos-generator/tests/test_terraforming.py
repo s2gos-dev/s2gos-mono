@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, Point, Polygon
 
 from s2gos_generator.processors.terrain_mesh import (
     GradientFilter,
@@ -116,7 +116,7 @@ class TestWayFlatten:
 
 
 def _elevation_at(value):
-    """Elevation sampler: reference elevation is a constant everywhere."""
+    """Elevation sampler returning a constant everywhere."""
 
     def _fn(xy):
         return np.full(len(xy), value)
@@ -129,9 +129,7 @@ class TestWaterFlatten:
 
     def test_alpha_blend_full_transition_and_outside(self):
         # Interior point, boundary point, mid-transition, and beyond buffer_m.
-        op = WaterFlattenOperation(
-            self._SQUARE, buffer_m=10.0, anchor_xy=(5.0, 5.0), reference_z=2.0
-        )
+        op = WaterFlattenOperation(self._SQUARE, buffer_m=10.0, reference_z=2.0)
         verts = np.array(
             [
                 [5.0, 5.0, 100.0],  # inside -> alpha 1
@@ -140,22 +138,17 @@ class TestWaterFlatten:
                 [25.0, 5.0, 100.0],  # beyond buffer_m -> unchanged
             ]
         )
-        out = op.apply(verts.copy(), _elevation_at(2.0))
+        out = op.apply(verts.copy(), _elevation_at(-50.0))
 
         assert out[0, 2] == pytest.approx(2.0)
         assert out[1, 2] == pytest.approx(0.8 * 2.0 + 0.2 * 100.0)
         assert out[2, 2] == pytest.approx(0.5 * 2.0 + 0.5 * 100.0)
         assert out[3, 2] == pytest.approx(100.0)
 
-    def test_batch_matches_single_apply(self):
-        op = WaterFlattenOperation(
-            self._SQUARE, buffer_m=10.0, anchor_xy=(5.0, 5.0), reference_z=2.0
-        )
-        verts = np.array([[5.0, 5.0, 100.0], [15.0, 5.0, 100.0], [25.0, 5.0, 100.0]])
-
-        single = op.apply(verts.copy(), _elevation_at(2.0))
-        batched = apply_way_flatten_batch(verts.copy(), [op], _elevation_at(2.0))
-        assert np.allclose(single, batched)
+    def test_refinement_zone_is_shoreline_band(self):
+        op = WaterFlattenOperation(self._SQUARE, buffer_m=2.0, reference_z=2.0)
+        assert not op.refinement_zone.intersects(Point(5.0, 5.0))
+        assert op.refinement_zone.intersects(Point(10.0, 5.0))
 
     def test_mixed_road_and_water_operations_batch_together(self):
         # Confirms apply_way_flatten_batch is polymorphic across operation
@@ -163,19 +156,32 @@ class TestWaterFlatten:
         road_op = WayFlattenOperation(
             LineString([(-1000.0, 0.0), (1000.0, 0.0)]), half_width=2.0, buffer_m=0.0
         )
-        water_op = WaterFlattenOperation(
-            self._SQUARE, buffer_m=0.0, anchor_xy=(5.0, 5.0), reference_z=2.0
-        )
+        water_op = WaterFlattenOperation(self._SQUARE, buffer_m=0.0, reference_z=2.0)
         verts = np.array(
             [
-                [0.0, 0.0, 100.0],  # on the road centerline
+                [-500.0, 0.0, 100.0],  # on the road centerline
                 [5.0, 5.0, 100.0],  # inside the water square
                 [500.0, 500.0, 100.0],  # inside neither
             ]
         )
         out = apply_way_flatten_batch(
-            verts.copy(), [road_op, water_op], _elevation_at(2.0)
+            verts.copy(), [road_op, water_op], _elevation_at(7.0)
         )
-        assert out[0, 2] == pytest.approx(2.0)
+        assert out[0, 2] == pytest.approx(7.0)
         assert out[1, 2] == pytest.approx(2.0)
         assert out[2, 2] == pytest.approx(100.0)
+
+    def test_water_surface_reapplied_after_roads(self):
+        road_op = WayFlattenOperation(
+            LineString([(-1000.0, 15.0), (1000.0, 15.0)]), half_width=2.0, buffer_m=20.0
+        )
+        water_op = WaterFlattenOperation(self._SQUARE, buffer_m=20.0, reference_z=2.0)
+        verts = np.array([[5.0, 9.0, 100.0], [-500.0, 15.0, 100.0], [5.0, 15.0, 100.0]])
+        out = apply_way_flatten_batch(
+            verts.copy(),
+            [water_op, road_op, water_op.surface_only()],
+            _elevation_at(7.0),
+        )
+        assert out[0, 2] == pytest.approx(2.0)  # water surface inside the road's blend
+        assert out[1, 2] == pytest.approx(7.0)  # road far from water
+        assert out[2, 2] == pytest.approx(7.0)  # road inside the water's blend

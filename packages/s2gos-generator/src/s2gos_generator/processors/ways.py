@@ -1,102 +1,14 @@
 """Way and railways algorithms: OSM/Overpass fetching, parsing, width/material resolution,
 sidecar (de)serialization, and terrain-flatten operation building."""
 
-import json
 import logging
-import socket
-import ssl
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from typing import Optional
 
 from shapely.geometry import LineString, MultiLineString, mapping, shape
 
+from .osm import load_osm_data, parse_osm_width
 from .terrain_mesh import GradientFilter, extract_dem
-from .._version import get_version
-
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-OVERPASS_MAX_RETRIES = 5
-OVERPASS_RETRY_DELAY_S = 15
-OVERPASS_RETRYABLE_STATUS = (429, 500, 502, 503, 504)
-
-
-class WaysFetchError(RuntimeError):
-    """Raised when the Overpass API fails on every retry attempt."""
-
-
-def _is_transient_urlerror(exc: urllib.error.URLError) -> bool:
-    """Return True if a URLError wraps a known transient transport failure."""
-    reason = getattr(exc, "reason", None)
-    return isinstance(reason, (ConnectionResetError, socket.timeout, ssl.SSLEOFError))
-
-
-def _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east) -> Optional[dict]:
-    """Fetch way (road and railway) data from Overpass API with retry on transient failures."""
-    bbox = f"{bbox_south},{bbox_west},{bbox_north},{bbox_east}"
-    query = (
-        f'[out:json];(way["highway"]({bbox});way["railway"]({bbox}););out body geom;'
-    )
-    data = urllib.parse.urlencode({"data": query}).encode("utf-8")
-    user_agent = f"s2gos-generator/{get_version()}"
-
-    for attempt in range(1, OVERPASS_MAX_RETRIES + 1):
-        try:
-            req = urllib.request.Request(
-                OVERPASS_URL,
-                data=data,
-                method="POST",
-                headers={
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "User-Agent": user_agent,
-                },
-            )
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-
-        except urllib.error.HTTPError as exc:
-            if exc.code in OVERPASS_RETRYABLE_STATUS and attempt < OVERPASS_MAX_RETRIES:
-                logging.info(
-                    "Overpass API returned %s, retrying in %ds (attempt %d/%d)",
-                    exc.code,
-                    OVERPASS_RETRY_DELAY_S,
-                    attempt,
-                    OVERPASS_MAX_RETRIES,
-                )
-                time.sleep(OVERPASS_RETRY_DELAY_S)
-            else:
-                raise WaysFetchError(
-                    f"Overpass API request failed ({type(exc).__name__}): {exc}"
-                )
-        except urllib.error.URLError as exc:
-            if _is_transient_urlerror(exc) and attempt < OVERPASS_MAX_RETRIES:
-                logging.info(
-                    "Overpass transport error %r, retrying in %ds (attempt %d/%d)",
-                    exc.reason,
-                    OVERPASS_RETRY_DELAY_S,
-                    attempt,
-                    OVERPASS_MAX_RETRIES,
-                )
-                time.sleep(OVERPASS_RETRY_DELAY_S)
-            else:
-                raise WaysFetchError(
-                    f"Overpass API request failed ({type(exc).__name__}): {exc}"
-                )
-
-
-def _parse_osm_width(width_str: str) -> Optional[float]:
-    """Parse OSM width tag value. Handles '5', '5.5', '5 m', '5.5m' formats."""
-    s = width_str.strip().lower()
-
-    if s.endswith("m"):
-        s = s[:-1].strip()
-
-    try:
-        return float(s)
-    except ValueError:
-        return None
 
 
 def _get_road_width(
@@ -118,7 +30,7 @@ def _get_road_width(
 
     osm_width_str = tags.get("width")
     if osm_width_str:
-        osm_width = _parse_osm_width(osm_width_str)
+        osm_width = parse_osm_width(osm_width_str)
         if osm_width is not None:
             return osm_width
 
@@ -176,7 +88,7 @@ def _get_railway_width(
 
     osm_width_str = tags.get("width")
     if osm_width_str:
-        osm_width = _parse_osm_width(osm_width_str)
+        osm_width = parse_osm_width(osm_width_str)
         if osm_width is not None:
             return osm_width
 
@@ -401,28 +313,12 @@ def parse_ways(
 def fetch_osm_data(
     ways_cfg, bbox_south, bbox_west, bbox_north, bbox_east
 ) -> Optional[dict]:
-    """Fetch or load OSM way data based on config source."""
-    if ways_cfg.source == "overpass":
-        logging.info(
-            "Fetching ways from Overpass API: bbox=(%.4f, %.4f, %.4f, %.4f)",
-            bbox_south,
-            bbox_west,
-            bbox_north,
-            bbox_east,
-        )
-        return _fetch_overpass(bbox_south, bbox_west, bbox_north, bbox_east)
-
-    if ways_cfg.source == "file":
-        logging.info("Loading ways from file: %s", ways_cfg.file_path)
-        try:
-            with open(ways_cfg.file_path, "r") as f:
-                return json.load(f)
-        except (FileNotFoundError, PermissionError, json.JSONDecodeError) as exc:
-            logging.warning("Failed to load way data file: %s", exc)
-            return None
-
-    logging.warning("Unknown way data source: %s", ways_cfg.source)
-    return None
+    """Fetch or load OSM way (road and railway) data based on config source."""
+    bbox = f"{bbox_south},{bbox_west},{bbox_north},{bbox_east}"
+    query = (
+        f'[out:json];(way["highway"]({bbox});way["railway"]({bbox}););out body geom;'
+    )
+    return load_osm_data(ways_cfg, query, "ways")
 
 
 def ways_to_sidecar(ways: list[Way]) -> dict:

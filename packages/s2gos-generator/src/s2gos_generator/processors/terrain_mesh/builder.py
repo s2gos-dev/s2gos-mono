@@ -106,13 +106,13 @@ def refine_grid_for_operations(
     grid: AdaptiveGrid,
     operations: list[TerraformOperation] | None,
 ) -> None:
-    """Refine the grid where any operation's influence_zone intersects (in-place).
+    """Refine the grid where any operation's refinement_zone intersects (in-place).
 
     No-op when operations is falsy.
     """
     if not operations:
         return
-    merged_zone = unary_union([op.influence_zone for op in operations])
+    merged_zone = unary_union([op.refinement_zone for op in operations])
     grid.refine(make_refinement_predicate(merged_zone))
 
 

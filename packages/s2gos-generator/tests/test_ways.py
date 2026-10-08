@@ -8,13 +8,13 @@ import pytest
 from shapely.geometry import LineString, box, mapping
 
 from s2gos_generator.core.config.ways import RailwayOverride, RoadOverride, WaysConfig
+from s2gos_generator.processors.osm import parse_osm_width
 from s2gos_generator.processors.ways import (
     Way,
     _get_railway_material,
     _get_railway_width,
     _get_road_material,
     _get_road_width,
-    _parse_osm_width,
     fetch_osm_data,
     parse_ways,
     ways_from_sidecar,
@@ -39,7 +39,7 @@ class TestParseOsmWidth:
         ],
     )
     def test_parse_osm_width(self, raw, expected):
-        assert _parse_osm_width(raw) == expected
+        assert parse_osm_width(raw) == expected
 
 
 class TestRoadWidth:

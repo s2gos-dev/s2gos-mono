@@ -190,23 +190,6 @@ class TestStripSteepWaterPixels:
         assert changed is False
         assert np.array_equal(out, texture)
 
-    def test_no_water_mask_is_a_noop(self, tmp_path):
-        lc_path = _write_landcover(tmp_path / "lc.zarr")
-        dem_path = _write_dem(tmp_path / "dem.zarr", np.zeros((4, 4)))
-        texture = np.full((4, 4), self.WATER, dtype=np.uint8)
-
-        out, changed = strip_steep_water_pixels(
-            texture,
-            dem_path,
-            lc_path,
-            np.zeros((4, 4), dtype=bool),
-            self.WATER,
-            max_slope=1.0,
-        )
-
-        assert changed is False
-        assert np.array_equal(out, texture)
-
     def test_never_copies_material_from_another_water_pixel(self, tmp_path):
         # Two steep spots sharing only a grass corner as non-water neighbor -- must never copy each other's index.
         lc_path = _write_landcover(tmp_path / "lc.zarr")

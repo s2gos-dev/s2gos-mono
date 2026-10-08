@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Dict, List, Optional
 
+import numpy as np
 from s2gos_utils.io.paths import open_file
 from shapely.geometry import box
 from upath import UPath
@@ -128,6 +129,20 @@ class SceneResourceContext:
         return self._target_scene_bounds
 
     @property
+    def shore_flat_margin_m(self) -> float:
+        """Distance areal water flattening extends past the shoreline (see ``WaterConfig.shore_flat_margin_m``)."""
+        water, refinement = self.config.water, self.config.mesh_refinement
+        if water is None or refinement is None or not refinement.enabled:
+            return 0.0
+        if water.shore_flat_margin_m is not None:
+            return water.shore_flat_margin_m
+        texel_m = min(
+            self.config.texture_resolution_m or np.inf, self.landcover_resolution_m
+        )
+        cell_m = self.dem_resolution_m / 2**refinement.max_depth
+        return float(np.sqrt(2) * (texel_m + cell_m))
+
+    @property
     def buffer_aoi_polygon(self):
         """Lazy AOI polygon for the buffer area, or None if unconfigured."""
         if self._buffer_aoi_polygon is None and self.config.buffer is not None:
@@ -231,20 +246,9 @@ class SceneResourceContext:
 
     @property
     def water_polygons_by_material(self) -> dict:
-        """Merged water body footprints per material, derived from the water bodies list.
+        """Merged water footprint per material, minus way footprints so ways crossing water stay painted.
 
-        Computed once and cached. Each value is the unary_union of all body
-        polygons for that material — the geometry the texture painter needs.
-        Unlike ways, no buffering step is needed here since
-        ``WaterBody.geometry`` is already the full footprint.
-
-        Wherever a way crosses a water body (a bridge, out of scope to model
-        explicitly) the way footprint is subtracted from the water footprint
-        here, so the texture painter leaves the already-painted way material
-        showing through instead of overwriting it with water. This only
-        affects the *texture* footprint -- mesh elevation is computed from
-        ``water_bodies`` directly and is unaffected, so the water body's
-        flattened elevation still applies under the way at the crossing.
+        Texture-only: mesh flattening uses ``water_bodies`` directly.
         """
         if self._water_polygons_by_material is None:
             from shapely.ops import unary_union
