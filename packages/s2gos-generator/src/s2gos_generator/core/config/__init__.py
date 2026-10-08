@@ -48,6 +48,7 @@ from .vegetation import (
     VegetationPlacementConfig,
     VegetationSpecies,
 )
+from .water import WaterConfig
 from .ways import RailwayOverride, RoadOverride, WaysConfig
 
 __all__ = [
@@ -93,6 +94,8 @@ __all__ = [
     "RoadOverride",
     "RailwayOverride",
     "WaysConfig",
+    # water
+    "WaterConfig",
     # buildings
     "BuildingsConfig",
     # scene

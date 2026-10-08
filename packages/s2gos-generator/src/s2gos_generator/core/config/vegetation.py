@@ -239,6 +239,15 @@ class BuildingExclusionConfig(BaseModel):
     )
 
 
+class WaterExclusionConfig(BaseModel):
+    """Controls how vegetation reacts to water body footprints."""
+
+    enabled: bool = Field(True, description="Exclude vegetation from water bodies")
+    buffer_m: float = Field(
+        0.0, ge=0.0, description="Extra buffer (m) around water bodies"
+    )
+
+
 class VegetationPlacementConfig(BaseModel):
     """Configuration for multi-species vegetation placement system.
 
@@ -317,6 +326,7 @@ class VegetationPlacementConfig(BaseModel):
     building_exclusion: BuildingExclusionConfig = Field(
         default_factory=BuildingExclusionConfig
     )
+    water_exclusion: WaterExclusionConfig = Field(default_factory=WaterExclusionConfig)
 
     model_config = {
         "validate_assignment": True,

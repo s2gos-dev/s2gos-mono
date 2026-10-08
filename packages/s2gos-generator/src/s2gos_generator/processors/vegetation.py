@@ -56,23 +56,25 @@ def _filter_by_ways(
     return filtered
 
 
-def _filter_by_buildings(
+def _filter_by_footprints(
     instances: List[Dict[str, Any]],
     footprints: list,
     *,
     enabled: bool,
     buffer_m: float,
+    label: str = "Building",
 ) -> List[Dict[str, Any]]:
-    """Exclude vegetation positions that fall on or near a building footprint.
+    """Exclude vegetation positions that fall on or near a footprint polygon.
 
     Any instance within ``buffer_m`` of a footprint is dropped (exact distance, so
     invalid footprints are handled and points on an edge are excluded).
 
     Args:
         instances: Vegetation placement dicts with a ``"position"`` (x, y).
-        footprints: Scene-local building footprint polygons.
+        footprints: Scene-local footprint polygons (buildings, water bodies, ...).
         enabled: When False, ``instances`` is returned unchanged.
         buffer_m: Clearance in metres around each footprint.
+        label: Footprint kind, used in the log message.
     """
     import shapely
     from shapely.strtree import STRtree
@@ -90,7 +92,8 @@ def _filter_by_buildings(
     filtered = [inst for inst, k in zip(instances, keep) if k]
     excl_count = len(instances) - len(filtered)
     logging.info(
-        "Building filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
+        "%s filter: kept %d, excluded %d (%.1f%%) [buffer=%.1fm]",
+        label,
         len(filtered),
         excl_count,
         100.0 * excl_count / len(instances) if instances else 0.0,

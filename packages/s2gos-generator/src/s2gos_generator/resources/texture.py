@@ -18,6 +18,8 @@ from ..processors.terrain_texture import (
     apply_region_materials,
     apply_ways,
     apply_ways_to_preview,
+    strip_steep_water_pixels,
+    strip_unvetted_water_pixels,
 )
 
 
@@ -140,14 +142,66 @@ def _generate_texture(
             ctx.config.texture_resolution_m,
             area_name,
         )
-        if way_mask is not None:
+        dirty |= way_mask is not None
+
+    water_mask: Optional[np.ndarray] = None
+    if ctx.dependency_outputs.get("target_water") is not None and area_name == "target":
+        water_cfg = ctx.config.water
+        water_idx = material_index_map.get(water_cfg.default_material)
+        fallback_idx = material_index_map.get(
+            water_cfg.landcover_leak_fallback_material
+        )
+        way_values = texture_2d[way_mask] if way_mask is not None else None
+
+        if water_idx is not None and fallback_idx is not None:
+            texture_2d, stripped = strip_unvetted_water_pixels(
+                texture_2d,
+                landcover_path,
+                ctx.water_polygons_by_material,
+                water_idx,
+                fallback_idx,
+                ctx.config.texture_resolution_m,
+                area_name,
+            )
+            dirty |= stripped
+
+        texture_2d, water_mask = apply_ways(
+            texture_2d,
+            landcover_path,
+            ctx.water_polygons_by_material,
+            material_index_map,
+            ctx.config.texture_resolution_m,
+            area_name,
+        )
+        if water_mask is not None:
             dirty = True
+            if water_idx is not None:
+                texture_2d, steep = strip_steep_water_pixels(
+                    texture_2d,
+                    dem_file_path,
+                    landcover_path,
+                    water_mask,
+                    water_idx,
+                    np.tan(np.radians(water_cfg.max_water_render_slope_deg)),
+                    ctx.config.texture_resolution_m,
+                    area_name,
+                )
+                dirty |= steep
+
+        # all_touched rasterization lets water reclaim a 1 px rim of a crossing way.
+        if way_values is not None:
+            texture_2d[way_mask] = way_values
 
     if dirty:
         Image.fromarray(texture_2d, mode="L").save(selection_texture_path)
 
-    if way_mask is not None and preview_texture_path is not None:
-        apply_ways_to_preview(preview_texture_path, way_mask)
+    preview_layers = [
+        (mask, color)
+        for mask, color in ((way_mask, (50, 50, 50)), (water_mask, (0, 100, 200)))
+        if mask is not None
+    ]
+    if preview_layers and preview_texture_path is not None:
+        apply_ways_to_preview(preview_texture_path, preview_layers)
 
     return selection_texture_path, preview_texture_path
 
@@ -233,7 +287,8 @@ def _generate_area_texture(
         logging.warning("%s landcover file not found from dependencies", spec.name)
         return None
 
-    dem_file_path = season_month = snow_material_index = snow_thermoprops = None
+    dem_file_path = ctx.dependency_outputs.get(spec.dem_key) if spec.dem_key else None
+    season_month = snow_material_index = snow_thermoprops = None
     random_seed = None
     if spec.applies_snow and ctx.config.snow is not None:
         (

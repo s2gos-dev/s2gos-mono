@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Optional
 
 from ..core.context import SceneResourceContext
+from ..processors.osm import OverpassFetchError
 from ..processors.ways import (
-    WaysFetchError,
     fetch_osm_data,
     parse_ways,
     ways_to_sidecar,
@@ -26,7 +26,7 @@ def process_target_ways(ctx: SceneResourceContext) -> Optional[Path]:
         osm_data = fetch_osm_data(
             ways_cfg, bbox_south, bbox_west, bbox_north, bbox_east
         )
-    except WaysFetchError as exc:
+    except OverpassFetchError as exc:
         logging.error("Way fetch failed, skipping ways: %s", exc)
         return None
     if osm_data is None:

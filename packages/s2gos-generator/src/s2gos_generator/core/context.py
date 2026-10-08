@@ -4,12 +4,13 @@ import json
 import logging
 from typing import Dict, List, Optional
 
+import numpy as np
 from s2gos_utils.io.paths import open_file
 from shapely.geometry import box
 from upath import UPath
 
 from .assets import SceneAssets
-from .config import SceneGenConfig, WaysConfig
+from .config import SceneGenConfig
 
 
 class SceneResourceContext:
@@ -71,6 +72,8 @@ class SceneResourceContext:
         self._ways: Optional[list] = None
         self._building_footprints: Optional[list] = None
         self._way_polygons_by_material: Optional[dict] = None
+        self._water_bodies: Optional[list] = None
+        self._water_polygons_by_material: Optional[dict] = None
         self._matched_materials: Optional[dict] = None
 
     @property
@@ -124,6 +127,20 @@ class SceneResourceContext:
             half = (self.aoi_size_km * 1000) / 2
             self._target_scene_bounds = box(-half, -half, half, half)
         return self._target_scene_bounds
+
+    @property
+    def shore_flat_margin_m(self) -> float:
+        """Distance areal water flattening extends past the shoreline (see ``WaterConfig.shore_flat_margin_m``)."""
+        water, refinement = self.config.water, self.config.mesh_refinement
+        if water is None or refinement is None or not refinement.enabled:
+            return 0.0
+        if water.shore_flat_margin_m is not None:
+            return water.shore_flat_margin_m
+        texel_m = min(
+            self.config.texture_resolution_m or np.inf, self.landcover_resolution_m
+        )
+        cell_m = self.dem_resolution_m / 2**refinement.max_depth
+        return float(np.sqrt(2) * (texel_m + cell_m))
 
     @property
     def buffer_aoi_polygon(self):
@@ -190,6 +207,8 @@ class SceneResourceContext:
         if self._way_polygons_by_material is None:
             from shapely.ops import unary_union
 
+            from .config.ways import WaysConfig
+
             by_mat: dict[str, list] = {}
             for way in self.ways:
                 poly = way.centerline.buffer(way.width / 2, cap_style="flat")
@@ -204,6 +223,54 @@ class SceneResourceContext:
                 mat: unary_union(by_mat[mat]) for mat in ordered_mats
             }
         return self._way_polygons_by_material
+
+    def _load_water_bodies_from_sidecar(self) -> list:
+        from ..processors.water import water_bodies_from_sidecar
+
+        if self.assets.water_file is None:
+            return []
+        try:
+            with open(str(self.assets.water_file), "r") as f:
+                data = json.load(f)
+            return water_bodies_from_sidecar(data)
+        except (json.JSONDecodeError, KeyError) as exc:
+            logging.warning("Failed to load water bodies from sidecar: %s", exc)
+            return []
+
+    @property
+    def water_bodies(self) -> list:
+        """All water bodies, lazily loaded from the water sidecar."""
+        if self._water_bodies is None:
+            self._water_bodies = self._load_water_bodies_from_sidecar()
+        return self._water_bodies
+
+    @property
+    def water_polygons_by_material(self) -> dict:
+        """Merged water footprint per material, minus way footprints so ways crossing water stay painted.
+
+        Texture-only: mesh flattening uses ``water_bodies`` directly.
+        """
+        if self._water_polygons_by_material is None:
+            from shapely.ops import unary_union
+
+            by_mat: dict[str, list] = {}
+            for body in self.water_bodies:
+                by_mat.setdefault(body.material, []).append(body.geometry)
+            merged = {mat: unary_union(polys) for mat, polys in by_mat.items()}
+
+            way_polys = [
+                p
+                for p in self.way_polygons_by_material.values()
+                if p is not None and not p.is_empty
+            ]
+            if way_polys:
+                way_union = unary_union(way_polys)
+                merged = {
+                    mat: poly.difference(way_union) for mat, poly in merged.items()
+                }
+
+            self._water_polygons_by_material = merged
+        return self._water_polygons_by_material
 
     def _load_matched_materials_sidecar(self) -> dict:
         from ..processors.spectral.diversify import matched_materials_from_sidecar

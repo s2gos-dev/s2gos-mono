@@ -13,6 +13,7 @@ from .mesh_generator import MeshGenerator
 from .terraforming import (
     GradientFilter,
     TerraformOperation,
+    WaterFlattenOperation,
     WayFlattenOperation,
     apply_way_flatten_batch,
     compute_gradient,
@@ -27,6 +28,7 @@ __all__ = [
     "GradientFilter",
     "WayFlattenOperation",
     "TerraformOperation",
+    "WaterFlattenOperation",
     "apply_way_flatten_batch",
     "compute_gradient",
     "make_refinement_predicate",

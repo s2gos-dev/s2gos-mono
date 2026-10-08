@@ -67,6 +67,7 @@ class SceneGenerationPipeline:
             generate_target_texture,
         )
         from ..resources.vegetation import process_target_vegetation
+        from ..resources.water import process_target_water
         from ..resources.ways import process_target_ways
 
         # Register resources with their dependencies
@@ -77,6 +78,13 @@ class SceneGenerationPipeline:
 
         if self.config.ways is not None and self.config.ways.enabled:
             self.registry.register("target_ways", [], process_target_ways)
+
+        if self.config.water is not None and self.config.water.enabled:
+            self.registry.register(
+                "target_water",
+                ["target_dem", "target_landcover"],
+                process_target_water,
+            )
 
         if self.config.buildings is not None and self.config.buildings.enabled:
             self.registry.register(
@@ -89,7 +97,7 @@ class SceneGenerationPipeline:
             "target_mesh",
             ["target_dem"],
             generate_target_mesh,
-            optional=["target_ways"],
+            optional=["target_ways", "target_water"],
         )
 
         if self.config.spectral_matching is not None:
@@ -99,16 +107,14 @@ class SceneGenerationPipeline:
                 "target_sentinel2", ["target_landcover"], process_target_sentinel2
             )
 
-        target_texture_deps = ["target_landcover"]
-        if self.config.snow is not None:
-            target_texture_deps.append("target_dem")
+        target_texture_deps = ["target_landcover", "target_dem"]
         if self.config.spectral_matching is not None:
             target_texture_deps.append("target_sentinel2")
         self.registry.register(
             "target_texture",
             target_texture_deps,
             generate_target_texture,
-            optional=["target_ways"],
+            optional=["target_ways", "target_water"],
         )
 
         if self.config.buffer is not None:
@@ -147,7 +153,12 @@ class SceneGenerationPipeline:
                 "target_vegetation",
                 ["target_landcover", "target_dem"],
                 process_target_vegetation,
-                optional=["user_assets", "target_ways", "target_buildings"],
+                optional=[
+                    "user_assets",
+                    "target_ways",
+                    "target_buildings",
+                    "target_water",
+                ],
             )
 
         # Scene description (dependencies will be updated by update_scene_dependencies)
@@ -379,6 +390,7 @@ class SceneGenerationPipeline:
                 "user_assets": "#FFA07A",
                 "hamster_data": "#20B2AA",
                 "target_ways": "#A9A9A9",
+                "target_water": "#5DADE2",
                 "target_buildings": "#C8A2C8",
                 "scene_description": "#FF6347",
             }

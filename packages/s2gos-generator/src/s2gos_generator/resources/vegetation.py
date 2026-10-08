@@ -11,8 +11,8 @@ from s2gos_utils.io.paths import exists, open_file
 from ..core.context import SceneResourceContext
 from ..core.exceptions import DataNotFoundError
 from ..processors.vegetation import (
-    _filter_by_buildings,
     _filter_by_exclusion_zones,
+    _filter_by_footprints,
     _filter_by_ways,
     _process_vegetation_with_shared_datasets,
     save_vegetation_collection_binary,
@@ -92,11 +92,20 @@ def process_target_vegetation(
     )
 
     building_exclusion = ctx.config.vegetation_placement.building_exclusion
-    vegetation_instances = _filter_by_buildings(
+    vegetation_instances = _filter_by_footprints(
         vegetation_instances,
         ctx.building_footprints,
         enabled=building_exclusion.enabled,
         buffer_m=building_exclusion.buffer_m,
+    )
+
+    water_exclusion = ctx.config.vegetation_placement.water_exclusion
+    vegetation_instances = _filter_by_footprints(
+        vegetation_instances,
+        [body.geometry for body in ctx.water_bodies],
+        enabled=water_exclusion.enabled,
+        buffer_m=water_exclusion.buffer_m + ctx.shore_flat_margin_m,
+        label="Water",
     )
 
     if not vegetation_instances:

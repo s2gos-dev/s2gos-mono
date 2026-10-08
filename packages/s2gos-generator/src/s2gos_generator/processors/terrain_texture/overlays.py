@@ -90,6 +90,58 @@ def apply_region_materials(
     return texture_2d, modified
 
 
+def _rasterize_setup(
+    texture_2d: np.ndarray,
+    landcover_path: Path,
+    texture_resolution_m: Optional[float],
+) -> tuple[np.ndarray, int, int, "Affine", float]:
+    """Resolve target raster dimensions/transform for painting onto texture_2d.
+
+    Resizes texture_2d (NEAREST) to the upsampled target dimensions when
+    texture_resolution_m is finer than the landcover's native resolution, and
+    returns the transform whose bounds margin is always half a *native*
+    landcover pixel, not half a (possibly upsampled) raster pixel
+
+    Returns (texture_2d, target_width, target_height, transform, raster_res).
+    """
+    from rasterio.transform import from_bounds
+
+    with xr.open_zarr(expand_mapper(landcover_path)) as ds:
+        lc_data = ds[list(ds.data_vars)[0]]
+        native_width_px = len(lc_data.coords["x"].values)
+        native_height_px = len(lc_data.coords["y"].values)
+        xmin, xmax, ymin, ymax, native_res = _lc_bounds(lc_data)
+
+    if texture_resolution_m is not None and texture_resolution_m < native_res:
+        scale = native_res / texture_resolution_m
+        target_width = round(native_width_px * scale)
+        target_height = round(native_height_px * scale)
+        raster_res = texture_resolution_m
+    else:
+        target_width = native_width_px
+        target_height = native_height_px
+        raster_res = native_res
+
+    if (target_height, target_width) != texture_2d.shape:
+        texture_2d = np.array(
+            Image.fromarray(texture_2d, mode="L").resize(
+                (target_width, target_height), Image.NEAREST
+            )
+        )
+
+    half_px = native_res / 2
+    transform = from_bounds(
+        xmin - half_px,
+        ymin - half_px,
+        xmax + half_px,
+        ymax + half_px,
+        target_width,
+        target_height,
+    )
+
+    return texture_2d, target_width, target_height, transform, raster_res
+
+
 def apply_ways(
     texture_2d: np.ndarray,
     landcover_path: Path,
@@ -119,45 +171,14 @@ def apply_ways(
         applied. The caller can reuse it to overlay ways on the preview texture.
     """
     from rasterio.features import rasterize
-    from rasterio.transform import from_bounds
 
     way_geoms = way_polygons_by_material
     if not way_geoms:
         return texture_2d, None
 
-    with xr.open_zarr(expand_mapper(landcover_path)) as ds:
-        lc_data = ds[list(ds.data_vars)[0]]
-        native_width_px = len(lc_data.coords["x"].values)
-        native_height_px = len(lc_data.coords["y"].values)
-        xmin, xmax, ymin, ymax, native_res = _lc_bounds(lc_data)
-
-    texture_res = texture_resolution_m
-    if texture_res is not None and texture_res < native_res:
-        scale = native_res / texture_res
-        target_width = round(native_width_px * scale)
-        target_height = round(native_height_px * scale)
-        raster_res = texture_res
-    else:
-        target_width = native_width_px
-        target_height = native_height_px
-        raster_res = native_res
-
-    half_px = raster_res / 2
-    transform = from_bounds(
-        xmin - half_px,
-        ymin - half_px,
-        xmax + half_px,
-        ymax + half_px,
-        target_width,
-        target_height,
+    texture_2d, target_width, target_height, transform, raster_res = _rasterize_setup(
+        texture_2d, landcover_path, texture_resolution_m
     )
-
-    if (target_height, target_width) != texture_2d.shape:
-        texture_2d = np.array(
-            Image.fromarray(texture_2d, mode="L").resize(
-                (target_width, target_height), Image.NEAREST
-            )
-        )
 
     union_mask = np.zeros((target_height, target_width), dtype=bool)
     for material_name, merged_poly in way_geoms.items():
@@ -201,17 +222,147 @@ def apply_ways(
     return texture_2d, (union_mask if union_mask.any() else None)
 
 
+def strip_unvetted_water_pixels(
+    texture_2d: np.ndarray,
+    landcover_path: Path,
+    water_polygons_by_material: dict,
+    water_material_index: int,
+    fallback_material_index: int,
+    texture_resolution_m: Optional[float] = None,
+    area_name: str = "target",
+) -> tuple[np.ndarray, bool]:
+    """Remap water-material pixels that fall outside every vetted water body.
+
+    Returns (texture_2d, modified).
+    """
+    all_polys = [
+        p
+        for p in water_polygons_by_material.values()
+        if p is not None and not p.is_empty
+    ]
+    if not all_polys:
+        return texture_2d, False
+
+    from rasterio.features import rasterize
+    from shapely.ops import unary_union
+
+    water_union = unary_union(all_polys)
+
+    texture_2d, target_width, target_height, transform, _raster_res = _rasterize_setup(
+        texture_2d, landcover_path, texture_resolution_m
+    )
+
+    water_raster = rasterize(
+        [(water_union, 1)],
+        out_shape=(target_height, target_width),
+        transform=transform,
+        fill=0,
+        dtype=np.uint8,
+        all_touched=True,
+    )
+    vetted_mask = np.flipud(water_raster) > 0
+
+    leak_mask = (texture_2d == water_material_index) & ~vetted_mask
+    n_leaked = int(leak_mask.sum())
+    if n_leaked > 0:
+        texture_2d[leak_mask] = fallback_material_index
+        logging.info(
+            "Water: remapped %d landcover-only water pixel(s) outside vetted "
+            "water bodies to material index %d (%s texture)",
+            n_leaked,
+            fallback_material_index,
+            area_name,
+        )
+    return texture_2d, n_leaked > 0
+
+
+def strip_steep_water_pixels(
+    texture_2d: np.ndarray,
+    dem_path: Path,
+    landcover_path: Path,
+    water_mask: np.ndarray,
+    water_material_index: int,
+    max_slope: float,
+    texture_resolution_m: Optional[float] = None,
+    area_name: str = "target",
+) -> tuple[np.ndarray, bool]:
+    """Repaint water-material pixels whose underlying DEM slope exceeds max_slope with the nearest non-water material.
+
+    Texture row 0 is ``ymin``. Slope is sampled only at ``water_mask`` pixels and
+    the fill comes from the nearest land pixel bordering water, never from water.
+    """
+    if water_mask is None or not water_mask.any():
+        return texture_2d, False
+
+    from scipy.ndimage import binary_dilation, map_coordinates
+    from scipy.spatial import cKDTree
+
+    from ..terrain_mesh import compute_gradient, extract_dem
+
+    with xr.open_zarr(expand_mapper(dem_path)) as ds:
+        dem_data = ds[list(ds.data_vars)[0]]
+        dem_x, dem_y, dem_elev = extract_dem(dem_data)
+    slope = compute_gradient(dem_elev, dem_x, dem_y)
+
+    with xr.open_zarr(expand_mapper(landcover_path)) as ds:
+        lc_data = ds[list(ds.data_vars)[0]]
+        xmin, xmax, ymin, ymax, native_res = _lc_bounds(lc_data)
+
+    height, width = texture_2d.shape
+    raster_res = texture_resolution_m if texture_resolution_m else native_res
+    half_px = native_res / 2
+    xs = np.linspace(
+        xmin - half_px + raster_res / 2, xmax + half_px - raster_res / 2, width
+    )
+    ys = np.linspace(
+        ymin - half_px + raster_res / 2, ymax + half_px - raster_res / 2, height
+    )
+    dx = (dem_x[-1] - dem_x[0]) / (len(dem_x) - 1)
+    dy = (dem_y[-1] - dem_y[0]) / (len(dem_y) - 1)
+
+    rows, cols = np.nonzero(water_mask)
+    water_slope = map_coordinates(
+        slope,
+        np.vstack(((ys[rows] - dem_y[0]) / dy, (xs[cols] - dem_x[0]) / dx)),
+        order=1,
+        mode="nearest",
+    )
+    steep = water_slope > max_slope
+    n_removed = int(steep.sum())
+    if n_removed == 0:
+        return texture_2d, False
+    rows, cols = rows[steep], cols[steep]
+
+    is_water = texture_2d == water_material_index
+    land_rows, land_cols = np.nonzero(binary_dilation(is_water) & ~is_water)
+    if land_rows.size == 0:
+        return texture_2d, False
+    _, nearest = cKDTree(np.column_stack((land_rows, land_cols))).query(
+        np.column_stack((rows, cols))
+    )
+    texture_2d[rows, cols] = texture_2d[land_rows[nearest], land_cols[nearest]]
+
+    logging.info(
+        "Water: repainted %d steep water pixel(s) (slope > %.3f m/m) with "
+        "nearest land material (%s texture)",
+        n_removed,
+        max_slope,
+        area_name,
+    )
+    return texture_2d, True
+
+
 def apply_ways_to_preview(
     preview_path: Path,
-    way_mask: np.ndarray,
-    debug_color: tuple[int, int, int] = (50, 50, 50),
+    layers: list[tuple[np.ndarray, tuple[int, int, int]]],
 ) -> None:
-    """Resize the RGB preview to match ``way_mask`` and paint ways on it."""
-    target_h, target_w = way_mask.shape
+    """Resize the RGB preview to the mask shape and paint each ``(mask, color)`` layer in order."""
+    target_h, target_w = layers[0][0].shape
     with Image.open(preview_path) as img:
         rgb = img.convert("RGB")
         if rgb.size != (target_w, target_h):
             rgb = rgb.resize((target_w, target_h), Image.NEAREST)
         arr = np.array(rgb)
-    arr[np.flipud(way_mask)] = debug_color
+    for mask, color in layers:
+        arr[np.flipud(mask)] = color
     Image.fromarray(arr, mode="RGB").save(preview_path)
