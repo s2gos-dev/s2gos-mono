@@ -94,6 +94,8 @@ class SimulationConfig(BaseModel):
 
         For Eradiate backend:
         - 'mode': Spectral mode ('mono', 'ckd', 'mono_polarized', 'ckd_polarized', etc.)
+        - 'moment': If True, use the moment integrator and add 'radiance_var' (per-pixel
+          Monte Carlo variance of the estimate, already divided by spp) to the results
         """,
     )
 

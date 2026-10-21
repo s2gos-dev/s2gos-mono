@@ -68,6 +68,7 @@ class EradiateBackend(SimulationBackend):
 
         eradiate_hints = simulation_config.backend_hints.get("eradiate", {})
         self._eradiate_mode = eradiate_hints.get("mode", "mono")
+        self._eradiate_moment = bool(eradiate_hints.get("moment", False))
 
         if ERADIATE_AVAILABLE:
             try:
@@ -659,7 +660,7 @@ class EradiateBackend(SimulationBackend):
 
         self.surface_builder.validate_material_ids(kdict, scene_description)
 
-        return AtmosphereExperiment(
+        experiment = AtmosphereExperiment(
             geometry=geometry,
             atmosphere=atmosphere_obj,
             surface=None,  # We set this up through the expert interface (kdict, kpmap)
@@ -668,6 +669,8 @@ class EradiateBackend(SimulationBackend):
             kdict=kdict,
             kpmap=kpmap,
         )
+        experiment.integrator.moment = self._eradiate_moment
+        return experiment
 
     def _log_simulation_summary(self) -> None:
         """Log a clear simulation summary with measurement type breakdown."""
