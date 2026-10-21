@@ -1,11 +1,11 @@
 
 **Script:** [`examples/run_hypstar_simulations.py`](https://github.com/s2gos-dev/s2gos-mono/blob/main/examples/run_hypstar_simulations.py)
 
-This example runs a series of HYPSTAR ground sensor simulations over the Gobabeb validation
-site, driven by a real HYPERNETS L2A NetCDF dataset. Each series in the dataset corresponds
-to a different acquisition geometry; the script loops through them and produces a simulated
-HCRF output for each, then merges all results into a single HYPERNETS-format NetCDF file for
-direct comparison against real measurements.
+This example simulates a real HYPERNETS sequence over the Gobabeb validation site. It reads
+the sequence's L2B reflectance and L1D radiance/irradiance files, simulates every irradiance
+scan and the selected radiance series, derives the HCRF the way the HYPERNETS land processor
+does, and merges the results into a single HYPERNETS-format NetCDF file for direct comparison
+against the real L2B.
 
 ## What it demonstrates
 
@@ -16,12 +16,14 @@ direct comparison against real measurements.
   default material for bare-soil pixels across the full target domain.
 - **User assets** — two XML scene objects (a mast structure and a fence) are imported and
   positioned at their real-world coordinates within the scene.
-- **Heterogeneous atmosphere** — a molecular layer (with [MYCENA](https://eradiate.readthedocs.io/en/stable/data/absorption_databases.html#mycena-ckd) absorption database) is
-  combined with a single aerosol particle layer whose optical depth and height are derived
-  from CAMS climatology.
+- **Heterogeneous atmosphere** — a molecular layer (PANELLUS absorption database) combined
+  with a single aerosol layer. AOD550 comes from CAMS or AERONET (`AOD_SOURCE`), the layer
+  height from the Kinne climatology, and the aerosol model is Govaerts desert or custom
+  dataset (`AEROSOL_MODEL`). With `SCALE_H2O_TO_AERONET`, the H2O profile is scaled to
+  the AERONET precipitable water (O3 stays as in EAC4).
 - **Geometry-driven loop** — viewing and solar angles are read directly from the HYPERNETS
-  L2A file for each acquisition, converted to the Eradiate convention, and used to configure
-  a fresh [`SimulationConfig`][s2gos_simulator.config.simulation.SimulationConfig] per series.
+  files for each scan, converted to the Eradiate convention, and used to configure
+  a fresh [`SimulationConfig`][s2gos_simulator.config.simulation.SimulationConfig] per scan.
 
 ## Key configuration points
 
@@ -38,7 +40,7 @@ config.region_material_defs["gobabeb_measured_rpv"] = {
 config.material_regions.append(
     MaterialRegion(
         region_id="center_rpv",
-        geometry=RectangleGeometry(center_x=0.0, center_y=0.0,
+        geometry=RectangleGeometry(center=(0.0, 0.0), coord_type="scene",
                                    width_m=1500.0, height_m=1500.0).model_dump(),
         material_name="gobabeb_measured_rpv",
         priority=10,
@@ -55,8 +57,8 @@ config.material_regions.append(
 create_hypstar_sensor(
     viewing=AngularFromOriginViewing(...),
     fov=5.0,
-    resolution=(32, 32),
-    reference_file=l2a_path,   # output wavelengths matched to real HYPSTAR grid
+    resolution=(128, 128),
+    reference_file=ref_path,   # output wavelengths matched to real HYPSTAR grid
     sensor_id=sensor_id,
     samples_per_pixel=SENSOR_SAMPLES,
 )
@@ -64,7 +66,7 @@ create_hypstar_sensor(
 
 [`create_hypstar_sensor`][s2gos_simulator.config.sensors.create_hypstar_sensor] pre-configures the Gaussian SRF (VNIR 3 nm / SWIR 10 nm FWHM),
 circular-mask post-processing, and spatial averaging. Passing `reference_file` aligns the
-output wavelength grid to that of the real L2A dataset for direct comparison.
+output wavelength grid to that of the real L2B dataset for direct comparison.
 
 ### Angle conversion (HYPSTAR → Eradiate)
 
@@ -75,8 +77,9 @@ output wavelength grid to that of the real L2A dataset for direct comparison.
 
 ## Running the script
 
-Edit the `USER CONFIGURATION` block at the top of the script to point to your data,
-then run from the repo root:
+Edit the `USER CONFIGURATION` block at the top of the script (sequence, date, AOD source,
+aerosol model). All input files are found through the resolver search paths
+(e.g. `extra_data/`). Then run from the repo root:
 
 ```bash
 pixi run python examples/run_hypstar_simulations.py

@@ -269,7 +269,7 @@ class TestGroundSensorTranslation:
 
         assert result["id"] == "hyp"
         assert result["type"] == "perspective"
-        assert result["srf"] == {"type": "uniform", "wmin": 380.0, "wmax": 1680.0}
+        assert result["srf"] == {"type": "uniform", "wmin": 340.0, "wmax": 1690.0}
         assert result["origin"] == pytest.approx([0, 0, 1])
         assert result["target"] == pytest.approx([0, 0, 0])
         assert result["up"] == pytest.approx([0, 1, 0])

@@ -177,6 +177,23 @@ class IrradianceProcessor:
 
         return E_boa
 
+    def _apply_gaussian_srf(
+        self, variables: Dict[str, xr.DataArray], srf
+    ) -> Dict[str, xr.DataArray]:
+        """Convolve irradiances with a Gaussian SRF onto its output grid.
+
+        Uses the same convolution as sensor radiance post-processing, so an
+        irradiance and a radiance sharing an SRF are spectrally consistent.
+        Other SRF types are returned unchanged.
+        """
+        from .config import SpectralResponse
+
+        if not (isinstance(srf, SpectralResponse) and srf.type == "gaussian"):
+            return variables
+
+        sp = self.backend.sensor_processor
+        return {name: sp.apply_gaussian_srf(E, srf) for name, E in variables.items()}
+
     def execute_irradiance_measurements(
         self,
         scene_description: SceneDescription,
@@ -259,6 +276,8 @@ class IrradianceProcessor:
                     {"quantity": "toa_irradiance", "units": "W m^-2 nm^-1"}
                 )
                 dataset_vars["toa_irradiance"] = E_toa
+
+            dataset_vars = self._apply_gaussian_srf(dataset_vars, config.location.srf)
 
             result_ds = xr.Dataset(dataset_vars)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -227,6 +228,29 @@ class SpectralResponse(BaseModel):
             return self.spectral_regions[-1].fwhm_nm
 
         raise ValueError("No FWHM configuration available")
+
+    def simulation_range(self) -> tuple[float, float]:
+        """Wavelength range (nm) to simulate for a Gaussian SRF.
+
+        With an output grid, the range spans the grid plus the Gaussian support
+        (+- 3 sigma, Eradiate's Gaussian cutoff) at each end, so no output wavelength
+        convolves outside the simulated data. Without one, it spans the spectral
+        regions, falling back to 400–2500 nm.
+        """
+        if self.output_grid is not None:
+            w = self.output_grid.generate_wavelengths()
+            wmin, wmax = float(w.min()), float(w.max())
+            fwhm_to_3sigma = 3.0 / (2.0 * math.sqrt(2.0 * math.log(2.0)))
+            return (
+                wmin - fwhm_to_3sigma * self.get_fwhm_for_wavelength(wmin),
+                wmax + fwhm_to_3sigma * self.get_fwhm_for_wavelength(wmax),
+            )
+        if self.spectral_regions:
+            return (
+                min(r.wmin_nm for r in self.spectral_regions),
+                max(r.wmax_nm for r in self.spectral_regions),
+            )
+        return 400.0, 2500.0
 
 
 # TODO: Perhaps it can be less eradiate specific?

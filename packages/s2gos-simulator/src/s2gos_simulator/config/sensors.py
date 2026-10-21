@@ -463,11 +463,9 @@ CHIME_SRF = SpectralResponse(
 )
 
 # HYPSTAR (HYPERNETS Land Network) spectral characteristics
-# - VNIR detector (Si): 380–1000 nm, FWHM ≈ 3 nm
-# - SWIR detector (InGaAs): 1000–1680 nm, FWHM ≈ 10 nm
 HYPSTAR_SPECTRAL_REGIONS = [
-    SpectralRegion(name="VNIR", wmin_nm=380.0, wmax_nm=1000.0, fwhm_nm=3.0),
-    SpectralRegion(name="SWIR", wmin_nm=1000.0, wmax_nm=1680.0, fwhm_nm=10.0),
+    SpectralRegion(name="VNIR", wmin_nm=340.0, wmax_nm=1000.0, fwhm_nm=3.0),
+    SpectralRegion(name="SWIR", wmin_nm=1000.0, wmax_nm=1690.0, fwhm_nm=10.0),
 ]
 
 HYPSTAR_SRF = SpectralResponse(

@@ -737,33 +737,7 @@ class EradiateTranslator:
         elif srf.type == "gaussian":
             # Gaussian SRF: simulate uniformly over the spectral range,
             # then apply Gaussian SRF convolution in post-processing.
-            if srf.output_grid is not None:
-                grid = srf.output_grid
-                if grid.mode == "regular":
-                    wmin = grid.wmin_nm
-                    wmax = grid.wmax_nm
-                elif grid.mode == "explicit":
-                    wmin = min(grid.wavelengths_nm)
-                    wmax = max(grid.wavelengths_nm)
-                else:
-                    # from_file: wavelengths only known at runtime; derive
-                    # simulation range from spectral_regions if present.
-                    if srf.spectral_regions:
-                        wmin = min(r.wmin_nm for r in srf.spectral_regions)
-                        wmax = max(r.wmax_nm for r in srf.spectral_regions)
-                    else:
-                        wmin = 400.0
-                        wmax = 2500.0
-                    logger.debug(
-                        f"Gaussian SRF with from_file output grid: using "
-                        f"{wmin}–{wmax} nm for simulation (from spectral_regions)."
-                    )
-            elif srf.spectral_regions:
-                # Infer simulation range from spectral region bounds
-                wmin = min(r.wmin_nm for r in srf.spectral_regions)
-                wmax = max(r.wmax_nm for r in srf.spectral_regions)
-            else:
-                wmin, wmax = 400.0, 2500.0  # broad fallback
+            wmin, wmax = srf.simulation_range()
             return {
                 "type": "uniform",
                 "wmin": wmin,

@@ -80,10 +80,7 @@ class SensorProcessor:
                 logger.info(
                     f"Applying Gaussian SRF post-processing to sensor '{sensor.id}'"
                 )
-                target_wavelengths = self._resolve_target_wavelengths(srf, radiance)
-                radiance = self._apply_gaussian_srf_from_config(
-                    radiance, srf, target_wavelengths
-                )
+                radiance = self.apply_gaussian_srf(radiance, srf)
                 spectral_changed = True
 
         if not (spatial_changed or spectral_changed):
@@ -136,17 +133,17 @@ class SensorProcessor:
         data = self._apply_fov_mask_step(data, sensor, pp)
         return self._apply_averaging_step(data, pp)
 
-    def _resolve_target_wavelengths(self, srf_config, radiance: xr.DataArray):
-        """Determine target wavelengths for SRF convolution.
+    def apply_gaussian_srf(self, data: xr.DataArray, srf) -> xr.DataArray:
+        """Convolve spectral data with a Gaussian SRF.
 
-        Priority order:
-        1. output_grid from SRF config
-        2. Simulation wavelengths from input radiance (default fallback)
+        The target wavelengths are the SRF's output grid, or the data's own
+        wavelengths when it has none.
         """
-        if srf_config.output_grid is not None:
-            return srf_config.output_grid.generate_wavelengths()
-
-        return radiance.w.values
+        if srf.output_grid is not None:
+            target_wavelengths = srf.output_grid.generate_wavelengths()
+        else:
+            target_wavelengths = data.w.values
+        return self._apply_gaussian_srf_from_config(data, srf, target_wavelengths)
 
     def _build_result(
         self,
@@ -272,11 +269,7 @@ class SensorProcessor:
             )
 
         result_radiance = result_radiance.sortby("w")
-        result_radiance.attrs = {
-            **radiance.attrs,
-            "gaussian_srf_applied": True,
-            "srf_type": "gaussian",
-        }
+        result_radiance.attrs = {**radiance.attrs, "srf_type": "gaussian"}
 
         return result_radiance
 
