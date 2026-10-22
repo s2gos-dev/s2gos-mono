@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
@@ -135,6 +136,26 @@ INSTRUMENT_BANDS = {
     SatelliteInstrument.CUSTOM: None,  # Accept any string for custom
 }
 
+INSTRUMENT_BAND_GSD_M = {
+    SatelliteInstrument.MSI: {
+        SentinelMSIBand.B01: 60,
+        SentinelMSIBand.B02: 10,
+        SentinelMSIBand.B03: 10,
+        SentinelMSIBand.B04: 10,
+        SentinelMSIBand.B05: 20,
+        SentinelMSIBand.B06: 20,
+        SentinelMSIBand.B07: 20,
+        SentinelMSIBand.B08: 10,
+        SentinelMSIBand.B8A: 20,
+        SentinelMSIBand.B09: 60,
+        SentinelMSIBand.B10: 60,
+        SentinelMSIBand.B11: 20,
+        SentinelMSIBand.B12: 20,
+    },
+}
+"""Native ground sampling distance (m) per instrument band, used as the default
+`SatelliteSensor.film_resolution`. Add an instrument's bands here to give it a default."""
+
 
 class GroundInstrumentType(str, Enum):
     """Enum for ground instrument types for robustness."""
@@ -243,8 +264,13 @@ class SatelliteSensor(BaseSensor):
     band: str = Field(
         ..., description="Band identifier (validated against instrument-specific enum)"
     )
-    film_resolution: Tuple[int, int] = Field(
-        ..., description="Pixel grid dimensions (width, height) for 2D imaging"
+    film_resolution: Optional[Tuple[int, int]] = Field(
+        None,
+        description=(
+            "Pixel grid dimensions (width, height) for 2D imaging. Defaults to the "
+            "band's native GSD from INSTRUMENT_BAND_GSD_M (Sentinel-2 MSI: 10, 20 or "
+            "60 m), in which case target_size_km must be a whole multiple of it"
+        ),
     )
     target_center_lat: float = Field(
         ..., description="Target center latitude in WGS84 decimal degrees"
@@ -322,6 +348,24 @@ class SatelliteSensor(BaseSensor):
             else:
                 self.id = f"{base_id}_nadir"
 
+        if self.film_resolution is None:
+            gsd = INSTRUMENT_BAND_GSD_M.get(self.instrument, {}).get(self.band)
+            if gsd is None:
+                raise ValueError(
+                    f"film_resolution is required for {self.instrument.value} band "
+                    f"{self.band!r}: no native GSD known"
+                )
+            footprint_m = self._footprint_m()
+            film = tuple(round(size / gsd) for size in footprint_m)
+            if not all(
+                math.isclose(n * gsd, size) for n, size in zip(film, footprint_m)
+            ):
+                raise ValueError(
+                    f"Footprint {self.target_size_km} km is not a whole multiple of "
+                    f"band {self.band!r}'s {gsd} m GSD"
+                )
+            self.film_resolution = film
+
         # Validate film resolution limits
         width, height = self.film_resolution
         if width <= 0 or height <= 0:
@@ -334,6 +378,12 @@ class SatelliteSensor(BaseSensor):
 
         return self
 
+    def _footprint_m(self) -> Tuple[float, float]:
+        if isinstance(self.target_size_km, (int, float)):
+            return self.target_size_km * 1000, self.target_size_km * 1000
+        width_km, height_km = self.target_size_km
+        return width_km * 1000, height_km * 1000
+
     @property
     def pixel_size_m(self) -> Tuple[float, float]:
         """
@@ -342,15 +392,9 @@ class SatelliteSensor(BaseSensor):
         Returns:
             Tuple of (pixel_size_x_m, pixel_size_y_m) in meters per pixel
         """
-        if isinstance(self.target_size_km, (int, float)):
-            # Square area
-            width_km = height_km = self.target_size_km
-        else:
-            # Rectangular area
-            width_km, height_km = self.target_size_km
-
-        pixel_size_x = (width_km * 1000) / self.film_resolution[0]
-        pixel_size_y = (height_km * 1000) / self.film_resolution[1]
+        width_m, height_m = self._footprint_m()
+        pixel_size_x = width_m / self.film_resolution[0]
+        pixel_size_y = height_m / self.film_resolution[1]
 
         return pixel_size_x, pixel_size_y
 

@@ -57,6 +57,7 @@ nav:
     - Sensors: api/sensors.md
     - Measurements: api/measurements.md
     - Viewing: api/viewing.md
+    - Acquisitions: api/acquisitions.md
     - Spectral: api/spectral.md
     - Backend: api/backend.md
   - Changelog: changelog.md

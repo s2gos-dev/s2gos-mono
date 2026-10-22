@@ -1,10 +1,16 @@
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pytest
 from pyproj import Transformer
 
-from s2gos_simulator.config.geometry import view_geometry_from_tile_metadata
+from s2gos_simulator.acquisitions.sentinel2 import (
+    create_acquisition,
+    read_tile_metadata,
+)
+from s2gos_simulator.config import SatellitePlatform
+from s2gos_simulator.config.illumination import SolarPosition
 
 _ULX, _ULY, _STEP = 499980.0, 7400020.0, 5000.0
 _UTM_TO_LATLON = Transformer.from_crs("EPSG:32733", "EPSG:4326", always_xy=True)
@@ -35,6 +41,10 @@ def _write_mtd_tl(path: Path, angle_grids, band_id: int = 1) -> Path:
     path.write_text(
         f"""<?xml version="1.0" encoding="UTF-8"?>
 <n1:Level-1C_Tile_ID xmlns:n1="https://psd-14.sentinel2.eo.esa.int/PSD/S2_PDI_Level-1C_Tile_Metadata.xsd">
+  <n1:General_Info>
+    <TILE_ID>S2A_OPER_MSI_L1C_TL_2APS_20220504T120001_A035839_T33KWP_N05.10</TILE_ID>
+    <SENSING_TIME>2022-05-04T09:17:15.123Z</SENSING_TIME>
+  </n1:General_Info>
   <n1:Geometric_Info>
     <Tile_Geocoding>
       <HORIZONTAL_CS_CODE>EPSG:32733</HORIZONTAL_CS_CODE>
@@ -48,7 +58,7 @@ def _write_mtd_tl(path: Path, angle_grids, band_id: int = 1) -> Path:
     return path
 
 
-class TestViewGeometryFromTileMetadata:
+class TestReadTileMetadata:
     def test_interpolates_at_point_in_eradiate_convention(self, tmp_path):
         zenith = [[2 + c + 0.5 * r for c in range(3)] for r in range(3)]
         azimuth = [[100.0] * 3 for _ in range(3)]
@@ -56,8 +66,11 @@ class TestViewGeometryFromTileMetadata:
             tmp_path / "MTD_TL.xml", [("1", zenith, azimuth)], band_id=8
         )
 
-        view = view_geometry_from_tile_metadata(path, "8a", *_latlon_at(0.5, 1.25))
+        time, platform, views = read_tile_metadata(path, *_latlon_at(0.5, 1.25), ["8a"])
+        view = views["8a"]
 
+        assert time == datetime(2022, 5, 4, 9, 17, 15, 123000, tzinfo=timezone.utc)
+        assert platform == SatellitePlatform.SENTINEL_2A
         assert view.zenith == pytest.approx(3.5, abs=1e-3)
         assert view.azimuth == pytest.approx(350.0, abs=1e-6)
 
@@ -69,7 +82,7 @@ class TestViewGeometryFromTileMetadata:
             tmp_path / "MTD_TL.xml", [("1", zenith, left), ("2", zenith, right)]
         )
 
-        view = view_geometry_from_tile_metadata(path, "2", *_latlon_at(1.0, 1.5))
+        view = read_tile_metadata(path, *_latlon_at(1.0, 1.5), ["2"])[2]["2"]
 
         mean_direction_zenith = np.degrees(
             np.arctan(np.tan(np.radians(5.0)) * np.cos(np.radians(10.0)))
@@ -83,4 +96,28 @@ class TestViewGeometryFromTileMetadata:
         path = _write_mtd_tl(tmp_path / "MTD_TL.xml", [("1", zenith, azimuth)])
 
         with pytest.raises(ValueError, match="outside the imaged swath"):
-            view_geometry_from_tile_metadata(path, "2", *_latlon_at(1.0, 1.5))
+            read_tile_metadata(path, *_latlon_at(1.0, 1.5), ["2"])
+
+
+class TestCreateAcquisition:
+    def test_sun_and_view_come_from_the_tile(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "s2gos_simulator.config.illumination.solar_position",
+            lambda time, lat, lon: SolarPosition(30.0, 100.0, 1.496e8, time),
+        )
+        zenith = [[2 + c + 0.5 * r for c in range(3)] for r in range(3)]
+        azimuth = [[100.0] * 3 for _ in range(3)]
+        path = _write_mtd_tl(
+            tmp_path / "MTD_TL.xml", [("1", zenith, azimuth)], band_id=8
+        )
+
+        illumination, (sensor,) = create_acquisition(
+            path, *_latlon_at(0.5, 1.25), ["8a"]
+        )
+
+        assert illumination.irradiance_datetime == datetime(
+            2022, 5, 4, 9, 17, 15, 123000, tzinfo=timezone.utc
+        )
+        assert sensor.platform == SatellitePlatform.SENTINEL_2A
+        assert sensor.viewing.zenith == pytest.approx(3.5, abs=1e-3)
+        assert sensor.viewing.azimuth == pytest.approx(350.0, abs=1e-6)
