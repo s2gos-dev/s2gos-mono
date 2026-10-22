@@ -4,6 +4,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+import numpy as np
+from pyproj import Transformer
+
 from .sensors import SatellitePlatform
 from .viewing import AngularViewing
 
@@ -44,47 +47,92 @@ def overpass_time_from_tile_metadata(mtd_tl_path: str | Path) -> datetime:
     )
 
 
-def view_geometry_from_tile_metadata(
-    mtd_tl_path: str | Path, band: str
-) -> AngularViewing:
-    """Reads the tile-mean viewing zenith/azimuth angle for one band from MTD_TL.xml.
+def _angle_grid(node: ET.Element) -> np.ndarray:
+    return np.array([v.text.split() for v in node.iter("VALUES")], dtype=float)
 
-    Uses the Mean_Viewing_Incidence_Angle (one value per band, averaged over
-    all detectors) rather than the per-detector angle grids. Applies the same
-    skyfield-to-Eradiate azimuth conversion used by
-    DirectionalIllumination.from_date_and_location, so sun and view azimuths
-    share one convention.
+
+def _view_vector_grid(grids: list[ET.Element]) -> np.ndarray:
+    """Per-node (east, north, up) view vectors summed over detectors; NaN where none covers."""
+    vectors = []
+    for detector in grids:
+        zenith = np.deg2rad(_angle_grid(detector.find("Zenith")))
+        azimuth = np.deg2rad(_angle_grid(detector.find("Azimuth")))
+        vectors.append(
+            np.stack(
+                [
+                    np.sin(zenith) * np.sin(azimuth),
+                    np.sin(zenith) * np.cos(azimuth),
+                    np.cos(zenith),
+                ],
+                axis=-1,
+            )
+        )
+    vectors = np.stack(vectors)
+    covered = np.isfinite(vectors).all(axis=-1)
+    grid = np.where(covered[..., None], vectors, 0.0).sum(axis=0)
+    grid[~covered.any(axis=0)] = np.nan
+    return grid
+
+
+def view_geometry_from_tile_metadata(
+    mtd_tl_path: str | Path, band: str, lat: float, lon: float
+) -> AngularViewing:
+    """Reads one band's viewing zenith/azimuth at a point from MTD_TL.xml.
+
+    Bilinearly interpolates the Viewing_Incidence_Angles_Grids at (lat, lon),
+    as unit vectors so the azimuth wrap needs no special case.
 
     Args:
         mtd_tl_path: Path to an MTD_TL.xml file.
         band: Band identifier as used by SentinelMSIBand (e.g. "2", "8a").
+        lat, lon: Target coordinates.
 
     Returns:
         An AngularViewing with zenith/azimuth in Eradiate convention.
 
     Raises:
-        ValueError: If the band is unknown or has no entry in the file.
+        ValueError: If the band is unknown or has no angle grids in the file,
+            or the point lies outside the tile or the imaged swath.
     """
     if band not in _MSI_BAND_ID_ORDER:
         raise ValueError(f"Unknown MSI band {band!r}")
     band_id = _MSI_BAND_ID_ORDER.index(band)
 
     root = ET.parse(str(mtd_tl_path)).getroot()
-    node = root.find(f".//Mean_Viewing_Incidence_Angle[@bandId='{band_id}']")
-    if node is None:
+    grids = root.findall(f".//Viewing_Incidence_Angles_Grids[@bandId='{band_id}']")
+    if not grids:
         raise ValueError(
-            f"No Mean_Viewing_Incidence_Angle for band {band!r} "
+            f"No Viewing_Incidence_Angles_Grids for band {band!r} "
             f"(bandId {band_id}) in {mtd_tl_path}"
         )
+    grid = _view_vector_grid(grids)
 
-    zenith = float(node.find("ZENITH_ANGLE").text)
-    azimuth_raw = float(node.find("AZIMUTH_ANGLE").text)
+    crs = root.find(".//Tile_Geocoding/HORIZONTAL_CS_CODE").text
+    x, y = Transformer.from_crs("EPSG:4326", crs, always_xy=True).transform(lon, lat)
+    origin = root.find(".//Tile_Geocoding/Geoposition[@resolution='10']")
+    step = grids[0].find("Zenith")
+    row = (float(origin.find("ULY").text) - y) / float(step.find("ROW_STEP").text)
+    col = (x - float(origin.find("ULX").text)) / float(step.find("COL_STEP").text)
 
-    # Same convention swap as DirectionalIllumination.from_date_and_location:
-    # S2 metadata azimuth: 0=North, clockwise. Eradiate: 0=East, counter-clockwise.
-    eradiate_azimuth = (90.0 - azimuth_raw) % 360.0
+    rows, cols = grid.shape[:2]
+    if not (0 <= row <= rows - 1 and 0 <= col <= cols - 1):
+        raise ValueError(f"({lat}, {lon}) lies outside the tile in {mtd_tl_path}")
+    i, j = min(int(row), rows - 2), min(int(col), cols - 2)
+    fi, fj = row - i, col - j
+    weights = np.array([[(1 - fi) * (1 - fj), (1 - fi) * fj], [fi * (1 - fj), fi * fj]])
+    corners = grid[i : i + 2, j : j + 2]
+    valid = np.isfinite(corners[..., 0])
+    if weights[valid].sum() == 0:
+        raise ValueError(
+            f"({lat}, {lon}) lies outside the imaged swath for band {band!r} "
+            f"in {mtd_tl_path}"
+        )
 
-    return AngularViewing(zenith=zenith, azimuth=eradiate_azimuth)
+    east, north, up = (weights[valid, None] * corners[valid]).sum(axis=0)
+    zenith = np.degrees(np.arctan2(np.hypot(east, north), up))
+    azimuth = np.degrees(np.arctan2(north, east)) % 360.0
+
+    return AngularViewing(zenith=float(zenith), azimuth=float(azimuth))
 
 
 def platform_from_tile_metadata(mtd_tl_path: str | Path) -> SatellitePlatform:

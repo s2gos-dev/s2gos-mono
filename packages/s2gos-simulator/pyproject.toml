@@ -23,6 +23,7 @@ dependencies = [
     "skyfield",
     "scipy",
     "matplotlib",
+    "pyproj",
     "pystac-client",
     "boto3",
 ]
