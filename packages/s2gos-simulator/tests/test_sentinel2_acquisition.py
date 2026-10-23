@@ -10,7 +10,6 @@ from s2gos_simulator.acquisitions.sentinel2 import (
     fetch_tile_metadata,
     read_tile_metadata,
 )
-from s2gos_simulator.config import SatellitePlatform
 from s2gos_simulator.config.illumination import SolarPosition
 
 _ULX, _ULY, _STEP = 499980.0, 7400020.0, 5000.0
@@ -67,11 +66,13 @@ class TestReadTileMetadata:
             tmp_path / "MTD_TL.xml", [("1", zenith, azimuth)], band_id=8
         )
 
-        time, platform, views = read_tile_metadata(path, *_latlon_at(0.5, 1.25), ["8a"])
+        time, instrument, views = read_tile_metadata(
+            path, *_latlon_at(0.5, 1.25), ["8a"]
+        )
         view = views["8a"]
 
         assert time == datetime(2022, 5, 4, 9, 17, 15, 123000, tzinfo=timezone.utc)
-        assert platform == SatellitePlatform.SENTINEL_2A
+        assert instrument == "sentinel_2a-msi"
         assert view.zenith == pytest.approx(3.5, abs=1e-3)
         assert view.azimuth == pytest.approx(350.0, abs=1e-6)
 
@@ -121,16 +122,16 @@ class TestCreateAcquisition:
             tmp_path / "MTD_TL.xml", [("1", zenith, azimuth)], band_id=8
         )
 
-        illumination, (sensor,) = create_acquisition(
+        illumination, sensor = create_acquisition(
             path, *_latlon_at(0.5, 1.25), ["8a"], target_size_km=1.0
         )
 
         assert illumination.irradiance_datetime == datetime(
             2022, 5, 4, 9, 17, 15, 123000, tzinfo=timezone.utc
         )
-        assert sensor.platform == SatellitePlatform.SENTINEL_2A
-        assert sensor.viewing.zenith == pytest.approx(3.5, abs=1e-3)
-        assert sensor.viewing.azimuth == pytest.approx(350.0, abs=1e-6)
+        assert sensor.spec.platform == "sentinel-2a"
+        assert sensor.band_viewing_for("8a").zenith == pytest.approx(3.5, abs=1e-3)
+        assert sensor.band_viewing_for("8a").azimuth == pytest.approx(350.0, abs=1e-6)
 
 
 class TestFetchTileMetadata:

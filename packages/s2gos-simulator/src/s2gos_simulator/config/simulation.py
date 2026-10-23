@@ -20,6 +20,7 @@ from .illumination import (
     DirectionalIllumination,
 )
 from .measurements import (
+    BasePixelMeasurementConfig,
     BRFConfig,
     HCRFConfig,
     HDRFConfig,
@@ -292,6 +293,14 @@ class SimulationConfig(BaseModel):
                             f"'{measurement.satellite_sensor_id}' which is not a SatelliteSensor "
                             f"(type: {type(sensor).__name__})"
                         )
+
+            if isinstance(measurement, BasePixelMeasurementConfig):
+                sensor = self.get_sensor(measurement.satellite_sensor_id)
+                if isinstance(sensor, SatelliteSensor):
+                    try:
+                        sensor.resolve_band(measurement.band)
+                    except ValueError as e:
+                        errors.append(f"'{measurement.id}': {e}")
 
         if errors:
             raise ValueError(

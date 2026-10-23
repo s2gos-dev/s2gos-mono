@@ -4,8 +4,22 @@ import math
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveFloat,
+    PositiveInt,
+    field_validator,
+    model_validator,
+)
 
+from .instruments import (
+    CHIME_SRF,
+    INSTRUMENTS,
+    HyperspectralInstrument,
+    Instrument,
+)
 from .spectral import SpectralRegion, SpectralResponse, SRFType, WavelengthGrid
 from .viewing import (
     AngularFromOriginViewing,
@@ -22,139 +36,6 @@ class PlatformType(str, Enum):
 
     SATELLITE = "satellite"
     GROUND = "ground"
-
-
-class SatellitePlatform(str, Enum):
-    """Supported satellite platforms."""
-
-    SENTINEL_2A = "sentinel-2a"
-    SENTINEL_2B = "sentinel-2b"
-    SENTINEL_3A = "sentinel-3a"
-    SENTINEL_3B = "sentinel-3b"
-    LANDSAT_8 = "landsat-8"
-    LANDSAT_9 = "landsat-9"
-    MODIS_TERRA = "modis-terra"
-    MODIS_AQUA = "modis-aqua"
-    CHIME = "chime"
-    ENDMAP = "endmap"
-    CUSTOM = "custom"  # For user-defined platforms with custom SRF
-
-
-class SentinelMSIBand(str, Enum):
-    """Sentinel-2 MSI band identifiers."""
-
-    B01 = "1"
-    B02 = "2"
-    B03 = "3"
-    B04 = "4"
-    B05 = "5"
-    B06 = "6"
-    B07 = "7"
-    B08 = "8"
-    B8A = "8a"
-    B09 = "9"
-    B10 = "10"
-    B11 = "11"
-    B12 = "12"
-
-
-class SentinelOLCIBand(str, Enum):
-    """Sentinel-3 OLCI band identifiers."""
-
-    OA01 = "1"
-    OA02 = "2"
-    OA03 = "3"
-    OA04 = "4"
-    OA05 = "5"
-    OA06 = "6"
-    OA07 = "7"
-    OA08 = "8"
-    OA09 = "9"
-    OA10 = "10"
-    OA11 = "11"
-    OA12 = "12"
-    OA13 = "13"
-    OA14 = "14"
-    OA15 = "15"
-    OA16 = "16"
-    OA17 = "17"
-    OA18 = "18"
-    OA19 = "19"
-    OA20 = "20"
-    OA21 = "21"
-
-
-class LandsatOLIBand(str, Enum):
-    """Landsat OLI band identifiers."""
-
-    B1 = "1"  # Coastal aerosol
-    B2 = "2"  # Blue
-    B3 = "3"  # Green
-    B4 = "4"  # Red
-    B5 = "5"  # NIR
-    B6 = "6"  # SWIR 1
-    B7 = "7"  # SWIR 2
-    B8 = "8"  # Panchromatic
-    B9 = "9"  # Cirrus
-
-
-class SatelliteInstrument(str, Enum):
-    """Supported satellite instruments."""
-
-    MSI = "msi"  # Sentinel-2 MultiSpectral Instrument
-    OLCI = "olci"  # Sentinel-3 Ocean and Land Colour Instrument
-    OLI = "oli"  # Landsat Operational Land Imager
-    MODIS = "modis"  # MODIS sensor
-    VNIR = "vnir"  # Generic VNIR instrument
-    HSI = "hsi"  # Hyperspectral instrument
-    CUSTOM = "custom"  # For custom instruments
-
-
-# Platform to instrument mapping
-PLATFORM_INSTRUMENTS = {
-    SatellitePlatform.SENTINEL_2A: [SatelliteInstrument.MSI],
-    SatellitePlatform.SENTINEL_2B: [SatelliteInstrument.MSI],
-    SatellitePlatform.SENTINEL_3A: [SatelliteInstrument.OLCI],
-    SatellitePlatform.SENTINEL_3B: [SatelliteInstrument.OLCI],
-    SatellitePlatform.LANDSAT_8: [SatelliteInstrument.OLI],  # TODO: Implement
-    SatellitePlatform.LANDSAT_9: [SatelliteInstrument.OLI],  # TODO: Implement
-    SatellitePlatform.MODIS_TERRA: [SatelliteInstrument.MODIS],  # TODO: Implement
-    SatellitePlatform.MODIS_AQUA: [SatelliteInstrument.MODIS],  # TODO: Implement
-    SatellitePlatform.CHIME: [SatelliteInstrument.HSI],
-    SatellitePlatform.ENDMAP: [SatelliteInstrument.HSI],  # TODO: Implement
-    SatellitePlatform.CUSTOM: [SatelliteInstrument.CUSTOM],
-}
-
-# Instrument to band mapping
-INSTRUMENT_BANDS = {
-    SatelliteInstrument.MSI: SentinelMSIBand,
-    SatelliteInstrument.OLCI: SentinelOLCIBand,
-    SatelliteInstrument.OLI: LandsatOLIBand,  # TODO: Implement
-    SatelliteInstrument.MODIS: None,  # TODO: Implement
-    SatelliteInstrument.VNIR: None,
-    SatelliteInstrument.HSI: None,
-    SatelliteInstrument.CUSTOM: None,  # Accept any string for custom
-}
-
-INSTRUMENT_BAND_GSD_M = {
-    SatelliteInstrument.MSI: {
-        SentinelMSIBand.B01: 60,
-        SentinelMSIBand.B02: 10,
-        SentinelMSIBand.B03: 10,
-        SentinelMSIBand.B04: 10,
-        SentinelMSIBand.B05: 20,
-        SentinelMSIBand.B06: 20,
-        SentinelMSIBand.B07: 20,
-        SentinelMSIBand.B08: 10,
-        SentinelMSIBand.B8A: 20,
-        SentinelMSIBand.B09: 60,
-        SentinelMSIBand.B10: 60,
-        SentinelMSIBand.B11: 20,
-        SentinelMSIBand.B12: 20,
-    },
-}
-"""Native ground sampling distance (m) per instrument band, used as the default
-`SatelliteSensor.film_resolution`. Add an instrument's bands here to give it a default."""
 
 
 class GroundInstrumentType(str, Enum):
@@ -216,24 +97,6 @@ class BaseSensor(BaseModel):
     )
     platform_type: PlatformType = Field(..., description="Platform type identifier")
     viewing: ViewingType = Field(..., description="Viewing geometry configuration")
-    srf: Optional[SRFType] = Field(None, description="Spectral response function")
-
-    @field_validator("srf", mode="before")
-    @classmethod
-    def resolve_srf_preset(cls, v):
-        if not isinstance(v, str):
-            return v
-
-        presets = {
-            "hypstar": lambda: HYPSTAR_SRF,
-            "chime": lambda: CHIME_SRF,
-        }
-
-        if v in presets:
-            return presets[v]()
-
-        return v
-
     produces: List[Literal["radiance", "irradiance", "hdrf", "brf", "bhr"]] = Field(
         ["radiance"],
         description="List of radiative quantities to be produced by this sensor configuration",
@@ -247,7 +110,13 @@ class BaseSensor(BaseModel):
 
 
 class SatelliteSensor(BaseSensor):
-    """Satellite sensor configuration."""
+    """Satellite sensor: an instrument looking at a target footprint.
+
+    A multispectral instrument is simulated as one measure per band, a hyperspectral one
+    as a single measure over its spectral response.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     platform_type: Literal[PlatformType.SATELLITE] = Field(
         PlatformType.SATELLITE, description="Platform type (always 'satellite')"
@@ -255,21 +124,33 @@ class SatelliteSensor(BaseSensor):
     viewing: AngularViewing = Field(
         ..., description="Viewing geometry (zenith/azimuth angles)"
     )
-    platform: SatellitePlatform = Field(
-        ..., description="Satellite platform identifier"
+    instrument: Union[str, Instrument] = Field(
+        ...,
+        description=(
+            "Key of a built-in instrument in INSTRUMENTS (e.g. 'sentinel_2a-msi', "
+            "'chime-hsi'), or a custom instrument"
+        ),
     )
-    instrument: SatelliteInstrument = Field(
-        ..., description="Satellite instrument identifier"
-    )
-    band: str = Field(
-        ..., description="Band identifier (validated against instrument-specific enum)"
-    )
-    film_resolution: Optional[Tuple[int, int]] = Field(
+    bands: Optional[List[str]] = Field(
         None,
         description=(
-            "Pixel grid dimensions (width, height) for 2D imaging. Defaults to the "
-            "band's native GSD from INSTRUMENT_BAND_GSD_M (Sentinel-2 MSI: 10, 20 or "
-            "60 m), in which case target_size_km must be a whole multiple of it"
+            "Bands to simulate, each as its own measure. Defaults to every band of a "
+            "multispectral instrument. Leave unset for a hyperspectral instrument"
+        ),
+    )
+    band_viewing: Dict[str, AngularViewing] = Field(
+        default_factory=dict,
+        description=(
+            "Per-band viewing geometry overriding 'viewing' (e.g. the per-band "
+            "angles of a real Sentinel-2 acquisition)"
+        ),
+    )
+    film_resolution: Optional[Tuple[PositiveInt, PositiveInt]] = Field(
+        None,
+        description=(
+            "Pixel grid (width, height) applied to every band. Defaults to each "
+            "band's native GSD, in which case target_size_km must be a whole "
+            "multiple of it. Required when the instrument has no GSD"
         ),
     )
     target_center_lat: float = Field(
@@ -278,7 +159,7 @@ class SatelliteSensor(BaseSensor):
     target_center_lon: float = Field(
         ..., description="Target center longitude in WGS84 decimal degrees"
     )
-    target_size_km: Union[float, Tuple[float, float]] = Field(
+    target_size_km: Union[PositiveFloat, Tuple[PositiveFloat, PositiveFloat]] = Field(
         ...,
         description="Target area size: float for square (km), tuple for rectangular (width_km, height_km)",
     )
@@ -294,89 +175,80 @@ class SatelliteSensor(BaseSensor):
         ),
     )
 
+    @field_validator("instrument")
+    @classmethod
+    def check_instrument_key(cls, v):
+        if isinstance(v, str) and v not in INSTRUMENTS:
+            raise ValueError(
+                f"Unknown instrument {v!r}. Available: {sorted(INSTRUMENTS)}"
+            )
+        return v
+
     @model_validator(mode="after")
     def validate_and_set_defaults(self):
-        """Validate platform/instrument/band combination and set defaults."""
-
-        if self.platform != SatellitePlatform.CUSTOM:
-            valid_instruments = PLATFORM_INSTRUMENTS.get(self.platform, [])
-            if self.instrument not in valid_instruments:
-                raise ValueError(
-                    f"Instrument '{self.instrument.value}' is not valid for platform '{self.platform.value}'. "
-                    f"Valid instruments: {[inst.value for inst in valid_instruments]}"
-                )
-
-        if (
-            self.platform != SatellitePlatform.CUSTOM
-            and self.instrument != SatelliteInstrument.CUSTOM
-        ):
-            band_enum = INSTRUMENT_BANDS.get(self.instrument)
-            if band_enum is not None:
-                try:
-                    valid_band = band_enum(self.band)
-                    self.band = valid_band.value
-                except ValueError:
-                    valid_bands = [band.value for band in band_enum]
-                    raise ValueError(
-                        f"Band '{self.band}' is not valid for instrument '{self.instrument.value}'. "
-                        f"Valid bands: {valid_bands}"
-                    )
-
-        if self.platform == SatellitePlatform.CUSTOM and self.srf is None:
-            raise ValueError(
-                "Custom platform requires an explicit SRF. "
-                "Please provide an SRF using the 'srf' parameter."
-            )
-
-        if self.viewing.target is None:
-            self.viewing.target = [0.0, 0.0, 0.0]
-
-        # TODO: Could be less eradiate specific?
-        if self.srf is None and self.platform != SatellitePlatform.CUSTOM:
-            platform_norm = self.platform.value.replace("-", "_")
-            self.srf = f"{platform_norm}-{self.instrument.value}-{self.band}"
-
-        if self.id is None:
-            if self.platform == SatellitePlatform.CUSTOM:
-                base_id = f"custom_{self.instrument.value}_{self.band}"
-            else:
-                platform_clean = self.platform.value.replace("-", "_")
-                base_id = f"{platform_clean}_{self.instrument.value}_{self.band}"
-
-            if self.viewing.zenith > 0:
-                self.id = f"{base_id}_oblique{int(self.viewing.zenith)}"
-            else:
-                self.id = f"{base_id}_nadir"
-
-        if self.film_resolution is None:
-            gsd = INSTRUMENT_BAND_GSD_M.get(self.instrument, {}).get(self.band)
-            if gsd is None:
-                raise ValueError(
-                    f"film_resolution is required for {self.instrument.value} band "
-                    f"{self.band!r}: no native GSD known"
-                )
-            footprint_m = self._footprint_m()
-            film = tuple(round(size / gsd) for size in footprint_m)
-            if not all(
-                math.isclose(n * gsd, size) for n, size in zip(film, footprint_m)
-            ):
-                raise ValueError(
-                    f"Footprint {self.target_size_km} km is not a whole multiple of "
-                    f"band {self.band!r}'s {gsd} m GSD"
-                )
-            self.film_resolution = film
-
-        # Validate film resolution limits
-        width, height = self.film_resolution
-        if width <= 0 or height <= 0:
-            raise ValueError("Film resolution dimensions must be positive integers")
-        if width > 2048 or height > 2048:
-            raise ValueError(
-                f"Film resolution {self.film_resolution} exceeds maximum of 2048x2048 pixels. "
-                "Consider reducing resolution for memory and performance reasons."
-            )
-
+        """Check the bands against the instrument and fill in the defaults."""
+        if self.is_hyperspectral:
+            self._check_hyperspectral()
+        else:
+            self._resolve_bands()
+        self._set_defaults()
+        for band in self.measured_bands:
+            self.band_film_resolution(band)  # raises if the grid doesn't fit
         return self
+
+    def _check_hyperspectral(self):
+        if self.bands is not None or self.band_viewing:
+            raise ValueError(
+                f"Hyperspectral instrument '{self.spec.name}' takes no bands or "
+                "band_viewing"
+            )
+
+    def _resolve_bands(self):
+        known = list(self.spec.bands)
+        if self.bands is None:
+            self.bands = known
+        if not self.bands or len(set(self.bands)) != len(self.bands):
+            raise ValueError(f"'bands' must be non-empty and unique, got {self.bands}")
+        unknown = [band for band in self.bands if band not in known]
+        if unknown:
+            raise ValueError(
+                f"Bands {unknown} are not bands of instrument '{self.spec.name}'. "
+                f"Valid bands: {known}"
+            )
+        outside = sorted(set(self.band_viewing) - set(self.bands))
+        if outside:
+            raise ValueError(f"band_viewing has bands not in 'bands': {outside}")
+
+    def _set_defaults(self):
+        for viewing in [self.viewing, *self.band_viewing.values()]:
+            if viewing.target is None:
+                viewing.target = [0.0, 0.0, 0.0]
+        if self.id is None:
+            zenith = self.viewing.zenith
+            view = f"oblique{int(zenith)}" if zenith > 0 else "nadir"
+            self.id = f"{self.spec.platform}_{self.spec.name}_{view}".replace("-", "_")
+
+    @property
+    def spec(self) -> Instrument:
+        """The instrument: the `INSTRUMENTS` entry for a key, else the inline one."""
+        if isinstance(self.instrument, str):
+            return INSTRUMENTS[self.instrument]
+        return self.instrument
+
+    @property
+    def is_hyperspectral(self) -> bool:
+        """Whether the sensor is one measure over its instrument's spectral response."""
+        return isinstance(self.spec, HyperspectralInstrument)
+
+    @property
+    def srf(self) -> Optional[SRFType]:
+        """Spectral response applied after the simulation (hyperspectral only)."""
+        return self.spec.srf if self.is_hyperspectral else None
+
+    @property
+    def measured_bands(self) -> List[Optional[str]]:
+        """Band of each measure: `bands`, or a single None for a hyperspectral sensor."""
+        return [None] if self.is_hyperspectral else self.bands
 
     def _footprint_m(self) -> Tuple[float, float]:
         if isinstance(self.target_size_km, (int, float)):
@@ -384,19 +256,66 @@ class SatelliteSensor(BaseSensor):
         width_km, height_km = self.target_size_km
         return width_km * 1000, height_km * 1000
 
-    @property
-    def pixel_size_m(self) -> Tuple[float, float]:
-        """
-        Calculate ground pixel size in meters.
+    def resolve_band(self, band: Optional[str] = None) -> Optional[str]:
+        """The given band, the only band when none is given, or None if hyperspectral.
 
-        Returns:
-            Tuple of (pixel_size_x_m, pixel_size_y_m) in meters per pixel
+        Raises:
+            ValueError: if a band is given to a hyperspectral sensor, the band is not
+                one of `bands`, or none is given for a multi-band sensor.
         """
+        if self.is_hyperspectral and band is not None:
+            raise ValueError(f"Hyperspectral sensor '{self.id}' has no bands")
+        if self.is_hyperspectral:
+            return None
+        if band is None and len(self.bands) > 1:
+            raise ValueError(f"Sensor '{self.id}' has bands {self.bands}, specify one")
+        if band is None:
+            return self.bands[0]
+        if band not in self.bands:
+            raise ValueError(f"Sensor '{self.id}' has no band {band!r} ({self.bands})")
+        return band
+
+    def band_film_resolution(self, band: Optional[str] = None) -> Tuple[int, int]:
+        """Pixel grid (width, height) of a band: `film_resolution`, else its native GSD.
+
+        Raises:
+            ValueError: if no GSD is known, or the footprint is not a whole multiple
+                of it.
+        """
+        if self.film_resolution is not None:
+            return self.film_resolution
+        gsd = self.spec.gsd_m if self.is_hyperspectral else self.spec.bands[band].gsd_m
+        if gsd is None:
+            raise ValueError(
+                f"film_resolution is required for sensor '{self.id}': instrument "
+                f"'{self.spec.name}' has no native GSD for band {band!r}"
+            )
+        footprint_m = self._footprint_m()
+        film = tuple(round(size / gsd) for size in footprint_m)
+        if not all(math.isclose(n * gsd, size) for n, size in zip(film, footprint_m)):
+            raise ValueError(
+                f"Footprint {self.target_size_km} km is not a whole multiple of "
+                f"band {band!r}'s {gsd:g} m GSD"
+            )
+        return film
+
+    def band_srf(self, band: Optional[str] = None) -> SRFType:
+        """SRF of a measure: the hyperspectral instrument's, else the band's."""
+        return self.spec.srf if self.is_hyperspectral else self.spec.bands[band].srf
+
+    def band_viewing_for(self, band: Optional[str] = None) -> AngularViewing:
+        """Viewing geometry of a band: its `band_viewing` override, else `viewing`."""
+        return self.band_viewing.get(band, self.viewing)
+
+    def band_measure_id(self, band: Optional[str] = None) -> str:
+        """Id of a measure: the sensor id for a single measure, else `<id>_<band>`."""
+        return self.id if len(self.measured_bands) == 1 else f"{self.id}_{band}"
+
+    def pixel_size_m(self, band: Optional[str] = None) -> Tuple[float, float]:
+        """Ground pixel size (x, y) of a band in meters."""
         width_m, height_m = self._footprint_m()
-        pixel_size_x = width_m / self.film_resolution[0]
-        pixel_size_y = height_m / self.film_resolution[1]
-
-        return pixel_size_x, pixel_size_y
+        width, height = self.band_film_resolution(band)
+        return width_m / width, height_m / height
 
 
 class GroundSensor(BaseSensor):
@@ -421,6 +340,13 @@ class GroundSensor(BaseSensor):
         None,
         description="Post-processing pipeline options (spatial averaging, SRF, circular mask, etc.)",
     )
+    srf: Optional[SRFType] = Field(None, description="Spectral response function")
+
+    @field_validator("srf", mode="before")
+    @classmethod
+    def resolve_srf_preset(cls, v):
+        presets = {"hypstar": HYPSTAR_SRF, "chime": CHIME_SRF}
+        return presets.get(v, v) if isinstance(v, str) else v
 
     @model_validator(mode="before")
     @classmethod
@@ -487,25 +413,6 @@ class GroundSensor(BaseSensor):
         return self
 
 
-# CHIME (Copernicus Hyperspectral Imaging Mission) spectral characteristics
-# Based on early ESA specifications:
-# - Spectral range: 400-2500 nm
-# - Spectral resolution: < 11 nm (worst case at FOV edge)
-# - Spectral Sampling Interval (SSI): 8.4 nm
-# - Spatial resolution: 30 m
-# - Swath: ~130 km
-CHIME_SPECTRAL_REGIONS = [
-    SpectralRegion(name="VNIR", wmin_nm=400.0, wmax_nm=1000.0, fwhm_nm=8.5),
-    SpectralRegion(name="SWIR1", wmin_nm=1000.0, wmax_nm=1800.0, fwhm_nm=10.0),
-    SpectralRegion(name="SWIR2", wmin_nm=1800.0, wmax_nm=2500.0, fwhm_nm=11.0),
-]
-
-CHIME_SRF = SpectralResponse(
-    type="gaussian",
-    spectral_regions=CHIME_SPECTRAL_REGIONS,
-    output_grid=WavelengthGrid(mode="regular", wmin_nm=400, wmax_nm=2500, step_nm=8.4),
-)
-
 # HYPSTAR (HYPERNETS Land Network) spectral characteristics
 # - VNIR detector (Si): 380–1000 nm, FWHM ≈ 3 nm
 # - SWIR detector (InGaAs): 1000–1680 nm, FWHM ≈ 10 nm
@@ -518,92 +425,6 @@ HYPSTAR_SRF = SpectralResponse(
     type="gaussian",
     spectral_regions=HYPSTAR_SPECTRAL_REGIONS,
 )
-
-
-def create_chime_sensor(
-    target_center_lat: float,
-    target_center_lon: float,
-    target_size_km: Union[float, Tuple[float, float]] = 1.0,
-    zenith: float = 0.0,
-    azimuth: float = 0.0,
-    samples_per_pixel: int = 64,
-    ssi_nm: float = 8.4,
-    fwhm_nm: Optional[float] = None,
-    spectral_regions: Optional[List[SpectralRegion]] = None,
-    wmin_nm: float = 400.0,
-    wmax_nm: float = 2500.0,
-    sensor_id: Optional[str] = None,
-    **kwargs,
-) -> SatelliteSensor:
-    """Create a CHIME hyperspectral satellite sensor with sensible defaults.
-
-    CHIME (Copernicus Hyperspectral Imaging Mission) specifications:
-    - Spectral range: 400-2500 nm
-    - Spectral resolution: < 11 nm (FWHM)
-    - Spectral Sampling Interval (SSI): 8.4 nm
-    - Spatial resolution: 30 m
-    - Swath: ~130 km
-
-    The sensor uses Gaussian SRF post-processing with wavelength-dependent FWHM
-    to simulate the instrument's spectral response characteristics.
-
-    Args:
-        target_center_lat: Target center latitude (WGS84 decimal degrees)
-        target_center_lon: Target center longitude (WGS84 decimal degrees)
-        target_size_km: Target area size (km). Float for square, tuple for (width, height)
-        zenith: Viewing zenith angle (0=nadir). Default 0.0
-        azimuth: Viewing azimuth angle. Default 0.0
-        samples_per_pixel: Monte Carlo samples per pixel. Default 64
-        ssi_nm: Spectral Sampling Interval (nm). Default 8.4 per CHIME spec
-        fwhm_nm: Single FWHM for all wavelengths (overrides spectral_regions)
-        spectral_regions: Wavelength-dependent FWHM regions. If None, uses CHIME defaults
-        wmin_nm: Minimum wavelength (nm). Default 400.0
-        wmax_nm: Maximum wavelength (nm). Default 2500.0
-        sensor_id: Optional sensor ID. Auto-generated if not provided
-        **kwargs: Additional sensor parameters
-
-    Returns:
-        SatelliteSensor configured for CHIME hyperspectral simulation
-    """
-    # Use CHIME default spectral regions if not provided
-    if spectral_regions is None and fwhm_nm is None:
-        spectral_regions = CHIME_SPECTRAL_REGIONS
-
-    # Build Gaussian SRF configuration
-    srf = SpectralResponse(
-        type="gaussian",
-        fwhm_nm=fwhm_nm,
-        spectral_regions=spectral_regions if fwhm_nm is None else None,
-        output_grid=WavelengthGrid(
-            mode="regular",
-            wmin_nm=wmin_nm,
-            wmax_nm=wmax_nm,
-            step_nm=ssi_nm,
-        ),
-    )
-
-    # Generate sensor ID if not provided
-    if sensor_id is None:
-        if zenith > 0:
-            sensor_id = f"chime_hsi_oblique{int(zenith)}"
-        else:
-            sensor_id = "chime_hsi_nadir"
-    film_size = (target_size_km * 1000) // 30
-    adjusted_target_size = (film_size * 30) / 1000
-    return SatelliteSensor(
-        id=sensor_id,
-        platform=SatellitePlatform.CHIME,
-        instrument=SatelliteInstrument.HSI,
-        band="full",  # Hyperspectral uses full spectrum, not discrete bands
-        viewing=AngularViewing(zenith=zenith, azimuth=azimuth),
-        film_resolution=(film_size, film_size),
-        target_center_lat=target_center_lat,
-        target_center_lon=target_center_lon,
-        target_size_km=adjusted_target_size,
-        samples_per_pixel=samples_per_pixel,
-        srf=srf,
-        **kwargs,
-    )
 
 
 def create_hypstar_sensor(

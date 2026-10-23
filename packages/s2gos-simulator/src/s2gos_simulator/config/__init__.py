@@ -5,6 +5,15 @@ from .illumination import (
     DirectionalIllumination,
     Illumination,
 )
+from .instruments import (
+    CHIME_SPECTRAL_REGIONS,
+    CHIME_SRF,
+    INSTRUMENTS,
+    Band,
+    HyperspectralInstrument,
+    Instrument,
+    MultispectralInstrument,
+)
 from .measurements import (
     BasePixelMeasurementConfig,
     BHRConfig,
@@ -19,24 +28,14 @@ from .measurements import (
     PixelHDRFConfig,
 )
 from .sensors import (
-    CHIME_SPECTRAL_REGIONS,
-    CHIME_SRF,
     HYPSTAR_SPECTRAL_REGIONS,
     HYPSTAR_SRF,
-    INSTRUMENT_BANDS,
-    PLATFORM_INSTRUMENTS,
     BaseSensor,
     GroundInstrumentType,
     GroundSensor,
-    LandsatOLIBand,
     PlatformType,
     PostProcessingOptions,
-    SatelliteInstrument,
-    SatellitePlatform,
     SatelliteSensor,
-    SentinelMSIBand,
-    SentinelOLCIBand,
-    create_chime_sensor,
     create_hypstar_sensor,
 )
 from .simulation import ProcessingConfig, ProcessingLevel, SimulationConfig
@@ -71,25 +70,23 @@ __all__ = [
     "PixelBHRConfig",
     "PixelBRFConfig",
     "PixelHDRFConfig",
-    # sensors
+    # instruments
     "CHIME_SPECTRAL_REGIONS",
     "CHIME_SRF",
+    "INSTRUMENTS",
+    "Band",
+    "HyperspectralInstrument",
+    "Instrument",
+    "MultispectralInstrument",
+    # sensors
     "HYPSTAR_SPECTRAL_REGIONS",
     "HYPSTAR_SRF",
-    "INSTRUMENT_BANDS",
-    "PLATFORM_INSTRUMENTS",
     "BaseSensor",
     "GroundInstrumentType",
     "GroundSensor",
-    "LandsatOLIBand",
     "PlatformType",
     "PostProcessingOptions",
-    "SatelliteInstrument",
-    "SatellitePlatform",
     "SatelliteSensor",
-    "SentinelMSIBand",
-    "SentinelOLCIBand",
-    "create_chime_sensor",
     "create_hypstar_sensor",
     # simulation
     "ProcessingConfig",

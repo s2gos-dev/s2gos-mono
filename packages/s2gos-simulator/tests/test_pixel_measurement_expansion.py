@@ -3,8 +3,6 @@ import pytest
 from s2gos_simulator.backends.eradiate.backend import EradiateBackend
 from s2gos_simulator.config import (
     DirectionalIllumination,
-    SatelliteInstrument,
-    SatellitePlatform,
     SatelliteSensor,
     SimulationConfig,
 )
@@ -22,9 +20,8 @@ from s2gos_simulator.config.viewing import AngularViewing
 def _sat_sensor(sensor_id="sat1"):
     return SatelliteSensor(
         id=sensor_id,
-        platform=SatellitePlatform.SENTINEL_2A,
-        instrument=SatelliteInstrument.MSI,
-        band="2",
+        instrument="sentinel_2a-msi",
+        bands=["2"],
         viewing=AngularViewing(zenith=0.0, azimuth=0.0),
         film_resolution=(100, 100),
         target_center_lat=-42.0,

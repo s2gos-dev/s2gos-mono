@@ -302,6 +302,13 @@ class BasePixelMeasurementConfig(BaseModel):
     satellite_sensor_id: str = Field(
         description="ID of SatelliteSensor to use for geometry (target bounds, resolution)"
     )
+    band: Optional[str] = Field(
+        default=None,
+        description=(
+            "Band of the satellite sensor whose pixel grid and SRF are used. "
+            "Required when the sensor has more than one band."
+        ),
+    )
     pixel_indices: List[Tuple[int, int]] = Field(
         description="List of (row, col) pixel indices to measure. Row 0 is top (north), col 0 is left (west)."
     )
@@ -317,7 +324,7 @@ class BasePixelMeasurementConfig(BaseModel):
     )
     srf: Optional[SRFType] = Field(
         default=None,
-        description="Spectral response function. If None, inherits from satellite sensor.",
+        description="Spectral response function. If None, inherits from the satellite sensor's band.",
     )
 
     @field_validator("pixel_indices")

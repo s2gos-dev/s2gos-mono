@@ -5,10 +5,10 @@ for geometry, atmosphere, surfaces, sensors, and result processing.
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import xarray as xr
-from s2gos_utils.io.paths import PathRef, open_dataset, to_upath
+from s2gos_utils.io.paths import PathRef, mkdir, open_dataset, to_upath
 from s2gos_utils.scene import SceneDescription
 from upath import UPath
 
@@ -34,11 +34,13 @@ from ...config import (
     PixelHDRFConfig,
     PlatformType,
     RectangleTarget,
+    SatelliteSensor,
     SimulationConfig,
 )
 from ...hdrf_processor import HDRFProcessor
 from ...irradiance_processor import IrradianceProcessor
 from ...processors.sensor_processor import SensorProcessor
+from ...products import PRODUCT_WRITERS
 
 logger = logging.getLogger(__name__)
 
@@ -146,11 +148,7 @@ class EradiateBackend(SimulationBackend):
             )
 
         for sensor in self.simulation_config.sensors:
-            if sensor.platform_type == PlatformType.SATELLITE:
-                validation_error = self._validate_satellite_sensor(sensor)
-                if validation_error:
-                    errors.append(validation_error)
-            elif sensor.platform_type == PlatformType.GROUND:
+            if sensor.platform_type == PlatformType.GROUND:
                 if sensor.instrument not in [
                     GroundInstrumentType.HYPSTAR,
                     GroundInstrumentType.PERSPECTIVE_CAMERA,
@@ -164,53 +162,6 @@ class EradiateBackend(SimulationBackend):
                     )
 
         return errors
-
-    def _validate_satellite_sensor(self, sensor) -> Optional[str]:
-        """Validate satellite sensor platform/instrument/band combination.
-
-        Args:
-            sensor: Satellite sensor configuration
-
-        Returns:
-            Error message if invalid, None if valid
-        """
-        from ...config import (
-            INSTRUMENT_BANDS,
-            PLATFORM_INSTRUMENTS,
-            SatelliteInstrument,
-            SatellitePlatform,
-        )
-
-        if sensor.platform == SatellitePlatform.CUSTOM:
-            if sensor.srf is None:
-                return "Custom platform requires explicit SRF configuration"
-            return None
-
-        try:
-            platform_enum = SatellitePlatform(sensor.platform)
-            instrument_enum = SatelliteInstrument(sensor.instrument)
-        except ValueError as e:
-            return f"Invalid platform or instrument: {e}"
-
-        valid_instruments = PLATFORM_INSTRUMENTS.get(platform_enum, [])
-        if instrument_enum not in valid_instruments:
-            return (
-                f"Platform '{sensor.platform}' does not support instrument '{sensor.instrument}'. "
-                f"Valid instruments: {[inst.value for inst in valid_instruments]}"
-            )
-
-        band_enum_class = INSTRUMENT_BANDS.get(instrument_enum)
-        if band_enum_class is not None:
-            try:
-                band_enum_class(sensor.band)
-            except ValueError:
-                valid_bands = [band.value for band in band_enum_class]
-                return (
-                    f"Instrument '{sensor.platform}/{sensor.instrument}' does not support band '{sensor.band}'. "
-                    f"Valid bands: {valid_bands}"
-                )
-
-        return None
 
     def run_simulation(
         self,
@@ -368,6 +319,7 @@ class EradiateBackend(SimulationBackend):
         )
 
         all_saved_results = {}
+        product_bands: Dict[str, Dict[str, xr.Dataset]] = {}
 
         for i in range(len(experiment.measures)):
             measure_id = getattr(experiment.measures[i], "id", f"measure_{i}")
@@ -377,7 +329,9 @@ class EradiateBackend(SimulationBackend):
             raw_dataset = experiment.results[measure_id]
             raw_dataset.attrs["output_dir"] = str(output_dir)
 
-            sensor_config = self.eradiate_translator.get_sensor_by_id(measure_id)
+            sensor_config, band = self.eradiate_translator.get_sensor_band(
+                measure_id
+            ) or (None, None)
             if sensor_config:
                 post_processed_dataset = self.sensor_processor.process_sensor_result(
                     raw_dataset, sensor_config, output_dir=output_dir
@@ -387,6 +341,12 @@ class EradiateBackend(SimulationBackend):
                     self.result_processor.save_result(
                         f"{measure_id}_raw_eradiate", raw_dataset, output_dir
                     )
+
+                if band is not None and sensor_config.spec.name in PRODUCT_WRITERS:
+                    product_bands.setdefault(sensor_config.id, {})[band] = (
+                        post_processed_dataset
+                    )
+                    continue
 
                 success = self.result_processor.save_result(
                     measure_id, post_processed_dataset, output_dir
@@ -400,9 +360,60 @@ class EradiateBackend(SimulationBackend):
                 if success:
                     all_saved_results[measure_id] = raw_dataset
 
+        for sensor_id, band_results in product_bands.items():
+            all_saved_results.update(
+                self._save_product(
+                    self.simulation_config.get_sensor(sensor_id),
+                    band_results,
+                    scene_description,
+                    output_dir,
+                )
+            )
+
         logger.debug(f"Successfully saved results: {list(all_saved_results.keys())}")
 
         return all_saved_results
+
+    def _save_product(
+        self,
+        sensor: SatelliteSensor,
+        band_results: Dict[str, xr.Dataset],
+        scene_description: SceneDescription,
+        output_dir: UPath,
+    ) -> Dict[str, Any]:
+        """Write a satellite sensor's bands as one product (see `products`).
+
+        Falls back to one dataset per band when the product cannot be written, so
+        rendered bands are never lost.
+
+        Returns:
+            The product under the sensor id, or the per-band datasets that were saved
+        """
+        writer = PRODUCT_WRITERS[sensor.spec.name]
+        path = output_dir / f"{self.simulation_config.name}_{sensor.id}.zarr"
+        try:
+            mkdir(output_dir)
+            product = writer(
+                sensor,
+                band_results,
+                scene_description,
+                self.simulation_config.illumination,
+                self.result_processor.create_output_metadata(output_dir),
+                path,
+            )
+            return {sensor.id: product}
+        except Exception as e:
+            logger.error(
+                f"Failed to write product '{sensor.id}', saving its bands "
+                f"separately: {e}",
+                exc_info=True,
+            )
+            saved = {}
+            for band, dataset in band_results.items():
+                measure_id = sensor.band_measure_id(band)
+                if self.result_processor.save_result(measure_id, dataset, output_dir):
+                    saved[measure_id] = dataset
+            return saved
 
     def _run_combined_workflow(
         self,
@@ -767,14 +778,20 @@ class EradiateBackend(SimulationBackend):
                 sensor.target_center_lat, sensor.target_center_lon, width_km, height_km
             )
 
-            srf = pixel_config.srf if pixel_config.srf is not None else sensor.srf
+            band = sensor.resolve_band(pixel_config.band)
+            srf = (
+                pixel_config.srf
+                if pixel_config.srf is not None
+                else sensor.band_srf(band)
+            )
 
             # Get pixel size for BRF rectangle targets
-            pixel_size_x, pixel_size_y = sensor.pixel_size_m
+            pixel_size_x, pixel_size_y = sensor.pixel_size_m(band)
+            film_resolution = sensor.band_film_resolution(band)
 
             # Expand each pixel to an individual measurement config
             for row, col in pixel_config.pixel_indices:
-                x, y = pixel_to_scene_xy(row, col, bounds, sensor.film_resolution)
+                x, y = pixel_to_scene_xy(row, col, bounds, film_resolution)
 
                 # Query terrain elevation if scene_description is provided
                 target_z = pixel_config.height_offset_m

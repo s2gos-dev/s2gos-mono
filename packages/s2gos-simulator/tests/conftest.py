@@ -11,8 +11,6 @@ from s2gos_simulator.config import (
     AstroObjectIllumination,
     ConstantIllumination,
     DirectionalIllumination,
-    SatelliteInstrument,
-    SatellitePlatform,
     SatelliteSensor,
     SimulationConfig,
 )
@@ -23,9 +21,8 @@ def _minimal_satellite_sensor():
     """Create a minimal valid SatelliteSensor for use in fixtures."""
     return SatelliteSensor(
         id="test_sat",
-        platform=SatellitePlatform.SENTINEL_2A,
-        instrument=SatelliteInstrument.MSI,
-        band="2",
+        instrument="sentinel_2a-msi",
+        bands=["2"],
         viewing=AngularViewing(zenith=0.0, azimuth=0.0),
         film_resolution=(10, 10),
         target_center_lat=-42.0,

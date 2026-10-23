@@ -280,8 +280,9 @@ class EradiateTranslator:
                 continue
 
             if isinstance(sensor, SatelliteSensor):
-                measures.append(
-                    self.translate_satellite_sensor(sensor, scene_description)
+                measures.extend(
+                    self.translate_satellite_sensor(sensor, band, scene_description)
+                    for band in sensor.measured_bands
                 )
             elif isinstance(sensor, GroundSensor):
                 measures.append(
@@ -320,12 +321,16 @@ class EradiateTranslator:
         return measures
 
     def translate_satellite_sensor(
-        self, sensor: SatelliteSensor, scene_description: SceneDescription
+        self,
+        sensor: SatelliteSensor,
+        band: Optional[str],
+        scene_description: SceneDescription,
     ) -> Dict[str, Any]:
-        """Translate satellite sensor to Eradiate mpdistant measure.
+        """Translate one measure of a satellite sensor to an Eradiate mpdistant measure.
 
         Args:
             sensor: Satellite sensor configuration
+            band: One of `sensor.measured_bands`
             scene_description: Scene description with location
 
         Returns:
@@ -351,12 +356,13 @@ class EradiateTranslator:
             sensor.target_center_lat, sensor.target_center_lon, width_km, height_km
         )
 
+        viewing = sensor.band_viewing_for(band)
         measure_config = {
             "type": "mpdistant",
             "construct": "from_angles",
-            "angles": [sensor.viewing.zenith, sensor.viewing.azimuth],
-            "id": sanitize_sensor_id(sensor.id),
-            "film_resolution": sensor.film_resolution,
+            "angles": [viewing.zenith, viewing.azimuth],
+            "id": sanitize_sensor_id(sensor.band_measure_id(band)),
+            "film_resolution": sensor.band_film_resolution(band),
             "target": {
                 "type": "rectangle",
                 "xmin": target_bounds["xmin"],
@@ -364,7 +370,7 @@ class EradiateTranslator:
                 "ymin": target_bounds["ymin"],
                 "ymax": target_bounds["ymax"],
             },
-            "srf": self.translate_srf(sensor.srf),
+            "srf": self.translate_srf(sensor.band_srf(band)),
             "spp": sensor.samples_per_pixel,
         }
 
@@ -746,8 +752,8 @@ class EradiateTranslator:
                     wmin = min(grid.wavelengths_nm)
                     wmax = max(grid.wavelengths_nm)
                 else:
-                    # from_file: wavelengths only known at runtime; derive
-                    # simulation range from spectral_regions if present.
+                    # from_file: wavelengths are only known at runtime, so derive
+                    # the simulation range from spectral_regions if present.
                     if srf.spectral_regions:
                         wmin = min(r.wmin_nm for r in srf.spectral_regions)
                         wmax = max(r.wmax_nm for r in srf.spectral_regions)
@@ -880,8 +886,27 @@ class EradiateTranslator:
             samples_per_pixel=brf_config.samples_per_pixel or 512,
         )
 
+    def get_sensor_band(self, measure_id: str) -> Optional[Tuple[Any, Optional[str]]]:
+        """Find the sensor, and for satellite sensors the band, behind a measure.
+
+        Args:
+            measure_id: Sensor ID, or band measure ID of a satellite sensor
+
+        Returns:
+            (sensor, band), with band None unless `measure_id` is a satellite band
+            measure, or None
+        """
+        for sensor in self.simulation_config.sensors:
+            if isinstance(sensor, SatelliteSensor):
+                for band in sensor.measured_bands:
+                    if sensor.band_measure_id(band) == measure_id:
+                        return sensor, band
+            if sensor.id == measure_id:
+                return sensor, None
+        return None
+
     def get_sensor_by_id(self, sensor_id: str):
-        """Find sensor config by ID.
+        """Find sensor config by ID or by band measure ID.
 
         Args:
             sensor_id: Sensor ID to find
@@ -889,10 +914,8 @@ class EradiateTranslator:
         Returns:
             Sensor configuration or None
         """
-        for sensor in self.simulation_config.sensors:
-            if sensor.id == sensor_id:
-                return sensor
-        return None
+        match = self.get_sensor_band(sensor_id)
+        return match[0] if match else None
 
     def apply_post_processing_to_sensors(
         self, sensor_results: Dict[str, xr.Dataset]

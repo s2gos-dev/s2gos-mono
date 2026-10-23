@@ -19,8 +19,6 @@ from s2gos_simulator.config import (
     HDRFConfig,
     HemisphericalMeasurementLocation,
     IrradianceConfig,
-    SatelliteInstrument,
-    SatellitePlatform,
     SatelliteSensor,
     SimulationConfig,
     SpectralResponse,
@@ -41,9 +39,8 @@ from s2gos_simulator.config.viewing import (
 def _make_sentinel_sensor(**kwargs):
     defaults = dict(
         id="test_sat",
-        platform=SatellitePlatform.SENTINEL_2A,
-        instrument=SatelliteInstrument.MSI,
-        band="2",
+        instrument="sentinel_2a-msi",
+        bands=["2"],
         viewing=AngularViewing(zenith=0.0, azimuth=0.0),
         film_resolution=(10, 10),
         target_center_lat=-42.0,
@@ -70,7 +67,7 @@ class TestSatelliteSensorTranslation:
             film_resolution=(128, 64),
         )
 
-        result = translator.translate_satellite_sensor(sensor, minimal_scene)
+        result = translator.translate_satellite_sensor(sensor, "2", minimal_scene)
 
         assert result["type"] == "mpdistant"
         assert result["id"] == "sentinel_2a_test"
@@ -118,6 +115,39 @@ class TestSatelliteSensorTranslation:
         assert len(measures) == 1
         assert measures[0]["id"] == "include"
 
+    def test_multiband_sensor_gives_one_measure_per_band(
+        self, directional_illumination, minimal_scene, scene_dir
+    ):
+        sensor = _make_sentinel_sensor(
+            bands=["2", "8a", "1"],
+            film_resolution=None,
+            target_size_km=1.2,
+            band_viewing={"8a": AngularViewing(zenith=5.0, azimuth=170.0)},
+        )
+        config = SimulationConfig(
+            name="test",
+            illumination=directional_illumination,
+            sensors=[sensor],
+            measurements=[],
+        )
+
+        measures = EradiateTranslator(config, GeometryUtils()).translate_sensors(
+            minimal_scene, scene_dir
+        )
+
+        assert [m["id"] for m in measures] == [
+            "test_sat_2",
+            "test_sat_8a",
+            "test_sat_1",
+        ]
+        assert [m["film_resolution"] for m in measures] == [
+            (120, 120),
+            (60, 60),
+            (20, 20),
+        ]
+        assert [m["angles"] for m in measures] == [[0.0, 0.0], [5.0, 170.0], [0.0, 0.0]]
+        assert measures[1]["srf"] == "sentinel_2a-msi-8a"
+
     def test_translate_satellite_sensor_scene_missing_location_raises(
         self, translator, minimal_scene
     ):
@@ -125,22 +155,22 @@ class TestSatelliteSensorTranslation:
 
         minimal_scene.location = {"center_lon": -64.5}
         with pytest.raises(ValueError, match="center_lat"):
-            translator.translate_satellite_sensor(sensor, minimal_scene)
+            translator.translate_satellite_sensor(sensor, "2", minimal_scene)
 
         minimal_scene.location = {"center_lat": -42.0}
         with pytest.raises(ValueError, match="center_lon"):
-            translator.translate_satellite_sensor(sensor, minimal_scene)
+            translator.translate_satellite_sensor(sensor, "2", minimal_scene)
 
     def test_satellite_sensor_pixel_size_calculation(self):
         s1 = _make_sentinel_sensor(film_resolution=(100, 100), target_size_km=1.0)
-        px1, py1 = s1.pixel_size_m
+        px1, py1 = s1.pixel_size_m("2")
         assert px1 == pytest.approx(10.0)
         assert py1 == pytest.approx(10.0)
 
         s2 = _make_sentinel_sensor(
             film_resolution=(200, 100), target_size_km=(2.0, 1.0)
         )
-        px2, py2 = s2.pixel_size_m
+        px2, py2 = s2.pixel_size_m("2")
         assert px2 == pytest.approx(10.0)
         assert py2 == pytest.approx(10.0)
 
@@ -449,7 +479,7 @@ class TestTerrainRelativeAdjustment:
     def test_angular_from_origin_terrain_relative_keeps_direction(
         self, translator, minimal_scene, scene_dir, monkeypatch
     ):
-        # The target must be built from the terrain-adjusted origin; otherwise the
+        # The target must be built from the terrain-adjusted origin, otherwise the
         # terrain elevation leaks into the pointing direction.
         monkeypatch.setattr(
             translator.geometry_utils,

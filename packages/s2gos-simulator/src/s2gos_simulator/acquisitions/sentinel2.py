@@ -10,12 +10,8 @@ import numpy as np
 from pyproj import Transformer
 
 from ..config.illumination import DirectionalIllumination
-from ..config.sensors import (
-    SatelliteInstrument,
-    SatellitePlatform,
-    SatelliteSensor,
-    SentinelMSIBand,
-)
+from ..config.instruments import MSI_GSD_M
+from ..config.sensors import SatelliteSensor
 from ..config.viewing import AngularViewing
 
 logger = logging.getLogger(__name__)
@@ -45,7 +41,7 @@ def _angle_grid(node: ET.Element) -> np.ndarray:
 
 def _view_vector_grid(grids: list[ET.Element]) -> np.ndarray:
     """Per-node (east, north, up) view vectors averaged over the detectors that
-    cover the node; NaN where none does."""
+    cover the node, or NaN where none does."""
     vectors = []
     for detector in grids:
         zenith = np.deg2rad(_angle_grid(_find(detector, "Zenith")))
@@ -74,7 +70,7 @@ def _view_vector_grid(grids: list[ET.Element]) -> np.ndarray:
 def _view_geometry(root: ET.Element, band: str, x: float, y: float) -> AngularViewing:
     """Bilinearly interpolates one band's viewing angles at tile-CRS (x, y), as
     unit vectors so the azimuth wrap needs no special case."""
-    band_id = list(SentinelMSIBand).index(SentinelMSIBand(band))
+    band_id = list(MSI_GSD_M).index(band)
 
     grids = root.findall(f".//Viewing_Incidence_Angles_Grids[@bandId='{band_id}']")
     if not grids:
@@ -108,28 +104,30 @@ def _view_geometry(root: ET.Element, band: str, x: float, y: float) -> AngularVi
     return AngularViewing(zenith=float(zenith), azimuth=float(azimuth))
 
 
-def _platform(root: ET.Element) -> SatellitePlatform:
+def _instrument(root: ET.Element) -> str:
+    """Key of the tile's MSI in `INSTRUMENTS`, from the TILE_ID prefix."""
     tile_id = _find(root, ".//TILE_ID").text
     if tile_id.startswith("S2A"):
-        return SatellitePlatform.SENTINEL_2A
+        return "sentinel_2a-msi"
     if tile_id.startswith("S2B"):
-        return SatellitePlatform.SENTINEL_2B
+        return "sentinel_2b-msi"
     raise ValueError(f"Unrecognized Sentinel-2 platform in TILE_ID {tile_id!r}")
 
 
 def read_tile_metadata(
     mtd_tl_path: str | Path, lat: float, lon: float, bands: list[str]
-) -> tuple[datetime, SatellitePlatform, dict[str, AngularViewing]]:
+) -> tuple[datetime, str, dict[str, AngularViewing]]:
     """Reads the acquisition geometry at a point from a Sentinel-2 MTD_TL.xml.
 
     Args:
         mtd_tl_path: Path to an MTD_TL.xml file, e.g. from `fetch_tile_metadata`.
         lat: Target latitude (WGS84 decimal degrees).
         lon: Target longitude (WGS84 decimal degrees).
-        bands: Band identifiers as used by SentinelMSIBand (e.g. "2", "8a").
+        bands: MSI band identifiers (e.g. "2", "8a").
 
     Returns:
-        The tile's SENSING_TIME (UTC-aware), the platform from the TILE_ID prefix,
+        The tile's SENSING_TIME (UTC-aware), the instrument key from the TILE_ID
+        prefix (`sentinel_2a-msi` or `sentinel_2b-msi`),
         and per band the viewing zenith/azimuth at (lat, lon) in Eradiate
         convention, interpolated on the per-detector angle grids.
 
@@ -142,7 +140,7 @@ def read_tile_metadata(
     x, y = Transformer.from_crs("EPSG:4326", crs, always_xy=True).transform(lon, lat)
     return (
         _sensing_time(root),
-        _platform(root),
+        _instrument(root),
         {band: _view_geometry(root, band, x, y) for band in bands},
     )
 
@@ -156,20 +154,20 @@ def create_acquisition(
     samples_per_pixel: int = 64,
     irradiance_dataset: str = "coddington_2022-1_nm",
     **kwargs,
-) -> tuple[DirectionalIllumination, list[SatelliteSensor]]:
-    """Create the illumination and MSI sensors of a real Sentinel-2 acquisition.
+) -> tuple[DirectionalIllumination, SatelliteSensor]:
+    """Create the illumination and MSI sensor of a real Sentinel-2 acquisition.
 
     Sun and view geometry both come from the tile's MTD_TL.xml: the sun is
     computed at the tile's SENSING_TIME, and each band views the target with its
     own angles interpolated at the target center. Films default to each band's
-    native GSD (10, 20 or 60 m); pass `film_resolution` to override. Use
+    native GSD (10, 20 or 60 m). Pass `film_resolution` to override. Use
     `read_tile_metadata` directly for custom sensors or illumination.
 
     Args:
         mtd_tl_path: Path to an MTD_TL.xml file, e.g. from `fetch_tile_metadata`.
         target_center_lat: Target center latitude (WGS84 decimal degrees)
         target_center_lon: Target center longitude (WGS84 decimal degrees)
-        bands: Band identifiers as used by SentinelMSIBand (e.g. "2", "8a").
+        bands: MSI band identifiers (e.g. "2", "8a").
         target_size_km: Target area size (km). Float for square, tuple for
             (width, height). Must be a whole multiple of every band's GSD unless
             `film_resolution` is given.
@@ -179,35 +177,33 @@ def create_acquisition(
         **kwargs: Additional sensor parameters
 
     Returns:
-        The illumination and one SatelliteSensor per band.
+        The illumination and one SatelliteSensor imaging every band, each with
+        its own viewing angles in `band_viewing`.
 
     Raises:
         ValueError: As raised by `read_tile_metadata`, or if the footprint is
             not a whole multiple of a band's GSD and no `film_resolution` is given.
     """
-    time, platform, viewing = read_tile_metadata(
+    time, instrument, viewing = read_tile_metadata(
         mtd_tl_path, target_center_lat, target_center_lon, bands
     )
-    logger.info("Sentinel-2 acquisition: %s sensed at %s", platform.value, time)
+    logger.info("Sentinel-2 acquisition: %s sensed at %s", instrument, time)
 
     illumination = DirectionalIllumination.from_date_and_location(
         time, target_center_lat, target_center_lon, irradiance_dataset
     )
-    sensors = [
-        SatelliteSensor(
-            platform=platform,
-            instrument=SatelliteInstrument.MSI,
-            band=band,
-            viewing=viewing[band],
-            target_center_lat=target_center_lat,
-            target_center_lon=target_center_lon,
-            target_size_km=target_size_km,
-            samples_per_pixel=samples_per_pixel,
-            **kwargs,
-        )
-        for band in bands
-    ]
-    return illumination, sensors
+    sensor = SatelliteSensor(
+        instrument=instrument,
+        bands=bands,
+        viewing=viewing[bands[0]],
+        band_viewing=viewing,
+        target_center_lat=target_center_lat,
+        target_center_lon=target_center_lon,
+        target_size_km=target_size_km,
+        samples_per_pixel=samples_per_pixel,
+        **kwargs,
+    )
+    return illumination, sensor
 
 
 def fetch_tile_metadata(
@@ -255,7 +251,7 @@ def fetch_tile_metadata(
     sensed = _sensing_time(ET.parse(str(cached_path)).getroot()).date()
     if sensed != anchor:
         logger.warning(
-            "No Sentinel-2 pass on %s at (%s, %s); using the %s pass from %s",
+            "No Sentinel-2 pass on %s at (%s, %s), using the %s pass from %s",
             anchor,
             lat,
             lon,
