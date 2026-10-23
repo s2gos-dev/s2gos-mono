@@ -54,6 +54,22 @@ def test_apply_ways_paints_nothing(tmp_path, way_polys, index_map):
     assert (out == 0).all()
 
 
+def test_apply_roads_upsampled_extent_aligns_with_native_pixels(tmp_path):
+    # Native 4x4 @ 10 m upsampled to 8x8 @ 5 m: x < 25 is columns 0-5.
+    lc_path = _write_landcover(tmp_path / "lc.zarr")
+    texture = np.zeros((8, 8), dtype=np.uint8)
+
+    way_polygons = {"asphalt": box(-100.0, -100.0, 24.9, 100.0)}
+    out, union_mask = apply_ways(
+        texture, lc_path, way_polygons, {"asphalt": 7}, texture_resolution_m=5.0
+    )
+
+    assert out.shape == (8, 8)
+    assert (out[:, :6] == 7).all()
+    assert (out[:, 6:] == 0).all()
+    assert union_mask is not None
+
+
 def test_matched_materials_sidecar_roundtrip():
     from s2gos_generator.processors.spectral.diversify import (
         matched_materials_from_sidecar,

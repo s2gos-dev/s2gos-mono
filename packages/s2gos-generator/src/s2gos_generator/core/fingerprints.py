@@ -13,6 +13,32 @@ def _stable_hash(data: dict) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
+_WATER_SOURCE_FIELDS = {
+    "enabled",
+    "source",
+    "file_path",
+    "default_material",
+    "default_waterway_half_width_m",
+    "exclude_intermittent",
+    "landcover_completion",
+    "landcover_completion_min_area_m2",
+    "landcover_completion_linked_min_area_m2",
+    "landcover_completion_max_slope_deg",
+}
+_WATER_TEXTURE_FIELDS = {"landcover_leak_fallback_material"}
+_WATER_MESH_FIELDS = {
+    "mesh_gradient_threshold",
+    "mesh_thin_water_skip_m",
+    "centerline_smoothing_window_m",
+    "erosion_margin_m",
+    "outlier_reject_m",
+    "sloped_water_tolerance_m",
+    "sloped_water_smoothing_m",
+    "sloped_water_max_deviation_m",
+    "shore_flat_margin_m",
+}
+
+
 class ResourceFingerprints:
     """Per-resource config fingerprints for cache.
 
@@ -93,10 +119,17 @@ class ResourceFingerprints:
 
     @staticmethod
     def _target_mesh(config) -> dict:
-        fp = {"handle_dem_nans": config.processing.handle_dem_nans}
+        fp = {
+            "handle_dem_nans": config.processing.handle_dem_nans,
+            "texture_resolution_m": config.texture_resolution_m,
+            "landcover_resolution_m": config.landcover_resolution_m,
+        }
         mesh_ref = getattr(config, "mesh_refinement", None)
         if mesh_ref is not None:
             fp["mesh_refinement"] = mesh_ref.model_dump()
+        water = getattr(config, "water", None)
+        if water is not None:
+            fp["water"] = water.model_dump(include=_WATER_MESH_FIELDS)
         return fp
 
     @staticmethod
@@ -110,6 +143,22 @@ class ResourceFingerprints:
             "center_lon": config.location.center_lon,
             "aoi_size_km": config.location.aoi_size_km,
             "ways": config.ways.model_dump() if config.ways else None,
+        }
+
+    @staticmethod
+    def _target_water(config) -> dict:
+        return {
+            "center_lat": config.location.center_lat,
+            "center_lon": config.location.center_lon,
+            "aoi_size_km": config.location.aoi_size_km,
+            "landcover_resolution_m": config.landcover_resolution_m,
+            "dem_resolution_m": config.dem_resolution_m,
+            "water": (
+                config.water.model_dump(include=_WATER_SOURCE_FIELDS)
+                | {"waterway_half_width_m": config.water.WATERWAY_HALF_WIDTH_M}
+                if config.water
+                else None
+            ),
         }
 
     @staticmethod
@@ -146,6 +195,10 @@ class ResourceFingerprints:
             "snow": config.snow.model_dump() if config.snow else None,
             "material_regions": target_regions,
             "ways_enabled": config.ways.enabled if config.ways is not None else None,
+            "water_texture": (
+                getattr(config, "water", None)
+                and config.water.model_dump(include=_WATER_TEXTURE_FIELDS)
+            ),
             "texture_resolution_m": config.texture_resolution_m,
             "generate_texture_preview": config.processing.generate_texture_preview,
             "spectral_matching": (
@@ -218,6 +271,12 @@ class ResourceFingerprints:
             ),
             "texture_resolution_m": config.texture_resolution_m,
             "landcover_resolution_m": config.landcover_resolution_m,
+            "mesh_refinement": (
+                config.mesh_refinement.model_dump() if config.mesh_refinement else None
+            ),
+            "shore_flat_margin_m": (
+                getattr(config, "water", None) and config.water.shore_flat_margin_m
+            ),
         }
 
     @staticmethod
