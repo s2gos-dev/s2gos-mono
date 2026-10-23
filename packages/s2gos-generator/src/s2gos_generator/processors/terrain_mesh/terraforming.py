@@ -93,8 +93,7 @@ class WayFlattenOperation:
         self._centerline = centerline
         self._half_width = half_width
         self._buffer_m = buffer_m
-        # cap_style="round" here, Round caps match the distance test's
-        # own (naturally round) endpoint behavior.
+        # Round caps match the distance test's round endpoints.
         self._influence_zone: shapely.Geometry = shapely.buffer(
             centerline, half_width + buffer_m, cap_style="round"
         )
@@ -183,17 +182,23 @@ class WayFlattenOperation:
 
 
 class WaterFlattenOperation:
-    """Flatten terrain under a water body footprint to the constant ``reference_z``.
+    """Flatten terrain under a water polygon to ``reference_z``, or to ``surface(xy)`` when given.
 
-    Vertices inside the polygon take ``reference_z``; within ``buffer_m`` outside
-    it they blend linearly back to their original elevation. Only the shoreline
-    band is refined, since the interior is flat.
+    Vertices within ``buffer_m`` outside the polygon blend linearly back to
+    their original elevation. Only the shoreline band is refined.
     """
 
-    def __init__(self, polygon: Polygon, buffer_m: float, reference_z: float) -> None:
+    def __init__(
+        self,
+        polygon: Polygon,
+        buffer_m: float,
+        reference_z: float,
+        surface: Callable[[np.ndarray], np.ndarray] | None = None,
+    ) -> None:
         self._polygon = polygon
         self._buffer_m = buffer_m
         self.reference_z = reference_z
+        self.surface = surface
         self.influence_zone: shapely.Geometry = shapely.buffer(polygon, buffer_m)
         shapely.prepare(self.influence_zone)
         self.refinement_zone: shapely.Geometry = (
@@ -204,7 +209,13 @@ class WaterFlattenOperation:
 
     def surface_only(self) -> "WaterFlattenOperation":
         """The same flattening without its transition blend."""
-        return WaterFlattenOperation(self._polygon, 0.0, self.reference_z)
+        return WaterFlattenOperation(self._polygon, 0.0, self.reference_z, self.surface)
+
+    def target_z(self, xy: np.ndarray) -> np.ndarray:
+        """Water surface elevation at (M, 2) XY points."""
+        if self.surface is None:
+            return np.full(len(xy), self.reference_z)
+        return self.surface(xy)
 
     def apply(
         self,
@@ -224,14 +235,16 @@ class WaterFlattenOperation:
         """Apply flattening for a pre-filtered subset of vertices (in-place)."""
         _, alpha, mask = self._geometry_and_alpha(vertex_indices, inside_points)
         idx, a = vertex_indices[mask], alpha[mask]
-        vertices[idx, 2] = a * self.reference_z + (1.0 - a) * vertices[idx, 2]
+        vertices[idx, 2] = (
+            a * self.target_z(vertices[idx, :2]) + (1.0 - a) * vertices[idx, 2]
+        )
 
     def _geometry_and_alpha(
         self,
         vertex_indices: np.ndarray,
         inside_points,  # shapely geometry array
     ) -> tuple[None, np.ndarray, np.ndarray]:
-        """Return ``(None, alpha, alpha > 0)``; ``None`` marks the constant ``reference_z`` target."""
+        """Return ``(None, alpha, alpha > 0)``."""
         dist = shapely.distance(self._polygon, inside_points)
         if self._buffer_m > 0:
             alpha = np.clip(1.0 - dist / self._buffer_m, 0.0, 1.0)
@@ -247,8 +260,7 @@ def apply_way_flatten_batch(
 ) -> np.ndarray:
     """Apply terraform operations with a single batched elevation sample.
 
-    Operations whose ``_geometry_and_alpha`` returns ``None`` for ``nearest_xy``
-    flatten to their constant ``reference_z`` instead of a sampled elevation.
+    Operations returning ``None`` for ``nearest_xy`` flatten to their own ``target_z``.
 
     Args:
         vertices:     (N, 3) mesh vertex array — modified in-place.
@@ -287,10 +299,13 @@ def apply_way_flatten_batch(
         )
         if not mask_apply.any():
             continue
-        ref_z = op.reference_z if nearest_xy is None else None
-        if ref_z is None:
+        apply_indices = vertex_idx_arr[mask_apply]
+        ref_z = None
+        if nearest_xy is None:
+            ref_z = op.target_z(xy[apply_indices])
+        else:
             sample_xy.append(nearest_xy[mask_apply])
-        pending.append((vertex_idx_arr[mask_apply], alpha[mask_apply], ref_z))
+        pending.append((apply_indices, alpha[mask_apply], ref_z))
 
     sampled_z = elevation_fn(np.concatenate(sample_xy)) if sample_xy else None
 

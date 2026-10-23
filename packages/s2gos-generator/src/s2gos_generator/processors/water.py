@@ -1,4 +1,4 @@
-"""Water body algorithms: OSM fetching and parsing, landcover completion, sidecar (de)serialization, and terrain-flatten operation building."""
+"""Water bodies: OSM parsing, landcover completion, sidecar (de)serialization and terrain flattening."""
 
 import logging
 from dataclasses import dataclass
@@ -42,11 +42,7 @@ def fetch_osm_data(
 
 @dataclass(slots=True)
 class WaterBody:
-    """A single water body footprint in scene coordinates.
-
-    Linear waterways also carry their ``centerline`` and ``half_width`` so they
-    flatten like a way; areal bodies flatten to one reference elevation.
-    """
+    """A water body footprint in scene coordinates; linear waterways also carry ``centerline`` and ``half_width``."""
 
     geometry: Polygon
     material: str
@@ -95,10 +91,8 @@ def parse_water_bodies(
 ) -> list[WaterBody]:
     """Parse OSM water elements into WaterBody footprints, clipped to scene bounds.
 
-    Relation outer and inner boundaries are stitched with linemerge before
-    polygonizing, since large features split their boundary across many open
-    arcs; inner rings (islands) are cut out as holes. Ways that are outer
-    members of a water relation are not emitted again on their own.
+    Relation boundaries are stitched before polygonizing and inner rings
+    (islands) become holes. Underground waterways are skipped.
     """
     elements = osm_data.get("elements", [])
     material = water_cfg.default_material
@@ -131,6 +125,8 @@ def parse_water_bodies(
             continue
         tags = element.get("tags", {})
         if water_cfg.exclude_intermittent and tags.get("intermittent") == "yes":
+            continue
+        if tags.get("tunnel", "no") != "no" or tags.get("location") == "underground":
             continue
         coords = _way_geometry_scene(element, coordinate_system)
         if coords is None:
@@ -179,11 +175,16 @@ def parse_water_bodies(
 def complete_with_landcover(
     osm_bodies: list[WaterBody], landcover_data, dem_data, water_cfg
 ) -> list[WaterBody]:
-    """Add water bodies for flat landcover water-class components not connected to any OSM body."""
+    """Add water bodies for flat landcover water areas OSM misses.
+
+    Areas touching OSM water are only added above
+    ``landcover_completion_linked_min_area_m2``; smaller ones are the landcover
+    disagreeing with the OSM outline, larger ones are bodies OSM lacks (the sea).
+    """
     from rasterio.features import rasterize
     from rasterio.features import shapes as raster_shapes
     from rasterio.transform import from_bounds
-    from scipy.ndimage import label
+    from scipy.ndimage import binary_dilation, label
 
     from .terrain_texture.overlays import _lc_bounds
 
@@ -217,9 +218,16 @@ def complete_with_landcover(
             > 0
         )
 
-    labeled_water, _ = label(lc_water)
-    osm_linked = np.unique(labeled_water[osm_mask & lc_water])
-    lc_not_osm = lc_water & ~np.isin(labeled_water, osm_linked)
+    lc_not_osm = lc_water & ~osm_mask
+    labeled_water, _ = label(lc_not_osm)
+    linked = np.unique(labeled_water[binary_dilation(osm_mask & lc_water) & lc_not_osm])
+    linked_area_m2 = np.bincount(labeled_water.ravel())[linked] * native_res**2
+    small_linked = linked[
+        (linked > 0)
+        & (linked_area_m2 < water_cfg.landcover_completion_linked_min_area_m2)
+    ]
+    linked_drop = np.isin(labeled_water, small_linked)
+    lc_not_osm &= ~linked_drop
     if not lc_not_osm.any():
         return []
 
@@ -234,28 +242,32 @@ def complete_with_landcover(
         ).reshape(lc_vals.shape)
 
     flat = lc_not_osm & (slope_deg < water_cfg.landcover_completion_max_slope_deg)
-    labeled, n_components = label(flat)
+    labeled, _ = label(flat)
     sizes = np.bincount(labeled.ravel())
     min_pixels = water_cfg.landcover_completion_min_area_m2 / native_res**2
     keep_labels = np.nonzero(sizes >= min_pixels)[0]
     keep_mask = np.isin(labeled, keep_labels[keep_labels > 0])
+
+    px_km2 = native_res**2 / 1e6
+    logging.info(
+        "Landcover water outside OSM: %.3f km^2 added; dropped %.3f km^2 touching OSM, "
+        "%.3f km^2 too steep, %.3f km^2 too small",
+        keep_mask.sum() * px_km2,
+        linked_drop.sum() * px_km2,
+        (lc_not_osm & ~flat).sum() * px_km2,
+        (flat & ~keep_mask).sum() * px_km2,
+    )
     if not keep_mask.any():
         return []
 
     shapes_input = np.flipud(keep_mask).astype(np.uint8)
-    new_bodies = [
+    return [
         WaterBody(poly, water_cfg.default_material)
         for geom_dict, value in raster_shapes(
             shapes_input, mask=shapes_input.astype(bool), transform=transform
         )
         if value == 1 and not (poly := shape(geom_dict).buffer(0)).is_empty
     ]
-    logging.info(
-        "Landcover completion: %d additional water body/bodies from %d connected component(s) OSM missed",
-        len(new_bodies),
-        n_components,
-    )
-    return new_bodies
 
 
 def water_bodies_to_sidecar(bodies: list[WaterBody]) -> dict:
@@ -286,7 +298,7 @@ def water_bodies_to_sidecar(bodies: list[WaterBody]) -> dict:
 
 
 def water_bodies_from_sidecar(data: dict) -> list[WaterBody]:
-    """Reconstruct water bodies from the water-sidecar structure, returning an empty list for an unrecognised schema version."""
+    """Reconstruct water bodies from the water-sidecar structure."""
     version = data.get("version", 1)
     if version != 1:
         logging.warning(
@@ -307,27 +319,33 @@ def water_bodies_from_sidecar(data: dict) -> list[WaterBody]:
 
 
 def _interior_sample_points(
-    geometry: Polygon, erosion_m: float, n_points: int = 9
+    geometry: Polygon, erosion_m: float, dem_x: np.ndarray, dem_y: np.ndarray
 ) -> np.ndarray:
-    """Return candidate interior XY samples for reference-elevation estimation, eroding inward to avoid DEM bank-elevation bleed."""
-    parts = _polygon_parts(geometry.buffer(-erosion_m) if erosion_m > 0 else geometry)
-    target = max(parts, key=lambda g: g.area) if parts else geometry
-    minx, miny, maxx, maxy = target.bounds
-    if parts and maxx > minx and maxy > miny:
-        rng = np.random.default_rng(0)
-        xs = rng.uniform(minx, maxx, size=n_points * 4)
-        ys = rng.uniform(miny, maxy, size=n_points * 4)
-        inside = shapely.contains(target, shapely.points(xs, ys))
+    """DEM cell centres inside ``geometry`` eroded by ``erosion_m``, away from the banks.
+
+    Falls back to the cells inside the uneroded geometry, then to one interior point.
+    """
+    eroded = geometry.buffer(-erosion_m) if erosion_m > 0 else geometry
+    for target in (eroded, geometry):
+        if target.is_empty:
+            continue
+        minx, miny, maxx, maxy = target.bounds
+        xx, yy = np.meshgrid(
+            dem_x[(dem_x >= minx) & (dem_x <= maxx)],
+            dem_y[(dem_y >= miny) & (dem_y <= maxy)],
+        )
+        xx, yy = xx.ravel(), yy.ravel()
+        inside = shapely.contains_xy(target, xx, yy)
         if inside.any():
-            return np.column_stack([xs[inside], ys[inside]])[:n_points]
-    rp = target.representative_point()
+            return np.column_stack([xx[inside], yy[inside]])
+    rp = geometry.representative_point()
     return np.array([[rp.x, rp.y]])
 
 
 def _group_areal_bodies_by_adjacency(
     areal_bodies: list[WaterBody], touch_tolerance_m: float = 1.0
 ) -> list[list[WaterBody]]:
-    """Group areal water bodies into clusters of touching/near-touching polygons so each cluster shares one flat reference elevation."""
+    """Group areal water bodies into clusters of touching polygons."""
     from scipy.sparse import coo_matrix
     from scipy.sparse.csgraph import connected_components
 
@@ -371,11 +389,9 @@ def _smoothed_centerline_profile(
     smooth_window_m: float,
     outlier_reject_m: float = 1.5,
 ):
-    """Sample the DEM along a centerline and robustly smooth it, returning (distances, smoothed_z) or None if degenerate.
+    """Sample the DEM along a centerline and return ``(distances, smoothed_z)``, or None.
 
-    Samples further than ``outlier_reject_m`` (or ``OUTLIER_MAD_MULTIPLIER``
-    times the local MAD) from a wide rolling median are replaced by that
-    median, then a rolling mean low-pass is applied.
+    Outliers from a wide rolling median are replaced by it before a rolling mean.
     """
     from scipy.ndimage import uniform_filter1d
 
@@ -419,10 +435,9 @@ def smooth_dem_along_linear_bodies(
     margin_m: float = 10.0,
     outlier_reject_m: float = 1.5,
 ):
-    """Return a copy of ``dem_data`` with elevation near linear water-body centerlines replaced by a robust, smoothed profile so raw DEM noise doesn't bake into the flattened channel; ``smooth_window_m`` <= 0 disables it.
+    """Return ``dem_data`` with elevation along linear waterways replaced by a smoothed centerline profile.
 
-    Overlapping bands are blended with a weight falling linearly from 1 at the
-    centerline to ~0 at the band edge.
+    Overlapping bands are blended with weights falling linearly from the centerline.
     """
     if smooth_window_m <= 0 or not linear_bodies:
         return dem_data
@@ -491,6 +506,57 @@ def smooth_dem_along_linear_bodies(
     return dem_data.copy(data=smoothed_elev)
 
 
+def _sloped_surface(
+    geom, dem_x, dem_y, dem_elev, *, smoothing_m, tolerance_m, max_deviation_m
+):
+    """Water surface over ``geom`` as an (M, 2) XY -> z sampler, or None when the body is level.
+
+    The DEM is Gaussian-averaged over water pixels only, so banks don't bleed
+    in. The body is level when that average, at three times ``smoothing_m``,
+    varies by at most ``tolerance_m``. Otherwise the surface is the average at
+    ``smoothing_m``, clamped to ``max_deviation_m`` of the DEM and extended past
+    the shoreline from the nearest water pixel.
+    """
+    from scipy.ndimage import distance_transform_edt, gaussian_filter
+
+    res = max(abs(dem_x[1] - dem_x[0]), abs(dem_y[1] - dem_y[0]))
+    pad = 3 * 3 * smoothing_m + res
+    minx, miny, maxx, maxy = geom.bounds
+    xs = np.nonzero((dem_x >= minx - pad) & (dem_x <= maxx + pad))[0]
+    ys = np.nonzero((dem_y >= miny - pad) & (dem_y <= maxy + pad))[0]
+    if len(xs) < 2 or len(ys) < 2:
+        return None
+    cx, cy = dem_x[xs[0] : xs[-1] + 1], dem_y[ys[0] : ys[-1] + 1]
+    z = dem_elev[ys[0] : ys[-1] + 1, xs[0] : xs[-1] + 1]
+    xx, yy = np.meshgrid(cx, cy)
+
+    mask = shapely.contains_xy(geom, xx, yy) & np.isfinite(z)
+    if not mask.any():
+        mask = shapely.contains_xy(geom.buffer(res), xx, yy) & np.isfinite(z)
+    if not mask.any():
+        return None
+
+    weights = mask.astype(np.float64)
+    masked_z = np.where(mask, z, 0.0)
+
+    def water_average(scale_m: float) -> np.ndarray:
+        sigma = scale_m / res
+        return gaussian_filter(masked_z, sigma) / np.maximum(
+            gaussian_filter(weights, sigma), 1e-12
+        )
+
+    level = water_average(3 * smoothing_m)[mask]
+    if np.percentile(level, 95) - np.percentile(level, 5) <= tolerance_m:
+        return None
+
+    surface = np.clip(
+        water_average(smoothing_m), z - max_deviation_m, z + max_deviation_m
+    )
+    _, nearest = distance_transform_edt(~mask, return_indices=True)
+    surface = surface[tuple(nearest)]
+    return lambda xy: _sample_dem_points(cx, cy, surface, xy)
+
+
 def build_water_terraform_operations(
     water_bodies: list[WaterBody],
     dem_data,
@@ -500,17 +566,19 @@ def build_water_terraform_operations(
     thin_water_skip_m: float = 0.0,
     erosion_margin_m: float = 10.0,
     outlier_reject_m: float = 1.5,
-    default_sea_level_m: float = 0.0,
     dem_resolution_m: float = 30.0,
-    drop_m: float = 0.0,
     shore_flat_margin_m: float = 0.0,
+    sloped_tolerance_m: float = 3.0,
+    sloped_smoothing_m: float = 50.0,
+    sloped_max_deviation_m: float = 5.0,
 ):
     """Build terrain-flatten operations for water bodies.
 
-    Linear bodies get a :class:`WayFlattenOperation` (flat across, following the
-    channel's gradient along it); areal bodies get one :class:`WaterFlattenOperation`
-    per cluster of touching bodies, at the robust median of interior DEM samples
-    minus ``drop_m``, flat out to ``shore_flat_margin_m`` past the shoreline.
+    Linear bodies get a :class:`WayFlattenOperation`; areal bodies get one
+    :class:`WaterFlattenOperation` per cluster of touching bodies, extended
+    ``shore_flat_margin_m`` past the shoreline. A level cluster is flat at the
+    robust median of interior DEM samples, a sloped one follows
+    :func:`_sloped_surface`.
     """
     if not water_bodies:
         logging.warning("No water bodies in sidecar — skipping water flattening")
@@ -544,26 +612,38 @@ def build_water_terraform_operations(
             if len(cluster) == 1
             else unary_union([b.geometry for b in cluster])
         )
-        minx, miny, maxx, maxy = geom.bounds
-        if not keep(min(maxx - minx, maxy - miny), geom.boundary):
+        if not keep(2 * geom.area / geom.length, geom.boundary):
             continue
 
         samples = _sample_dem_points(
-            dem_x, dem_y, dem_elev, _interior_sample_points(geom, effective_erosion_m)
+            dem_x,
+            dem_y,
+            dem_elev,
+            _interior_sample_points(geom, effective_erosion_m, dem_x, dem_y),
         )
         samples = samples[np.isfinite(samples)]
-        reference_z = default_sea_level_m
+        reference_z = 0.0
         if samples.size:
             reference_z = float(np.median(samples))
             inliers = samples[np.abs(samples - reference_z) <= outlier_reject_m]
             if outlier_reject_m > 0 and inliers.size:
                 reference_z = float(np.median(inliers))
 
+        surface = _sloped_surface(
+            geom,
+            dem_x,
+            dem_y,
+            dem_elev,
+            smoothing_m=sloped_smoothing_m,
+            tolerance_m=sloped_tolerance_m,
+            max_deviation_m=sloped_max_deviation_m,
+        )
         operations.append(
             WaterFlattenOperation(
                 geom.buffer(shore_flat_margin_m) if shore_flat_margin_m > 0 else geom,
                 transition_buffer_m,
-                reference_z - drop_m,
+                reference_z,
+                surface,
             )
         )
 

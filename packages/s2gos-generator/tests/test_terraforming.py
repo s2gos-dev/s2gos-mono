@@ -89,14 +89,7 @@ class TestWayFlatten:
         assert out[3, 2] == pytest.approx(100.0)  # beyond influence zone
 
     def test_endpoint_adjacent_vertex_within_half_width_is_flattened(self):
-        # Regression test: the influence-zone buffer used to pre-select
-        # candidate vertices must be a superset of the actual per-vertex
-        # distance-to-centerline test everywhere, including near the
-        # centerline's own endpoints. A "flat" cap buffer excludes points
-        # past the endpoint's perpendicular plane even when they're well
-        # within half_width by straight-line (radial) distance -- this
-        # vertex sits 3m past the centerline's end (y=100) but only
-        # sqrt(3^2+3^2)~=4.24m from the endpoint, inside half_width=5.
+        # 3 m past the endpoint, ~4.24 m from it: inside half_width.
         op = WayFlattenOperation(
             LineString([(0.0, 0.0), (0.0, 100.0)]), half_width=5.0, buffer_m=0.0
         )
@@ -116,8 +109,6 @@ class TestWayFlatten:
 
 
 def _elevation_at(value):
-    """Elevation sampler returning a constant everywhere."""
-
     def _fn(xy):
         return np.full(len(xy), value)
 
@@ -128,7 +119,6 @@ class TestWaterFlatten:
     _SQUARE = Polygon([(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)])
 
     def test_alpha_blend_full_transition_and_outside(self):
-        # Interior point, boundary point, mid-transition, and beyond buffer_m.
         op = WaterFlattenOperation(self._SQUARE, buffer_m=10.0, reference_z=2.0)
         verts = np.array(
             [
@@ -149,27 +139,6 @@ class TestWaterFlatten:
         op = WaterFlattenOperation(self._SQUARE, buffer_m=2.0, reference_z=2.0)
         assert not op.refinement_zone.intersects(Point(5.0, 5.0))
         assert op.refinement_zone.intersects(Point(10.0, 5.0))
-
-    def test_mixed_road_and_water_operations_batch_together(self):
-        # Confirms apply_way_flatten_batch is polymorphic across operation
-        # types -- both apply independently to their own influence zones.
-        road_op = WayFlattenOperation(
-            LineString([(-1000.0, 0.0), (1000.0, 0.0)]), half_width=2.0, buffer_m=0.0
-        )
-        water_op = WaterFlattenOperation(self._SQUARE, buffer_m=0.0, reference_z=2.0)
-        verts = np.array(
-            [
-                [-500.0, 0.0, 100.0],  # on the road centerline
-                [5.0, 5.0, 100.0],  # inside the water square
-                [500.0, 500.0, 100.0],  # inside neither
-            ]
-        )
-        out = apply_way_flatten_batch(
-            verts.copy(), [road_op, water_op], _elevation_at(7.0)
-        )
-        assert out[0, 2] == pytest.approx(7.0)
-        assert out[1, 2] == pytest.approx(2.0)
-        assert out[2, 2] == pytest.approx(100.0)
 
     def test_water_surface_reapplied_after_roads(self):
         road_op = WayFlattenOperation(

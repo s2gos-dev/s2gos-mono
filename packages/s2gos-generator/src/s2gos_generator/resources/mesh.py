@@ -62,10 +62,11 @@ def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
                 thin_water_skip_m=ctx.config.water.mesh_thin_water_skip_m,
                 erosion_margin_m=ctx.config.water.erosion_margin_m,
                 outlier_reject_m=ctx.config.water.outlier_reject_m,
-                default_sea_level_m=ctx.config.water.default_sea_level_m,
                 dem_resolution_m=ctx.dem_resolution_m,
-                drop_m=ctx.config.water.drop_m,
                 shore_flat_margin_m=ctx.shore_flat_margin_m,
+                sloped_tolerance_m=ctx.config.water.sloped_water_tolerance_m,
+                sloped_smoothing_m=ctx.config.water.sloped_water_smoothing_m,
+                sloped_max_deviation_m=ctx.config.water.sloped_water_max_deviation_m,
             )
 
         way_operations: list[TerraformOperation] = []

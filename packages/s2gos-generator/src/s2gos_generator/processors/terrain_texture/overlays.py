@@ -95,14 +95,9 @@ def _rasterize_setup(
     landcover_path: Path,
     texture_resolution_m: Optional[float],
 ) -> tuple[np.ndarray, int, int, "Affine", float]:
-    """Resolve target raster dimensions/transform for painting onto texture_2d.
+    """Resize ``texture_2d`` to the target raster and return ``(texture_2d, width, height, transform, raster_res)``.
 
-    Resizes texture_2d (NEAREST) to the upsampled target dimensions when
-    texture_resolution_m is finer than the landcover's native resolution, and
-    returns the transform whose bounds margin is always half a *native*
-    landcover pixel, not half a (possibly upsampled) raster pixel
-
-    Returns (texture_2d, target_width, target_height, transform, raster_res).
+    The transform's bounds margin is half a native landcover pixel.
     """
     from rasterio.transform import from_bounds
 
@@ -274,82 +269,6 @@ def strip_unvetted_water_pixels(
             area_name,
         )
     return texture_2d, n_leaked > 0
-
-
-def strip_steep_water_pixels(
-    texture_2d: np.ndarray,
-    dem_path: Path,
-    landcover_path: Path,
-    water_mask: np.ndarray,
-    water_material_index: int,
-    max_slope: float,
-    texture_resolution_m: Optional[float] = None,
-    area_name: str = "target",
-) -> tuple[np.ndarray, bool]:
-    """Repaint water-material pixels whose underlying DEM slope exceeds max_slope with the nearest non-water material.
-
-    Texture row 0 is ``ymin``. Slope is sampled only at ``water_mask`` pixels and
-    the fill comes from the nearest land pixel bordering water, never from water.
-    """
-    if water_mask is None or not water_mask.any():
-        return texture_2d, False
-
-    from scipy.ndimage import binary_dilation, map_coordinates
-    from scipy.spatial import cKDTree
-
-    from ..terrain_mesh import compute_gradient, extract_dem
-
-    with xr.open_zarr(expand_mapper(dem_path)) as ds:
-        dem_data = ds[list(ds.data_vars)[0]]
-        dem_x, dem_y, dem_elev = extract_dem(dem_data)
-    slope = compute_gradient(dem_elev, dem_x, dem_y)
-
-    with xr.open_zarr(expand_mapper(landcover_path)) as ds:
-        lc_data = ds[list(ds.data_vars)[0]]
-        xmin, xmax, ymin, ymax, native_res = _lc_bounds(lc_data)
-
-    height, width = texture_2d.shape
-    raster_res = texture_resolution_m if texture_resolution_m else native_res
-    half_px = native_res / 2
-    xs = np.linspace(
-        xmin - half_px + raster_res / 2, xmax + half_px - raster_res / 2, width
-    )
-    ys = np.linspace(
-        ymin - half_px + raster_res / 2, ymax + half_px - raster_res / 2, height
-    )
-    dx = (dem_x[-1] - dem_x[0]) / (len(dem_x) - 1)
-    dy = (dem_y[-1] - dem_y[0]) / (len(dem_y) - 1)
-
-    rows, cols = np.nonzero(water_mask)
-    water_slope = map_coordinates(
-        slope,
-        np.vstack(((ys[rows] - dem_y[0]) / dy, (xs[cols] - dem_x[0]) / dx)),
-        order=1,
-        mode="nearest",
-    )
-    steep = water_slope > max_slope
-    n_removed = int(steep.sum())
-    if n_removed == 0:
-        return texture_2d, False
-    rows, cols = rows[steep], cols[steep]
-
-    is_water = texture_2d == water_material_index
-    land_rows, land_cols = np.nonzero(binary_dilation(is_water) & ~is_water)
-    if land_rows.size == 0:
-        return texture_2d, False
-    _, nearest = cKDTree(np.column_stack((land_rows, land_cols))).query(
-        np.column_stack((rows, cols))
-    )
-    texture_2d[rows, cols] = texture_2d[land_rows[nearest], land_cols[nearest]]
-
-    logging.info(
-        "Water: repainted %d steep water pixel(s) (slope > %.3f m/m) with "
-        "nearest land material (%s texture)",
-        n_removed,
-        max_slope,
-        area_name,
-    )
-    return texture_2d, True
 
 
 def apply_ways_to_preview(

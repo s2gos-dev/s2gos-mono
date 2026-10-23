@@ -9,7 +9,6 @@ from .overlays import (
     apply_region_materials,
     apply_ways,
     apply_ways_to_preview,
-    strip_steep_water_pixels,
     strip_unvetted_water_pixels,
 )
 from .snow import calculate_snow_probability_map
@@ -20,7 +19,6 @@ __all__ = [
     "apply_region_materials",
     "apply_ways",
     "apply_ways_to_preview",
-    "strip_steep_water_pixels",
     "strip_unvetted_water_pixels",
     "calculate_snow_probability_map",
 ]

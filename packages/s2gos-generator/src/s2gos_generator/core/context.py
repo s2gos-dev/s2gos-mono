@@ -246,30 +246,16 @@ class SceneResourceContext:
 
     @property
     def water_polygons_by_material(self) -> dict:
-        """Merged water footprint per material, minus way footprints so ways crossing water stay painted.
-
-        Texture-only: mesh flattening uses ``water_bodies`` directly.
-        """
+        """Merged water footprint per material."""
         if self._water_polygons_by_material is None:
             from shapely.ops import unary_union
 
             by_mat: dict[str, list] = {}
             for body in self.water_bodies:
                 by_mat.setdefault(body.material, []).append(body.geometry)
-            merged = {mat: unary_union(polys) for mat, polys in by_mat.items()}
-
-            way_polys = [
-                p
-                for p in self.way_polygons_by_material.values()
-                if p is not None and not p.is_empty
-            ]
-            if way_polys:
-                way_union = unary_union(way_polys)
-                merged = {
-                    mat: poly.difference(way_union) for mat, poly in merged.items()
-                }
-
-            self._water_polygons_by_material = merged
+            self._water_polygons_by_material = {
+                mat: unary_union(polys) for mat, polys in by_mat.items()
+            }
         return self._water_polygons_by_material
 
     def _load_matched_materials_sidecar(self) -> dict:
