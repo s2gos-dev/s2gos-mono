@@ -271,3 +271,42 @@ class TestSatelliteSensorPixelSize:
         px, py = sensor.pixel_size_m
         assert px == pytest.approx(20.0)
         assert py == pytest.approx(20.0)
+
+
+class TestSatelliteSensorNativeResolution:
+    def _msi_sensor(self, band, target_size_km):
+        return SatelliteSensor(
+            platform=SatellitePlatform.SENTINEL_2A,
+            instrument=SatelliteInstrument.MSI,
+            band=band,
+            viewing=AngularViewing(zenith=0.0, azimuth=0.0),
+            target_center_lat=-42.0,
+            target_center_lon=-64.5,
+            target_size_km=target_size_km,
+        )
+
+    @pytest.mark.parametrize(
+        "band, gsd, film",
+        [("4", 10, (120, 60)), ("8a", 20, (60, 30)), ("1", 60, (20, 10))],
+    )
+    def test_defaults_to_band_gsd(self, band, gsd, film):
+        sensor = self._msi_sensor(band, (1.2, 0.6))
+
+        assert sensor.film_resolution == film
+        assert sensor.pixel_size_m == pytest.approx((gsd, gsd))
+
+    def test_footprint_off_band_grid_raises(self):
+        with pytest.raises(ValueError, match="band '1'"):
+            self._msi_sensor("1", 1.0)
+
+    def test_instrument_without_gsd_requires_film_resolution(self):
+        with pytest.raises(ValueError, match="film_resolution is required"):
+            SatelliteSensor(
+                platform=SatellitePlatform.SENTINEL_3A,
+                instrument=SatelliteInstrument.OLCI,
+                band="1",
+                viewing=AngularViewing(zenith=0.0, azimuth=0.0),
+                target_center_lat=-42.0,
+                target_center_lon=-64.5,
+                target_size_km=1.0,
+            )

@@ -9,7 +9,7 @@ Credentials are stored separately from configuration files and can be provided v
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class Credential(BaseModel):
@@ -48,6 +48,14 @@ class S3Credential(Credential):
     key: str
     secret: str
     endpoint_url: str | None = None
+
+    @field_validator("endpoint_url")
+    @classmethod
+    def _default_https(cls, value: str | None) -> str | None:
+        """Bare hosts get ``https://``; boto3/s3fs reject an endpoint without a scheme."""
+        if value and "://" not in value:
+            return f"https://{value}"
+        return value
 
     @property
     def upath_kwargs(self):
