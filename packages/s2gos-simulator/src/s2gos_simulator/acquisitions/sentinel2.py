@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date as date_type
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -9,7 +10,12 @@ import numpy as np
 from pyproj import Transformer
 
 from ..config.illumination import DirectionalIllumination
-from ..config.sensors import SatelliteInstrument, SatellitePlatform, SatelliteSensor
+from ..config.sensors import (
+    SatelliteInstrument,
+    SatellitePlatform,
+    SatelliteSensor,
+    SentinelMSIBand,
+)
 from ..config.viewing import AngularViewing
 
 logger = logging.getLogger(__name__)
@@ -18,25 +24,16 @@ logger = logging.getLogger(__name__)
 _STAC_URL = "https://stac.dataspace.copernicus.eu/v1"
 _STAC_COLLECTION = "sentinel-2-l1c"  # L1C, not L2A, to match TOA sensor setups.
 
-_MSI_BAND_ID_ORDER = [
-    "1",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    "8",
-    "8a",
-    "9",
-    "10",
-    "11",
-    "12",
-]
+
+def _find(node: ET.Element, path: str) -> ET.Element:
+    found = node.find(path)
+    if found is None:
+        raise ValueError(f"MTD_TL.xml has no {path!r} element")
+    return found
 
 
 def _sensing_time(root: ET.Element) -> datetime:
-    sensing_time = root.find(".//SENSING_TIME").text
+    sensing_time = _find(root, ".//SENSING_TIME").text
     return datetime.strptime(sensing_time, "%Y-%m-%dT%H:%M:%S.%fZ").replace(
         tzinfo=timezone.utc
     )
@@ -47,11 +44,12 @@ def _angle_grid(node: ET.Element) -> np.ndarray:
 
 
 def _view_vector_grid(grids: list[ET.Element]) -> np.ndarray:
-    """Per-node (east, north, up) view vectors summed over detectors; NaN where none covers."""
+    """Per-node (east, north, up) view vectors averaged over the detectors that
+    cover the node; NaN where none does."""
     vectors = []
     for detector in grids:
-        zenith = np.deg2rad(_angle_grid(detector.find("Zenith")))
-        azimuth = np.deg2rad(_angle_grid(detector.find("Azimuth")))
+        zenith = np.deg2rad(_angle_grid(_find(detector, "Zenith")))
+        azimuth = np.deg2rad(_angle_grid(_find(detector, "Azimuth")))
         vectors.append(
             np.stack(
                 [
@@ -64,19 +62,19 @@ def _view_vector_grid(grids: list[ET.Element]) -> np.ndarray:
         )
     vectors = np.stack(vectors)
     covered = np.isfinite(vectors).all(axis=-1)
-    grid = np.where(covered[..., None], vectors, 0.0).sum(axis=0)
-    grid[~covered.any(axis=0)] = np.nan
+    count = covered.sum(axis=0)
+    grid = (
+        np.where(covered[..., None], vectors, 0.0).sum(axis=0)
+        / np.maximum(count, 1)[..., None]
+    )
+    grid[count == 0] = np.nan
     return grid
 
 
-def _view_geometry(
-    root: ET.Element, band: str, lat: float, lon: float
-) -> AngularViewing:
-    """Bilinearly interpolates one band's viewing angles at (lat, lon), as unit
-    vectors so the azimuth wrap needs no special case."""
-    if band not in _MSI_BAND_ID_ORDER:
-        raise ValueError(f"Unknown MSI band {band!r}")
-    band_id = _MSI_BAND_ID_ORDER.index(band)
+def _view_geometry(root: ET.Element, band: str, x: float, y: float) -> AngularViewing:
+    """Bilinearly interpolates one band's viewing angles at tile-CRS (x, y), as
+    unit vectors so the azimuth wrap needs no special case."""
+    band_id = list(SentinelMSIBand).index(SentinelMSIBand(band))
 
     grids = root.findall(f".//Viewing_Incidence_Angles_Grids[@bandId='{band_id}']")
     if not grids:
@@ -85,16 +83,14 @@ def _view_geometry(
         )
     grid = _view_vector_grid(grids)
 
-    crs = root.find(".//Tile_Geocoding/HORIZONTAL_CS_CODE").text
-    x, y = Transformer.from_crs("EPSG:4326", crs, always_xy=True).transform(lon, lat)
-    origin = root.find(".//Tile_Geocoding/Geoposition[@resolution='10']")
-    step = grids[0].find("Zenith")
-    row = (float(origin.find("ULY").text) - y) / float(step.find("ROW_STEP").text)
-    col = (x - float(origin.find("ULX").text)) / float(step.find("COL_STEP").text)
+    origin = _find(root, ".//Tile_Geocoding/Geoposition[@resolution='10']")
+    step = _find(grids[0], "Zenith")
+    row = (float(_find(origin, "ULY").text) - y) / float(_find(step, "ROW_STEP").text)
+    col = (x - float(_find(origin, "ULX").text)) / float(_find(step, "COL_STEP").text)
 
     rows, cols = grid.shape[:2]
     if not (0 <= row <= rows - 1 and 0 <= col <= cols - 1):
-        raise ValueError(f"({lat}, {lon}) lies outside the tile")
+        raise ValueError(f"Target ({x:.0f}, {y:.0f}) lies outside the tile")
     i, j = min(int(row), rows - 2), min(int(col), cols - 2)
     fi, fj = row - i, col - j
     weights = np.array([[(1 - fi) * (1 - fj), (1 - fi) * fj], [fi * (1 - fj), fi * fj]])
@@ -102,7 +98,7 @@ def _view_geometry(
     valid = np.isfinite(corners[..., 0])
     if weights[valid].sum() == 0:
         raise ValueError(
-            f"({lat}, {lon}) lies outside the imaged swath for band {band!r}"
+            f"Target ({x:.0f}, {y:.0f}) lies outside the imaged swath for band {band!r}"
         )
 
     east, north, up = (weights[valid, None] * corners[valid]).sum(axis=0)
@@ -113,7 +109,7 @@ def _view_geometry(
 
 
 def _platform(root: ET.Element) -> SatellitePlatform:
-    tile_id = root.find(".//TILE_ID").text
+    tile_id = _find(root, ".//TILE_ID").text
     if tile_id.startswith("S2A"):
         return SatellitePlatform.SENTINEL_2A
     if tile_id.startswith("S2B"):
@@ -142,10 +138,12 @@ def read_tile_metadata(
             angle grids, or the point lies outside the tile or the imaged swath.
     """
     root = ET.parse(str(mtd_tl_path)).getroot()
+    crs = _find(root, ".//Tile_Geocoding/HORIZONTAL_CS_CODE").text
+    x, y = Transformer.from_crs("EPSG:4326", crs, always_xy=True).transform(lon, lat)
     return (
         _sensing_time(root),
         _platform(root),
-        {band: _view_geometry(root, band, lat, lon) for band in bands},
+        {band: _view_geometry(root, band, x, y) for band in bands},
     )
 
 
@@ -154,7 +152,7 @@ def create_acquisition(
     target_center_lat: float,
     target_center_lon: float,
     bands: list[str],
-    target_size_km: float | tuple[float, float] = 1.0,
+    target_size_km: float | tuple[float, float],
     samples_per_pixel: int = 64,
     irradiance_dataset: str = "coddington_2022-1_nm",
     **kwargs,
@@ -219,9 +217,12 @@ def fetch_tile_metadata(
     cache_dir: str | Path,
     site_name: str | None = None,
     search_window_days: int = 6,
-    credential_id: str = "aws_s2",
+    credential_id: str | None = None,
 ) -> Path:
     """Downloads (or reuses a cached) MTD_TL.xml for the S2 tile closest to a date.
+
+    Logs a warning when the tile was sensed on another day than `date`, which
+    means a different orbit and so a different view geometry.
 
     Args:
         date: Acquisition date "YYYY-MM-DD".
@@ -229,69 +230,78 @@ def fetch_tile_metadata(
         lon: Target longitude (WGS84 decimal degrees).
         cache_dir: Directory to store the downloaded file in, or read the cached
             one from.
-        site_name: Used in the cache filename; defaults to the lat/lon.
+        site_name: Prefix for the cache filename, which always includes the lat/lon.
         search_window_days: +-days around `date` to search for the closest tile.
         credential_id: Id of an s3 credential (.secrets.yaml) for the Copernicus
-            'eodata' bucket.
+            'eodata' bucket. Defaults to the ambient AWS credential chain.
 
     Returns:
         Local path to the tile's MTD_TL.xml.
 
     Raises:
+        ValueError: `credential_id` is not an s3 credential.
         RuntimeError: No Sentinel-2 L1C tile found near `date` at (lat, lon).
     """
+    anchor = datetime.strptime(date, "%Y-%m-%d").date()
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    stem = site_name or f"{lat:.4f}_{lon:.4f}"
-    cached_path = cache_dir / f"MTD_TL_{stem}_{date.replace('-', '')}.xml"
-    if cached_path.exists():
-        return cached_path
+    prefix = f"{site_name}_" if site_name else ""
+    cached_path = cache_dir / f"MTD_TL_{prefix}{lat:.4f}_{lon:.4f}_{anchor:%Y%m%d}.xml"
+    if not cached_path.exists():
+        _download_tile_metadata(
+            anchor, lat, lon, cached_path, search_window_days, credential_id
+        )
 
-    import boto3
+    sensed = _sensing_time(ET.parse(str(cached_path)).getroot()).date()
+    if sensed != anchor:
+        logger.warning(
+            "No Sentinel-2 pass on %s at (%s, %s); using the %s pass from %s",
+            anchor,
+            lat,
+            lon,
+            sensed,
+            cached_path,
+        )
+    return cached_path
+
+
+def _download_tile_metadata(
+    anchor: date_type,
+    lat: float,
+    lon: float,
+    path: Path,
+    search_window_days: int,
+    credential_id: str | None,
+) -> None:
     import pystac_client
+    from s2gos_utils.io.paths import PathRef
     from s2gos_utils.setting.credentials import get_credential
+
+    if credential_id:
+        cred_type = getattr(get_credential(credential_id), "type", None)
+        if cred_type != "s3":
+            raise ValueError(
+                f"Credential '{credential_id}' must be type 's3' for Sentinel-2 reads, "
+                f"got '{cred_type}'."
+            )
 
     catalog = pystac_client.Client.open(_STAC_URL)
     catalog.add_conforms_to("ITEM_SEARCH")
 
-    anchor = datetime.strptime(date, "%Y-%m-%d")
-    window_start = (anchor - timedelta(days=search_window_days)).strftime("%Y-%m-%d")
-    window_end = (anchor + timedelta(days=search_window_days)).strftime("%Y-%m-%d")
+    window = timedelta(days=search_window_days)
     search = catalog.search(
         collections=[_STAC_COLLECTION],
         intersects={"type": "Point", "coordinates": [lon, lat]},
-        datetime=f"{window_start}/{window_end}",
+        datetime=f"{anchor - window}/{anchor + window}",
     )
     items = list(search.items())
     if not items:
         raise RuntimeError(
-            f"No Sentinel-2 L1C tile found near {date} (+-{search_window_days} d) "
+            f"No Sentinel-2 L1C tile found near {anchor} (+-{search_window_days} d) "
             f"at ({lat}, {lon})."
         )
-    item = min(
-        items,
-        key=lambda it: abs(it.datetime - anchor.replace(tzinfo=it.datetime.tzinfo)),
-    )
+    item = min(items, key=lambda it: abs((it.datetime.date() - anchor).days))
+    logger.info("Downloading MTD_TL.xml of %s", item.id)
 
-    href = item.assets["granule_metadata"].href  # s3://eodata/...
-    bucket, key = href.removeprefix("s3://").split("/", 1)
-
-    from urllib.parse import urlparse
-
-    cred = get_credential(credential_id)
-    endpoint_url = None
-    if cred.endpoint_url:
-        parsed = urlparse(cred.endpoint_url)
-        netloc = parsed.netloc or parsed.path
-        scheme = parsed.scheme or "https"
-        endpoint_url = f"{scheme}://{netloc}"
-
-    s3 = boto3.client(
-        "s3",
-        aws_access_key_id=cred.key,
-        aws_secret_access_key=cred.secret,
-        endpoint_url=endpoint_url,
-    )
-    s3.download_file(bucket, key, str(cached_path))
-
-    return cached_path
+    href = item.assets["granule_metadata"].href
+    path.write_bytes(PathRef(href=href, cid=credential_id).upath.read_bytes())

@@ -7,6 +7,7 @@ from pyproj import Transformer
 
 from s2gos_simulator.acquisitions.sentinel2 import (
     create_acquisition,
+    fetch_tile_metadata,
     read_tile_metadata,
 )
 from s2gos_simulator.config import SatellitePlatform
@@ -74,21 +75,30 @@ class TestReadTileMetadata:
         assert view.zenith == pytest.approx(3.5, abs=1e-3)
         assert view.azimuth == pytest.approx(350.0, abs=1e-6)
 
-    def test_merges_detectors_across_a_seam(self, tmp_path):
+    def test_averages_overlapping_detectors(self, tmp_path):
         zenith = [[5.0] * 3 for _ in range(3)]
         left = [[90.0, 90.0, np.nan] for _ in range(3)]
-        right = [[np.nan, np.nan, 110.0] for _ in range(3)]
+        right = [[np.nan, 110.0, 110.0] for _ in range(3)]
         path = _write_mtd_tl(
             tmp_path / "MTD_TL.xml", [("1", zenith, left), ("2", zenith, right)]
         )
 
         view = read_tile_metadata(path, *_latlon_at(1.0, 1.5), ["2"])[2]["2"]
 
-        mean_direction_zenith = np.degrees(
-            np.arctan(np.tan(np.radians(5.0)) * np.cos(np.radians(10.0)))
+        def horizontal(azimuth):
+            return np.array([np.sin(np.radians(azimuth)), np.cos(np.radians(azimuth))])
+
+        expected = 0.5 * (horizontal(90.0) + horizontal(110.0)) / 2 + 0.5 * horizontal(
+            110.0
         )
-        assert view.zenith == pytest.approx(mean_direction_zenith, abs=1e-6)
-        assert (90.0 - view.azimuth) % 360.0 == pytest.approx(100.0, abs=1e-6)
+        expected_zenith = np.degrees(
+            np.arctan(np.tan(np.radians(5.0)) * np.linalg.norm(expected))
+        )
+        expected_azimuth = np.degrees(np.arctan2(*expected)) % 360.0
+        assert view.zenith == pytest.approx(expected_zenith, abs=1e-6)
+        assert (90.0 - view.azimuth) % 360.0 == pytest.approx(
+            expected_azimuth, abs=1e-6
+        )
 
     def test_point_outside_swath_raises(self, tmp_path):
         zenith = [[5.0, np.nan, np.nan] for _ in range(3)]
@@ -112,7 +122,7 @@ class TestCreateAcquisition:
         )
 
         illumination, (sensor,) = create_acquisition(
-            path, *_latlon_at(0.5, 1.25), ["8a"]
+            path, *_latlon_at(0.5, 1.25), ["8a"], target_size_km=1.0
         )
 
         assert illumination.irradiance_datetime == datetime(
@@ -121,3 +131,17 @@ class TestCreateAcquisition:
         assert sensor.platform == SatellitePlatform.SENTINEL_2A
         assert sensor.viewing.zenith == pytest.approx(3.5, abs=1e-3)
         assert sensor.viewing.azimuth == pytest.approx(350.0, abs=1e-6)
+
+
+class TestFetchTileMetadata:
+    def test_cache_hit_warns_when_sensed_on_another_day(self, tmp_path, caplog):
+        lat, lon = _latlon_at(1.0, 1.0)
+        cached = _write_mtd_tl(
+            tmp_path / f"MTD_TL_site_{lat:.4f}_{lon:.4f}_20220506.xml", []
+        )
+
+        with caplog.at_level("WARNING"):
+            path = fetch_tile_metadata("2022-05-06", lat, lon, tmp_path, "site")
+
+        assert path == cached
+        assert "using the 2022-05-04 pass" in caplog.text
