@@ -50,12 +50,12 @@ buffer = BufferConfig(size_km=60.0, resolution_m=100.0)
 
 ### Background
 
-The **background zone** (optional) is the outermost ring, extending the scene to the horizon. It uses a flat surface at a fixed elevation — no DEM data is used.
+The **background zone** (optional) is the outermost ring, extending the scene to the horizon. It uses a flat surface 1 m below the lowest point of the target and buffer DEMs.
 
 Configure via [`BackgroundConfig`][s2gos_generator.core.config.scene.BackgroundConfig]:
 
 ```python
-background = BackgroundConfig(size_km=200.0, resolution_m=200.0, elevation=0.0)
+background = BackgroundConfig(size_km=200.0, resolution_m=200.0)
 ```
 
 ## Buildings

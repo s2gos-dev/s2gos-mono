@@ -5,6 +5,7 @@ import json
 from typing import Dict
 
 from .resource_registry import ResourceRegistry
+from ..processors.terrain_data.dem import REGRID_MARGIN_DEG
 
 
 def _stable_hash(data: dict) -> str:
@@ -39,6 +40,7 @@ class ResourceFingerprints:
             "dem": config.data_sources.dem.model_dump(),
             "dem_fillna_value": config.processing.dem_fillna_value,
             "flatten_dem": config.processing.flatten_dem,
+            "regrid_margin_deg": REGRID_MARGIN_DEG,
         }
 
     @staticmethod
@@ -53,6 +55,7 @@ class ResourceFingerprints:
             "dem": config.data_sources.dem.model_dump(),
             "dem_fillna_value": config.processing.dem_fillna_value,
             "flatten_dem": config.processing.flatten_dem,
+            "regrid_margin_deg": REGRID_MARGIN_DEG,
         }
 
     @staticmethod

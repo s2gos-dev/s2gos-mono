@@ -7,6 +7,9 @@ from upath import UPath
 from .base_processor import BaseTileProcessor
 from ...dataset import Dataset, IndexedGeoTiff, Zarr
 
+# Keeps source data beyond the AOI for interpolating the outermost regridded pixels.
+REGRID_MARGIN_DEG = 0.005
+
 
 class DEMProcessor(BaseTileProcessor):
     """Finds, merges, and processes Copernicus GLO-30 DEM tiles for a given AOI."""
@@ -54,6 +57,10 @@ class DEMProcessor(BaseTileProcessor):
     ) -> xr.Dataset:
         """Generate DEM data for the AOI."""
 
+        regrid = None not in (target_resolution_m, center_lat, center_lon, aoi_size_km)
+        if regrid:
+            aoi_polygon = aoi_polygon.buffer(REGRID_MARGIN_DEG, join_style="mitre")
+
         tile_paths = self.dataset.query(aoi_polygon)
 
         if isinstance(self.dataset, IndexedGeoTiff):
@@ -66,15 +73,9 @@ class DEMProcessor(BaseTileProcessor):
         else:
             raise NotImplementedError("This type of dataset is not supported for DEMs.")
 
-        # Clip to exact AOI geometry
         clipped_dem = self._clip_to_aoi(merged_dem, aoi_polygon)
 
-        if (
-            target_resolution_m is not None
-            and center_lat is not None
-            and center_lon is not None
-            and aoi_size_km is not None
-        ):
+        if regrid:
             clipped_dem = self._regrid_data(
                 clipped_dem,
                 target_resolution_m,
