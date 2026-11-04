@@ -35,6 +35,7 @@ from .sensors import (
     GroundSensor,
     PlatformType,
     PostProcessingOptions,
+    ProjectedGrid,
     SatelliteSensor,
     create_hypstar_sensor,
 )
@@ -86,6 +87,7 @@ __all__ = [
     "GroundSensor",
     "PlatformType",
     "PostProcessingOptions",
+    "ProjectedGrid",
     "SatelliteSensor",
     "create_hypstar_sensor",
     # simulation

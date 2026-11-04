@@ -342,7 +342,7 @@ class EradiateBackend(SimulationBackend):
                         f"{measure_id}_raw_eradiate", raw_dataset, output_dir
                     )
 
-                if band is not None and sensor_config.spec.name in PRODUCT_WRITERS:
+                if band is not None and sensor_config.output_format in PRODUCT_WRITERS:
                     product_bands.setdefault(sensor_config.id, {})[band] = (
                         post_processed_dataset
                     )
@@ -365,7 +365,6 @@ class EradiateBackend(SimulationBackend):
                 self._save_product(
                     self.simulation_config.get_sensor(sensor_id),
                     band_results,
-                    scene_description,
                     output_dir,
                 )
             )
@@ -378,7 +377,6 @@ class EradiateBackend(SimulationBackend):
         self,
         sensor: SatelliteSensor,
         band_results: Dict[str, xr.Dataset],
-        scene_description: SceneDescription,
         output_dir: UPath,
     ) -> Dict[str, Any]:
         """Write a satellite sensor's bands as one product (see `products`).
@@ -389,17 +387,16 @@ class EradiateBackend(SimulationBackend):
         Returns:
             The product under the sensor id, or the per-band datasets that were saved
         """
-        writer = PRODUCT_WRITERS[sensor.spec.name]
-        path = output_dir / f"{self.simulation_config.name}_{sensor.id}.zarr"
+        writer = PRODUCT_WRITERS[sensor.output_format]
         try:
             mkdir(output_dir)
             product = writer(
                 sensor,
                 band_results,
-                scene_description,
                 self.simulation_config.illumination,
                 self.result_processor.create_output_metadata(output_dir),
-                path,
+                output_dir,
+                self.simulation_config.name,
             )
             return {sensor.id: product}
         except Exception as e:
@@ -742,10 +739,12 @@ class EradiateBackend(SimulationBackend):
         expanded config (HDRFConfig or BRFConfig) at the scene coordinates.
 
         Args:
-            scene_description: Scene description for terrain lookup (optional)
+            scene_description: Scene description for terrain lookup, and the scene
+                coordinate system of an 'eopf' sensor's pixels (optional; otherwise
+                pixels are placed around the sensor target)
             scene_dir: Scene directory for terrain data (optional)
         """
-        from s2gos_utils.coordinates import CoordinateSystem, pixel_to_scene_xy
+        from s2gos_utils.coordinates import CoordinateSystem
 
         pixel_configs = [
             m
@@ -765,18 +764,14 @@ class EradiateBackend(SimulationBackend):
                     f"'{pixel_config.satellite_sensor_id}'"
                 )
 
-            # Compute scene bounds from satellite sensor geometry
-            coord_sys = CoordinateSystem(
-                sensor.target_center_lat, sensor.target_center_lon
-            )
-            if isinstance(sensor.target_size_km, (int, float)):
-                width_km = height_km = float(sensor.target_size_km)
+            if sensor.output_format == "eopf" and scene_description is not None:
+                center = scene_description.location
+                coord_sys = CoordinateSystem(center["center_lat"], center["center_lon"])
             else:
-                width_km, height_km = sensor.target_size_km
-
-            bounds = coord_sys.create_rectangle(
-                sensor.target_center_lat, sensor.target_center_lon, width_km, height_km
-            )
+                coord_sys = CoordinateSystem(
+                    sensor.target_center_lat, sensor.target_center_lon
+                )
+            footprint = sensor.target_rectangle(coord_sys)
 
             band = sensor.resolve_band(pixel_config.band)
             srf = (
@@ -791,7 +786,7 @@ class EradiateBackend(SimulationBackend):
 
             # Expand each pixel to an individual measurement config
             for row, col in pixel_config.pixel_indices:
-                x, y = pixel_to_scene_xy(row, col, bounds, film_resolution)
+                x, y = footprint.pixel_center(row, col, film_resolution)
 
                 # Query terrain elevation if scene_description is provided
                 target_z = pixel_config.height_offset_m

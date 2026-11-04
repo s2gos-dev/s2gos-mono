@@ -2,6 +2,9 @@ import math
 
 import numpy as np
 import pytest
+import xarray as xr
+from pyproj import Transformer
+from s2gos_utils.coordinates import CoordinateSystem
 
 from s2gos_simulator.backends.eradiate.eradiate_translator import (
     EradiateTranslator,
@@ -19,6 +22,7 @@ from s2gos_simulator.config import (
     HDRFConfig,
     HemisphericalMeasurementLocation,
     IrradianceConfig,
+    ProjectedGrid,
     SatelliteSensor,
     SimulationConfig,
     SpectralResponse,
@@ -59,15 +63,37 @@ def _make_translator_for_sensor(sensor, illumination=None):
     return EradiateTranslator(config, GeometryUtils())
 
 
+TERRAIN_HEIGHT = 400.0
+
+
+def _write_dem(scene, scene_dir, axis, elevation):
+    scene.name, scene.resolution_m = "test", 10.0
+    xr.Dataset(
+        {"elevation": (("y", "x"), elevation)}, coords={"y": axis, "x": axis}
+    ).to_zarr(str(scene_dir / "data" / "dem_test_10.0m.zarr"))
+    return scene_dir
+
+
+@pytest.fixture
+def dem_scene_dir(minimal_scene, scene_dir):
+    """Scene directory with a flat DEM at TERRAIN_HEIGHT."""
+    axis = np.linspace(-20000.0, 20000.0, 5)
+    return _write_dem(minimal_scene, scene_dir, axis, np.full((5, 5), TERRAIN_HEIGHT))
+
+
 class TestSatelliteSensorTranslation:
-    def test_translate_satellite_sensor_structure(self, translator, minimal_scene):
+    def test_translate_satellite_sensor_structure(
+        self, translator, minimal_scene, dem_scene_dir
+    ):
         sensor = _make_sentinel_sensor(
             id="sentinel.2a.test",  # specific ID to test sanitization
             viewing=AngularViewing(zenith=15.0, azimuth=90.0),
             film_resolution=(128, 64),
         )
 
-        result = translator.translate_satellite_sensor(sensor, "2", minimal_scene)
+        result = translator.translate_satellite_sensor(
+            sensor, "2", minimal_scene, dem_scene_dir
+        )
 
         assert result["type"] == "mpdistant"
         assert result["id"] == "sentinel_2a_test"
@@ -79,7 +105,97 @@ class TestSatelliteSensorTranslation:
 
         target = result["target"]
         assert target["type"] == "rectangle"
-        assert {"xmin", "xmax", "ymin", "ymax"}.issubset(target.keys())
+        assert target["up"] == [0.0, 1.0, 0.0]
+        assert target["xyz"] == [0.0, 0.0, 0.0]
+
+    def test_footprint_georeferenced_only_for_eopf(
+        self, translator, minimal_scene, dem_scene_dir
+    ):
+        """create_acquisition always attaches the tile grid; it matters only for 'eopf'."""
+        grid = ProjectedGrid(crs="EPSG:32720", origin=(399960.0, 5400040.0))
+        sensor = _make_sentinel_sensor(film_resolution=None, grid=grid)
+
+        target = translator.translate_satellite_sensor(
+            sensor, "2", minimal_scene, dem_scene_dir
+        )["target"]
+
+        assert target["up"] == [0.0, 1.0, 0.0]
+        assert target["xyz"] == [0.0, 0.0, 0.0]
+
+    def test_eopf_needs_sentinel2_msi(self):
+        with pytest.raises(ValueError, match="Sentinel-2 MSI"):
+            _make_sentinel_sensor(
+                instrument="chime-hsi", bands=None, output_format="eopf"
+            )
+
+    def test_sentinel2_footprint_follows_utm_north(
+        self, translator, minimal_scene, dem_scene_dir
+    ):
+        """At 42° S, 1.5° west of UTM zone 20's central meridian, grid north is 1° west of north."""
+        sensor = _make_sentinel_sensor(output_format="eopf")
+        target = translator.translate_satellite_sensor(
+            sensor, "2", minimal_scene, dem_scene_dir
+        )["target"]
+
+        angle = math.radians(1.0)
+        assert target["xyz"][2] == pytest.approx(TERRAIN_HEIGHT)
+        assert target["up"] == pytest.approx(
+            [math.sin(angle), math.cos(angle), 0.0], abs=1e-3
+        )
+
+    def test_satellite_footprint_at_mean_terrain_height(
+        self, translator, minimal_scene, scene_dir
+    ):
+        """A 1 km footprint over a valley 600 m deep at its centre averages 450 m.
+
+        The footprint is turned 1° to UTM north and snapped to the 100 m pixels, which
+        moves the mean by a few metres.
+        """
+        valley = np.full((5, 5), 600.0)
+        valley[2, 2] = 0.0
+        axis = np.array([-1000.0, -500.0, 0.0, 500.0, 1000.0])
+        _write_dem(minimal_scene, scene_dir, axis, valley)
+
+        target = translator.translate_satellite_sensor(
+            _make_sentinel_sensor(output_format="eopf"), "2", minimal_scene, scene_dir
+        )["target"]
+
+        assert target["xyz"][2] == pytest.approx(450.0, abs=10.0)
+
+    def test_satellite_sensor_on_grid_targets_tile_footprint(
+        self, translator, minimal_scene, dem_scene_dir
+    ):
+        import mitsuba as mi
+        from eradiate.scenes.measure import Target
+
+        sensor = _make_sentinel_sensor(
+            bands=["4"],
+            film_resolution=None,
+            target_size_km=10.0,
+            grid=ProjectedGrid(crs="EPSG:32720", origin=(399960.0, 5400040.0)),
+            output_format="eopf",
+        )
+        loc = minimal_scene.location
+        coords = CoordinateSystem(loc["center_lat"], loc["center_lon"])
+        tile = sensor.grid_bounds()
+        to_lonlat = Transformer.from_crs("EPSG:32720", "EPSG:4326", always_xy=True)
+
+        target = Target.convert(
+            translator.translate_satellite_sensor(
+                sensor, "4", minimal_scene, dem_scene_dir
+            )["target"]
+        )
+
+        for local, corner in [
+            ((-1, 1), (tile["xmin"], tile["ymax"])),
+            ((1, 1), (tile["xmax"], tile["ymax"])),
+            ((1, -1), (tile["xmax"], tile["ymin"])),
+        ]:
+            lon, lat = to_lonlat.transform(*corner)
+            world = target.to_world @ mi.ScalarPoint3f(*local, 0.0)
+            assert [world[0], world[1]] == pytest.approx(
+                coords.latlon_to_scene(lat, lon), abs=0.5
+            )
 
     def test_sensor_for_reference_only(
         self, directional_illumination, minimal_scene, scene_dir
@@ -98,7 +214,9 @@ class TestSatelliteSensorTranslation:
 
         assert measures == []
 
-    def test_sensor_selection(self, directional_illumination, minimal_scene, scene_dir):
+    def test_sensor_selection(
+        self, directional_illumination, minimal_scene, dem_scene_dir
+    ):
         include_sensor = _make_sentinel_sensor(id="include")
         exclude_sensor = _make_sentinel_sensor(id="exclude")
 
@@ -110,13 +228,15 @@ class TestSatelliteSensorTranslation:
         )
 
         t = EradiateTranslator(config, GeometryUtils())
-        measures = t.translate_sensors(minimal_scene, scene_dir, sensor_ids="include")
+        measures = t.translate_sensors(
+            minimal_scene, dem_scene_dir, sensor_ids="include"
+        )
 
         assert len(measures) == 1
         assert measures[0]["id"] == "include"
 
     def test_multiband_sensor_gives_one_measure_per_band(
-        self, directional_illumination, minimal_scene, scene_dir
+        self, directional_illumination, minimal_scene, dem_scene_dir
     ):
         sensor = _make_sentinel_sensor(
             bands=["2", "8a", "1"],
@@ -132,7 +252,7 @@ class TestSatelliteSensorTranslation:
         )
 
         measures = EradiateTranslator(config, GeometryUtils()).translate_sensors(
-            minimal_scene, scene_dir
+            minimal_scene, dem_scene_dir
         )
 
         assert [m["id"] for m in measures] == [
@@ -155,11 +275,11 @@ class TestSatelliteSensorTranslation:
 
         minimal_scene.location = {"center_lon": -64.5}
         with pytest.raises(ValueError, match="center_lat"):
-            translator.translate_satellite_sensor(sensor, "2", minimal_scene)
+            translator.translate_satellite_sensor(sensor, "2", minimal_scene, None)
 
         minimal_scene.location = {"center_lat": -42.0}
         with pytest.raises(ValueError, match="center_lon"):
-            translator.translate_satellite_sensor(sensor, "2", minimal_scene)
+            translator.translate_satellite_sensor(sensor, "2", minimal_scene, None)
 
     def test_satellite_sensor_pixel_size_calculation(self):
         s1 = _make_sentinel_sensor(film_resolution=(100, 100), target_size_km=1.0)

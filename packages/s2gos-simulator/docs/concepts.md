@@ -21,7 +21,7 @@ Satellite sensors produce 2D imagery of a target footprint with an instrument, e
 - **Multispectral** — Few broad bands, each simulated at its native resolution.
 - **Hyperspectral** — Hundreds of narrow contiguous channels, simulated as one measure. Gaussian SRF post-processing simulates the instrument's spectral response.
 
-Built-in instruments: Sentinel-2A/2B MSI (written as an EOPF-like L1C product), Sentinel-3A/3B OLCI, CHIME (approximation).
+Built-in instruments: Sentinel-2A/2B MSI (written as an EOPF-like L1C product with `output_format="eopf"`), Sentinel-3A/3B OLCI, CHIME (approximation).
 
 **CKD mode** is recommended for all satellite instrument simulations.
 

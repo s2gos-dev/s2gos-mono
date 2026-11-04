@@ -1,4 +1,7 @@
+from unittest.mock import MagicMock
+
 import pytest
+from s2gos_utils.coordinates import CoordinateSystem
 
 from s2gos_simulator.backends.eradiate.backend import EradiateBackend
 from s2gos_simulator.config import (
@@ -17,7 +20,7 @@ from s2gos_simulator.config.measurements import (
 from s2gos_simulator.config.viewing import AngularViewing
 
 
-def _sat_sensor(sensor_id="sat1"):
+def _sat_sensor(sensor_id="sat1", **kwargs):
     return SatelliteSensor(
         id=sensor_id,
         instrument="sentinel_2a-msi",
@@ -27,14 +30,15 @@ def _sat_sensor(sensor_id="sat1"):
         target_center_lat=-42.0,
         target_center_lon=-64.5,
         target_size_km=1.0,
+        **kwargs,
     )
 
 
-def _make_backend(measurements):
+def _make_backend(measurements, **sensor_kwargs):
     config = SimulationConfig(
         name="test",
         illumination=DirectionalIllumination(zenith=30.0, azimuth=135.0),
-        sensors=[_sat_sensor()],
+        sensors=[_sat_sensor(**sensor_kwargs)],
         measurements=measurements,
     )
     return EradiateBackend(config)
@@ -147,3 +151,55 @@ class TestExpandPixelMeasurementConfigs:
         assert target.xmax == pytest.approx(-490.0)
         assert target.ymax == pytest.approx(500.0)
         assert target.z == pytest.approx(0.5)
+
+    def test_eopf_pixels_follow_the_product_pixels(self):
+        backend = _make_backend(
+            [
+                PixelBRFConfig(
+                    id="pbrf", satellite_sensor_id="sat1", pixel_indices=[(0, 0)]
+                )
+            ],
+            output_format="eopf",
+        )
+
+        backend._expand_pixel_measurement_configs(
+            scene_description=None, scene_dir=None
+        )
+
+        (brf,) = [
+            m
+            for m in backend.simulation_config.measurements
+            if isinstance(m, BRFConfig)
+        ]
+        target = brf.viewing.target
+        footprint = _sat_sensor(output_format="eopf").target_rectangle(
+            CoordinateSystem(-42.0, -64.5)
+        )
+        assert ((target.xmin + target.xmax) / 2, (target.ymin + target.ymax) / 2) == (
+            pytest.approx(footprint.pixel_center(0, 0, (100, 100)))
+        )
+
+    def test_eopf_pixels_placed_in_scene_coordinates(self):
+        """The scene is centred 0.01° north of the sensor target."""
+        scene = MagicMock()
+        scene.location = {"center_lat": -41.99, "center_lon": -64.5}
+        backend = _make_backend(
+            [
+                PixelBRFConfig(
+                    id="pbrf", satellite_sensor_id="sat1", pixel_indices=[(50, 50)]
+                )
+            ],
+            output_format="eopf",
+        )
+
+        backend._expand_pixel_measurement_configs(
+            scene_description=scene, scene_dir=None
+        )
+
+        (brf,) = [
+            m
+            for m in backend.simulation_config.measurements
+            if isinstance(m, BRFConfig)
+        ]
+        target = brf.viewing.target
+        assert (target.ymin + target.ymax) / 2 == pytest.approx(-1110.0, abs=10.0)

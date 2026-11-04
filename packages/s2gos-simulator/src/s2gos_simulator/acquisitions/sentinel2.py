@@ -11,7 +11,7 @@ from pyproj import Transformer
 
 from ..config.illumination import DirectionalIllumination
 from ..config.instruments import MSI_GSD_M
-from ..config.sensors import SatelliteSensor
+from ..config.sensors import ProjectedGrid, SatelliteSensor
 from ..config.viewing import AngularViewing
 
 logger = logging.getLogger(__name__)
@@ -145,6 +145,16 @@ def read_tile_metadata(
     )
 
 
+def read_tile_grid(mtd_tl_path: str | Path) -> ProjectedGrid:
+    """Reads the tile's CRS and upper-left corner from a Sentinel-2 MTD_TL.xml."""
+    root = ET.parse(str(mtd_tl_path)).getroot()
+    origin = _find(root, ".//Tile_Geocoding/Geoposition[@resolution='10']")
+    return ProjectedGrid(
+        crs=_find(root, ".//Tile_Geocoding/HORIZONTAL_CS_CODE").text,
+        origin=(float(_find(origin, "ULX").text), float(_find(origin, "ULY").text)),
+    )
+
+
 def create_acquisition(
     mtd_tl_path: str | Path,
     target_center_lat: float,
@@ -159,9 +169,11 @@ def create_acquisition(
 
     Sun and view geometry both come from the tile's MTD_TL.xml: the sun is
     computed at the tile's SENSING_TIME, and each band views the target with its
-    own angles interpolated at the target center. Films default to each band's
-    native GSD (10, 20 or 60 m). Pass `film_resolution` to override. Use
-    `read_tile_metadata` directly for custom sensors or illumination.
+    own angles interpolated at the target center. The sensor carries the tile's
+    pixel grid (`read_tile_grid`), used when `output_format="eopf"` is passed: the
+    product is then on the tile's pixels, so films must be at each band's native
+    GSD (10, 20 or 60 m). Use `read_tile_metadata` directly for custom sensors or
+    illumination.
 
     Args:
         mtd_tl_path: Path to an MTD_TL.xml file, e.g. from `fetch_tile_metadata`.
@@ -174,7 +186,7 @@ def create_acquisition(
         samples_per_pixel: Monte Carlo samples per pixel. Default 64
         irradiance_dataset: Name of the solar irradiance dataset to use.
             Default `coddington_2022-1_nm` (TSIS-1 HSRS).
-        **kwargs: Additional sensor parameters
+        **kwargs: Additional sensor parameters, e.g. `output_format="eopf"`
 
     Returns:
         The illumination and one SatelliteSensor imaging every band, each with
@@ -188,6 +200,7 @@ def create_acquisition(
         mtd_tl_path, target_center_lat, target_center_lon, bands
     )
     logger.info("Sentinel-2 acquisition: %s sensed at %s", instrument, time)
+    kwargs.setdefault("grid", read_tile_grid(mtd_tl_path))
 
     illumination = DirectionalIllumination.from_date_and_location(
         time, target_center_lat, target_center_lon, irradiance_dataset

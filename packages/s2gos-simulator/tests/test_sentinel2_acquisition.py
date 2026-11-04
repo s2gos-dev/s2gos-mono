@@ -10,6 +10,7 @@ from s2gos_simulator.acquisitions.sentinel2 import (
     fetch_tile_metadata,
     read_tile_metadata,
 )
+from s2gos_simulator.config import ProjectedGrid
 from s2gos_simulator.config.illumination import SolarPosition
 
 _ULX, _ULY, _STEP = 499980.0, 7400020.0, 5000.0
@@ -132,6 +133,7 @@ class TestCreateAcquisition:
         assert sensor.spec.platform == "sentinel-2a"
         assert sensor.band_viewing_for("8a").zenith == pytest.approx(3.5, abs=1e-3)
         assert sensor.band_viewing_for("8a").azimuth == pytest.approx(350.0, abs=1e-6)
+        assert sensor.grid == ProjectedGrid(crs="EPSG:32733", origin=(_ULX, _ULY))
 
 
 class TestFetchTileMetadata:

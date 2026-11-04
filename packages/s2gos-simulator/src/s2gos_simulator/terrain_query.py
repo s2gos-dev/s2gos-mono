@@ -8,6 +8,7 @@ different processors and backends.
 import logging
 from typing import Optional, Tuple
 
+import numpy as np
 import xarray as xr
 from s2gos_utils.io.paths import UPath
 from s2gos_utils.scene.description import SceneDescription
@@ -139,6 +140,29 @@ class TerrainQuery:
             else:
                 logger.warning(msg + " Using 0.0m.")
                 return 0.0
+
+    def mean_elevation_at_scene_coords(self, x, y) -> float:
+        """Mean terrain elevation in metres over scene points, ignoring points off the DEM.
+
+        Raises:
+            FileNotFoundError: If DEM file not found
+            ValueError: If no point lies on the DEM
+        """
+        dem_path = self.find_dem_file()
+        if dem_path is None:
+            raise FileNotFoundError(f"DEM file not found in {self.scene_dir / 'data'}")
+
+        from s2gos_utils.io.paths import expand_mapper
+
+        with xr.open_zarr(expand_mapper(dem_path)) as dem_ds:
+            elevation = dem_ds["elevation"].interp(
+                x=xr.DataArray(np.ravel(x)), y=xr.DataArray(np.ravel(y))
+            )
+            mean = float(elevation.mean())
+
+        if np.isnan(mean):
+            raise ValueError(f"No point lies on the DEM {dem_path}")
+        return mean
 
     def query_elevation_at_geographic_coords(
         self,

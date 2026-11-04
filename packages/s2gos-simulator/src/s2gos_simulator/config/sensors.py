@@ -2,8 +2,19 @@ from __future__ import annotations
 
 import math
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Literal,
+    NamedTuple,
+    Optional,
+    Tuple,
+    Union,
+)
 
+import numpy as np
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -13,6 +24,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pyproj import Transformer
 
 from .instruments import (
     CHIME_SRF,
@@ -29,6 +41,9 @@ from .viewing import (
     LookAtViewing,
     ViewingType,
 )
+
+if TYPE_CHECKING:
+    from s2gos_utils.coordinates import CoordinateSystem
 
 
 class PlatformType(str, Enum):
@@ -109,6 +124,59 @@ class BaseSensor(BaseModel):
     )
 
 
+class ProjectedGrid(BaseModel):
+    """Pixel lattice of a projected tile, e.g. a Sentinel-2 MGRS tile in UTM."""
+
+    crs: str = Field(..., description="CRS of the tile, e.g. 'EPSG:32733'")
+    origin: Tuple[float, float] = Field(
+        ..., description="(x, y) of the tile's upper-left corner in `crs`"
+    )
+
+    @classmethod
+    def utm(cls, lat: float, lon: float) -> ProjectedGrid:
+        """WGS 84 UTM zone of a point, with the lattice through the zone's origin."""
+        zone = int((lon + 180.0) // 6.0) % 60 + 1
+        return cls(
+            crs=f"EPSG:{(32600 if lat >= 0 else 32700) + zone}", origin=(0.0, 0.0)
+        )
+
+
+class SceneRectangle(NamedTuple):
+    """Sensor footprint in scene coordinates (metres).
+
+    Attributes:
+        center: (x, y) of the footprint centre
+        size: (width, height) along the footprint's own axes
+        rotation: Counter-clockwise angle (degrees) from the scene x axis to the
+            footprint's x axis, i.e. from scene north to the footprint's north
+    """
+
+    center: Tuple[float, float]
+    size: Tuple[float, float]
+    rotation: float = 0.0
+
+    @property
+    def up(self) -> Tuple[float, float, float]:
+        """Unit vector of the footprint's north in scene coordinates."""
+        angle = math.radians(self.rotation)
+        return (-math.sin(angle), math.cos(angle), 0.0)
+
+    def pixel_center(self, row, col, resolution: Tuple[int, int]):
+        """Scene (x, y) of the centre of pixel (row 0 north, col 0 west) of a film.
+
+        ``row`` and ``col`` may be integers or arrays of them.
+        """
+        width, height = resolution
+        u = ((col + 0.5) / width - 0.5) * self.size[0]
+        v = (0.5 - (row + 0.5) / height) * self.size[1]
+        angle = math.radians(self.rotation)
+        cos, sin = math.cos(angle), math.sin(angle)
+        return (
+            self.center[0] + u * cos - v * sin,
+            self.center[1] + u * sin + v * cos,
+        )
+
+
 class SatelliteSensor(BaseSensor):
     """Satellite sensor: an instrument looking at a target footprint.
 
@@ -163,6 +231,25 @@ class SatelliteSensor(BaseSensor):
         ...,
         description="Target area size: float for square (km), tuple for rectangular (width_km, height_km)",
     )
+    output_format: Optional[Literal["eopf"]] = Field(
+        None,
+        description=(
+            "'eopf' writes the bands as one EOPF L1C store (Sentinel-2 MSI only) and "
+            "georeferences the rendering for it: the footprint follows the "
+            "`projected_grid` and rays are aimed at the terrain height. Unset, each "
+            "band is saved as its own dataset over a north-up footprint"
+        ),
+    )
+    grid: Optional[ProjectedGrid] = Field(
+        None,
+        description=(
+            "Tile an 'eopf' sensor's footprint is aligned to. The footprint keeps its "
+            "size and its upper-left corner moves to the nearest node of the coarsest "
+            "band's pixel lattice, so every band's pixels coincide with the tile's. "
+            "Every band must then be at its native GSD. Ignored without "
+            "output_format='eopf'"
+        ),
+    )
     for_reference_only: bool = Field(
         default=False,
         description=(
@@ -194,7 +281,33 @@ class SatelliteSensor(BaseSensor):
         self._set_defaults()
         for band in self.measured_bands:
             self.band_film_resolution(band)  # raises if the grid doesn't fit
+        if self.output_format == "eopf":
+            self._check_eopf()
         return self
+
+    def _check_eopf(self):
+        if self.spec.name != "msi":
+            raise ValueError(
+                f"output_format='eopf' needs a Sentinel-2 MSI instrument, sensor "
+                f"'{self.id}' has '{self.spec.name}'"
+            )
+        if self.grid is not None:
+            self._check_native_pixels()
+
+    def _check_native_pixels(self):
+        for band in self.measured_bands:
+            gsd = (
+                self.spec.gsd_m
+                if self.is_hyperspectral
+                else self.spec.bands[band].gsd_m
+            )
+            if gsd is None or not all(
+                math.isclose(size, gsd) for size in self.pixel_size_m(band)
+            ):
+                raise ValueError(
+                    f"Sensor '{self.id}' has a grid, so band {band!r} must be at its "
+                    f"native GSD ({gsd} m): leave film_resolution unset"
+                )
 
     def _check_hyperspectral(self):
         if self.bands is not None or self.band_viewing:
@@ -255,6 +368,78 @@ class SatelliteSensor(BaseSensor):
             return self.target_size_km * 1000, self.target_size_km * 1000
         width_km, height_km = self.target_size_km
         return width_km * 1000, height_km * 1000
+
+    @property
+    def projected_grid(self) -> Optional[ProjectedGrid]:
+        """Grid of an 'eopf' sensor: `grid`, else the UTM zone of the target. None otherwise.
+
+        EOPF products are always in UTM, like real L1C tiles.
+        """
+        if self.output_format != "eopf":
+            return None
+        return self.grid or ProjectedGrid.utm(
+            self.target_center_lat, self.target_center_lon
+        )
+
+    def grid_bounds(self) -> Dict[str, float]:
+        """Footprint in the `projected_grid` CRS, upper-left corner on the coarsest band's lattice.
+
+        Raises:
+            ValueError: if the sensor has no `projected_grid`
+        """
+        grid = self.projected_grid
+        if grid is None:
+            raise ValueError(
+                f"Sensor '{self.id}' has no grid: set output_format='eopf'"
+            )
+        x, y = Transformer.from_crs("EPSG:4326", grid.crs, always_xy=True).transform(
+            self.target_center_lon, self.target_center_lat
+        )
+        width, height = self._footprint_m()
+        sizes = [self.pixel_size_m(band) for band in self.measured_bands]
+        step_x, step_y = max(s[0] for s in sizes), max(s[1] for s in sizes)
+        x0, y0 = grid.origin
+        xmin = x0 + round((x - width / 2 - x0) / step_x) * step_x
+        ymax = y0 + round((y + height / 2 - y0) / step_y) * step_y
+        return {"xmin": xmin, "xmax": xmin + width, "ymin": ymax - height, "ymax": ymax}
+
+    def target_rectangle(self, coords: CoordinateSystem) -> SceneRectangle:
+        """Footprint in scene coordinates.
+
+        Without a `projected_grid` it is north-up around the target. With one it is the
+        `grid_bounds` rectangle, turned by the angle between grid north and the scene's
+        north and scaled from grid to scene metres, so its pixels follow the grid's.
+        """
+        grid = self.projected_grid
+        if grid is None:
+            width, height = self._footprint_m()
+            b = coords.create_rectangle(
+                self.target_center_lat,
+                self.target_center_lon,
+                width / 1000,
+                height / 1000,
+            )
+            return SceneRectangle(
+                center=((b["xmin"] + b["xmax"]) / 2, (b["ymin"] + b["ymax"]) / 2),
+                size=(b["xmax"] - b["xmin"], b["ymax"] - b["ymin"]),
+            )
+        b = self.grid_bounds()
+        lon, lat = Transformer.from_crs(
+            grid.crs, "EPSG:4326", always_xy=True
+        ).transform(
+            [b["xmin"], b["xmax"], b["xmax"], b["xmin"]],
+            [b["ymin"], b["ymin"], b["ymax"], b["ymax"]],
+        )
+        ll, lr, ur, ul = (
+            np.array(coords.latlon_to_scene(la, lo)) for la, lo in zip(lat, lon)
+        )
+        x_axis = (lr - ll + ur - ul) / 2
+        y_axis = (ul - ll + ur - lr) / 2
+        return SceneRectangle(
+            center=tuple((ll + lr + ur + ul) / 4),
+            size=(float(np.hypot(*x_axis)), float(np.hypot(*y_axis))),
+            rotation=math.degrees(math.atan2(x_axis[1], x_axis[0])),
+        )
 
     def resolve_band(self, band: Optional[str] = None) -> Optional[str]:
         """The given band, the only band when none is given, or None if hyperspectral.

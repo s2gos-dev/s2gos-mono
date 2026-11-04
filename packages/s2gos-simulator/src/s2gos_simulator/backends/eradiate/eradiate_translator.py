@@ -281,7 +281,9 @@ class EradiateTranslator:
 
             if isinstance(sensor, SatelliteSensor):
                 measures.extend(
-                    self.translate_satellite_sensor(sensor, band, scene_description)
+                    self.translate_satellite_sensor(
+                        sensor, band, scene_description, scene_dir
+                    )
                     for band in sensor.measured_bands
                 )
             elif isinstance(sensor, GroundSensor):
@@ -325,13 +327,19 @@ class EradiateTranslator:
         sensor: SatelliteSensor,
         band: Optional[str],
         scene_description: SceneDescription,
+        scene_dir: UPath,
     ) -> Dict[str, Any]:
         """Translate one measure of a satellite sensor to an Eradiate mpdistant measure.
+
+        For an 'eopf' sensor the footprint lies at the mean terrain height beneath
+        it, so rays meet the terrain at the scene coordinates their pixels are
+        labelled with, up to the local relief. Otherwise it lies at z = 0.
 
         Args:
             sensor: Satellite sensor configuration
             band: One of `sensor.measured_bands`
             scene_description: Scene description with location
+            scene_dir: Scene directory containing the DEM
 
         Returns:
             Eradiate measure dictionary
@@ -345,16 +353,19 @@ class EradiateTranslator:
                 "Scene description missing center_lat or center_lon in location"
             )
 
-        coords = CoordinateSystem(scene_center_lat, scene_center_lon)
-
-        if isinstance(sensor.target_size_km, (int, float)):
-            width_km = height_km = sensor.target_size_km
-        else:
-            width_km, height_km = sensor.target_size_km
-
-        target_bounds = coords.create_rectangle(
-            sensor.target_center_lat, sensor.target_center_lon, width_km, height_km
+        footprint = sensor.target_rectangle(
+            CoordinateSystem(scene_center_lat, scene_center_lon)
         )
+        film_resolution = sensor.band_film_resolution(band)
+        z = 0.0
+        if sensor.output_format == "eopf":
+            width, height = film_resolution
+            rows, cols = np.mgrid[:height, :width]
+            z = self.geometry_utils.mean_terrain_elevation(
+                scene_description,
+                scene_dir,
+                *footprint.pixel_center(rows, cols, film_resolution),
+            )
 
         viewing = sensor.band_viewing_for(band)
         measure_config = {
@@ -362,13 +373,14 @@ class EradiateTranslator:
             "construct": "from_angles",
             "angles": [viewing.zenith, viewing.azimuth],
             "id": sanitize_sensor_id(sensor.band_measure_id(band)),
-            "film_resolution": sensor.band_film_resolution(band),
+            "film_resolution": film_resolution,
             "target": {
                 "type": "rectangle",
-                "xmin": target_bounds["xmin"],
-                "xmax": target_bounds["xmax"],
-                "ymin": target_bounds["ymin"],
-                "ymax": target_bounds["ymax"],
+                "xyz": [*footprint.center, z],
+                "size_x": footprint.size[0],
+                "size_y": footprint.size[1],
+                "n": [0.0, 0.0, 1.0],
+                "up": list(footprint.up),
             },
             "srf": self.translate_srf(sensor.band_srf(band)),
             "spp": sensor.samples_per_pixel,
