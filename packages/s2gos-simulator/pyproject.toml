@@ -25,6 +25,7 @@ dependencies = [
     "matplotlib",
     "pyproj",
     "pystac-client",
+    "netcdf4",
 ]
 
 [dependency-groups]

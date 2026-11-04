@@ -5305,6 +5305,7 @@ packages:
   - matplotlib
   - pyproj
   - pystac-client
+  - netcdf4
   requires_python: '>=3.10,<3.12'
 - pypi: ./packages/s2gos-utils
   name: s2gos-utils

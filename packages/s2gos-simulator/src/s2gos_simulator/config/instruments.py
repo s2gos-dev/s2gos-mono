@@ -96,6 +96,10 @@ MSI_GSD_M = {
 OLCI_GSD_M = {str(band): 300 for band in range(1, 22)}
 """Sentinel-3 OLCI full-resolution ground sampling distance (m) per band."""
 
+SLSTR_GSD_M = {str(band): 500 for band in range(1, 7)}
+"""Sentinel-3 SLSTR ground sampling distance (m) of the solar-reflective bands S1-S6.
+The thermal bands are left out because the simulation has no thermal emission."""
+
 
 def _eradiate_instrument(
     platform: str, name: str, gsd_m: Dict[str, float]
@@ -113,6 +117,8 @@ INSTRUMENTS: Dict[str, Instrument] = {
     "sentinel_2b-msi": _eradiate_instrument("sentinel-2b", "msi", MSI_GSD_M),
     "sentinel_3a-olci": _eradiate_instrument("sentinel-3a", "olci", OLCI_GSD_M),
     "sentinel_3b-olci": _eradiate_instrument("sentinel-3b", "olci", OLCI_GSD_M),
+    "sentinel_3a-slstr": _eradiate_instrument("sentinel-3a", "slstr", SLSTR_GSD_M),
+    "sentinel_3b-slstr": _eradiate_instrument("sentinel-3b", "slstr", SLSTR_GSD_M),
     "chime-hsi": HyperspectralInstrument(
         platform="chime", name="hsi", srf=CHIME_SRF, gsd_m=30.0
     ),
