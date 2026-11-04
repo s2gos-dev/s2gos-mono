@@ -273,3 +273,71 @@ def test_store_named_like_an_l1c_product(tmp_path):
 
     assert (UPath(tmp_path) / "S2A_MSIL1C_20240622T091715_sim_s2.zarr").exists()
     assert product.attrs["stac_discovery"]["id"] == "S2A_MSIL1C_20240622T091715_sim_s2"
+
+
+def _route_bands(tmp_path, monkeypatch, writer):
+    """Run the backend's measure loop on fake results of an 'eopf' sensor's two bands,
+    with ``writer`` as the 'eopf' product writer."""
+    from types import SimpleNamespace
+
+    from s2gos_simulator.backends.eradiate import backend as backend_module
+    from s2gos_simulator.config import SimulationConfig
+
+    sensor = SatelliteSensor(
+        id="s2",
+        instrument="sentinel_2a-msi",
+        bands=["2", "3"],
+        viewing=AngularViewing(zenith=3.0, azimuth=0.0),
+        target_center_lat=LAT,
+        target_center_lon=LON,
+        target_size_km=0.06,
+        output_format="eopf",
+    )
+    results = {}
+    for band in sensor.bands:
+        result = _band_result(sensor, band)
+        results[sensor.band_measure_id(band)] = result.assign(radiance=result.brf_srf)
+    experiment = SimpleNamespace(
+        measures=[SimpleNamespace(id=measure_id) for measure_id in results],
+        results=results,
+    )
+    backend = backend_module.EradiateBackend(
+        SimulationConfig(
+            name="sim",
+            illumination=DirectionalIllumination(zenith=30.0, azimuth=90.0),
+            sensors=[sensor],
+        )
+    )
+    monkeypatch.setattr(backend, "create_experiment", lambda *a, **k: experiment)
+    monkeypatch.setattr(
+        backend_module, "eradiate", SimpleNamespace(run=lambda *a, **k: None)
+    )
+    monkeypatch.setitem(backend_module.PRODUCT_WRITERS, "eopf", writer)
+    return backend._run_standard_simulation(None, None, UPath(tmp_path))
+
+
+def test_backend_hands_every_band_to_the_product_writer(tmp_path, monkeypatch):
+    received = {}
+
+    def writer(sensor, band_results, *args):
+        received.update(band_results)
+        return "product"
+
+    saved = _route_bands(tmp_path, monkeypatch, writer)
+
+    assert sorted(received) == ["2", "3"]
+    assert saved == {"s2": "product"}
+    assert not list(UPath(tmp_path).glob("sim_s2_[23].zarr"))
+
+
+def test_backend_saves_the_bands_separately_when_the_writer_fails(
+    tmp_path, monkeypatch
+):
+    def writer(*args):
+        raise RuntimeError("broken writer")
+
+    saved = _route_bands(tmp_path, monkeypatch, writer)
+
+    assert sorted(saved) == ["s2_2", "s2_3"]
+    assert (UPath(tmp_path) / "sim_s2_2.zarr").exists()
+    assert (UPath(tmp_path) / "sim_s2_3.zarr").exists()
