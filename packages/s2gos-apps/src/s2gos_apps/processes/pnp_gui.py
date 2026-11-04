@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 PNP_LAT = -46.9097
 PNP_LON = -72.4500
 PNP_SIZE_KM = 10.0
+# Largest footprint inside the PNP area that holds whole 30 m CHIME pixels (333).
+CHIME_SIZE_KM = 9.99
 TOWER_COORDS = (-220.0, 850.0)  # meters in scene coordinates
 coord_system = CoordinateSystem(PNP_LAT, PNP_LON)
 
@@ -392,12 +394,9 @@ def pnp_gui_simulation(
         LookAtViewing,
         PixelHDRFConfig,
         PostProcessingOptions,
-        SatelliteInstrument,
-        SatellitePlatform,
         SatelliteSensor,
         SimulationConfig,
         SpectralResponse,
-        create_chime_sensor,
     )
 
     from s2gos_apps.sim_util import simulation_from_config
@@ -423,41 +422,39 @@ def pnp_gui_simulation(
 
     if observation == ObservationType.CHIME:
         sensors.append(
-            create_chime_sensor(
+            SatelliteSensor(
+                instrument="chime-hsi",
+                viewing=AngularViewing(zenith=3.0, azimuth=0.0),
                 target_center_lat=PNP_LAT,
                 target_center_lon=PNP_LON,
-                target_size_km=PNP_SIZE_KM,
-                zenith=3.0,
+                target_size_km=CHIME_SIZE_KM,
                 samples_per_pixel=spp,
             )
         )
 
     elif observation == ObservationType.MSI:
-        bands = ["1", "2", "3", "4", "5", "6", "7", "8", "8a", "9", "10", "11", "12"]
-        for band in bands:
-            sensors.append(
-                SatelliteSensor(
-                    id=f"s2a_b{band}",
-                    platform=SatellitePlatform.SENTINEL_2A,
-                    instrument=SatelliteInstrument.MSI,
-                    band=band,
-                    target_center_lat=PNP_LAT,
-                    target_center_lon=PNP_LON,
-                    target_size_km=PNP_SIZE_KM,
-                    film_resolution=(1000, 1000),
-                    viewing=AngularViewing(zenith=3.0, azimuth=0.0),
-                    samples_per_pixel=spp,
-                )
-            )
-
-    elif observation == ObservationType.SATELLITE_PIXEL_HDRF:
         sensors.append(
-            create_chime_sensor(
-                sensor_id="chime_for_pixel_hdrf",
+            SatelliteSensor(
+                id="s2a",
+                instrument="sentinel_2a-msi",
                 target_center_lat=PNP_LAT,
                 target_center_lon=PNP_LON,
                 target_size_km=PNP_SIZE_KM,
-                zenith=3.0,
+                film_resolution=(1000, 1000),
+                viewing=AngularViewing(zenith=3.0, azimuth=0.0),
+                samples_per_pixel=spp,
+            )
+        )
+
+    elif observation == ObservationType.SATELLITE_PIXEL_HDRF:
+        sensors.append(
+            SatelliteSensor(
+                id="chime_for_pixel_hdrf",
+                instrument="chime-hsi",
+                viewing=AngularViewing(zenith=3.0, azimuth=0.0),
+                target_center_lat=PNP_LAT,
+                target_center_lon=PNP_LON,
+                target_size_km=CHIME_SIZE_KM,
                 samples_per_pixel=spp,
                 for_reference_only=True,
             )
