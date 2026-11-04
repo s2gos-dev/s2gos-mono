@@ -493,8 +493,12 @@ class SatelliteSensor(BaseSensor):
         return self.band_viewing.get(band, self.viewing)
 
     def band_measure_id(self, band: Optional[str] = None) -> str:
-        """Id of a measure: the sensor id for a single measure, else `<id>_<band>`."""
-        return self.id if len(self.measured_bands) == 1 else f"{self.id}_{band}"
+        """Id of a measure: `<id>_<band>`, or the sensor id for a hyperspectral sensor.
+
+        The band is always part of a multispectral measure id, so a band's results are
+        named the same whichever other bands are simulated.
+        """
+        return self.id if self.is_hyperspectral else f"{self.id}_{band}"
 
     def pixel_size_m(self, band: Optional[str] = None) -> Tuple[float, float]:
         """Ground pixel size (x, y) of a band in meters."""

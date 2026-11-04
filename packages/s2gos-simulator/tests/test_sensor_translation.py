@@ -96,7 +96,7 @@ class TestSatelliteSensorTranslation:
         )
 
         assert result["type"] == "mpdistant"
-        assert result["id"] == "sentinel_2a_test"
+        assert result["id"] == "sentinel_2a_test_2"
 
         assert result["construct"] == "from_angles"
         assert result["angles"] == [15.0, 90.0]
@@ -233,7 +233,7 @@ class TestSatelliteSensorTranslation:
         )
 
         assert len(measures) == 1
-        assert measures[0]["id"] == "include"
+        assert measures[0]["id"] == "include_2"
 
     def test_multiband_sensor_gives_one_measure_per_band(
         self, directional_illumination, minimal_scene, dem_scene_dir
