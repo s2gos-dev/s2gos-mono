@@ -162,7 +162,10 @@ class SceneRectangle(NamedTuple):
         return (-math.sin(angle), math.cos(angle), 0.0)
 
     def pixel_center(self, row, col, resolution: Tuple[int, int]):
-        """Scene (x, y) of the centre of pixel (row 0 north, col 0 west) of a film.
+        """Scene (x, y) of the centre of pixel (row, col) of a film.
+
+        Row 0 is the footprint's first row and col 0 its first column, north and west
+        when the footprint is not rotated.
 
         ``row`` and ``col`` may be integers or arrays of them.
         """
@@ -234,19 +237,39 @@ class SatelliteSensor(BaseSensor):
     output_format: Optional[Literal["eopf"]] = Field(
         None,
         description=(
-            "'eopf' writes the bands as one EOPF L1C store (Sentinel-2 MSI only) and "
-            "georeferences the rendering for it: the footprint follows the "
-            "`projected_grid` and rays are aimed at the terrain height. Unset, each "
-            "band is saved as its own dataset over a north-up footprint"
+            "'eopf' writes the bands as one EOPF L1C store (Sentinel-2 MSI only), "
+            "georeferenced on the `projected_grid` and orthorectified. Unset, each "
+            "band is saved as its own dataset"
         ),
     )
     grid: Optional[ProjectedGrid] = Field(
         None,
         description=(
-            "Tile an 'eopf' sensor's footprint is aligned to. The footprint keeps its "
-            "size and its upper-left corner moves to the nearest node of the coarsest "
-            "band's pixel lattice, so every band's pixels coincide with the tile's. "
-            "Every band must then be at its native GSD. Ignored without "
+            "Tile the footprint is aligned to. The footprint keeps its size and its "
+            "upper-left corner moves to the nearest node of the coarsest band's pixel "
+            "lattice, so every band's pixels coincide with the tile's. Every band must "
+            "then be at its native GSD"
+        ),
+    )
+    grid_rotation: float = Field(
+        0.0,
+        description=(
+            "Clockwise rotation of the pixel grid from north-up in degrees, for a "
+            "grid that is not projected, such as a swath-aligned product grid: "
+            "columns head 90 + rotation and rows 180 + rotation. target_size_km is "
+            "measured along these axes. Must stay 0 with a `projected_grid`, which "
+            "sets the rotation itself"
+        ),
+    )
+    orthorectified: bool = Field(
+        False,
+        description=(
+            "Whether the pixel grid lies on the terrain, as for an orthorectified "
+            "product (Sentinel-2 L1C, SLSTR L1B). The grid is then a plane at the "
+            "scene's mean terrain height over the footprint, so relief within the "
+            "footprint still shifts oblique pixels. Otherwise it lies at z = 0, the "
+            "scene's sea level, which stands in for the ellipsoid that "
+            "non-orthorectified grids such as OLCI L1B lie on. Always True for "
             "output_format='eopf'"
         ),
     )
@@ -283,6 +306,14 @@ class SatelliteSensor(BaseSensor):
             self.band_film_resolution(band)  # raises if the grid doesn't fit
         if self.output_format == "eopf":
             self._check_eopf()
+            self.orthorectified = True
+        if self.grid is not None:
+            self._check_native_pixels()
+        if self.projected_grid is not None and self.grid_rotation != 0.0:
+            raise ValueError(
+                f"Sensor '{self.id}' has a projected grid, which sets its rotation: "
+                "leave grid_rotation at 0"
+            )
         return self
 
     def _check_eopf(self):
@@ -291,8 +322,6 @@ class SatelliteSensor(BaseSensor):
                 f"output_format='eopf' needs a Sentinel-2 MSI instrument, sensor "
                 f"'{self.id}' has '{self.spec.name}'"
             )
-        if self.grid is not None:
-            self._check_native_pixels()
 
     def _check_native_pixels(self):
         for band in self.measured_bands:
@@ -371,15 +400,15 @@ class SatelliteSensor(BaseSensor):
 
     @property
     def projected_grid(self) -> Optional[ProjectedGrid]:
-        """Grid of an 'eopf' sensor: `grid`, else the UTM zone of the target. None otherwise.
-
-        EOPF products are always in UTM, like real L1C tiles.
+        """Projected grid of the footprint: `grid`, else for an 'eopf' sensor the UTM
+        zone of the target, as EOPF products are always in UTM like real L1C tiles.
+        None otherwise.
         """
-        if self.output_format != "eopf":
-            return None
-        return self.grid or ProjectedGrid.utm(
-            self.target_center_lat, self.target_center_lon
-        )
+        if self.grid is not None:
+            return self.grid
+        if self.output_format == "eopf":
+            return ProjectedGrid.utm(self.target_center_lat, self.target_center_lon)
+        return None
 
     def grid_bounds(self) -> Dict[str, float]:
         """Footprint in the `projected_grid` CRS, upper-left corner on the coarsest band's lattice.
@@ -390,7 +419,8 @@ class SatelliteSensor(BaseSensor):
         grid = self.projected_grid
         if grid is None:
             raise ValueError(
-                f"Sensor '{self.id}' has no grid: set output_format='eopf'"
+                f"Sensor '{self.id}' has no projected grid: set grid or "
+                "output_format='eopf'"
             )
         x, y = Transformer.from_crs("EPSG:4326", grid.crs, always_xy=True).transform(
             self.target_center_lon, self.target_center_lat
@@ -406,22 +436,19 @@ class SatelliteSensor(BaseSensor):
     def target_rectangle(self, coords: CoordinateSystem) -> SceneRectangle:
         """Footprint in scene coordinates.
 
-        Without a `projected_grid` it is north-up around the target. With one it is the
-        `grid_bounds` rectangle, turned by the angle between grid north and the scene's
-        north and scaled from grid to scene metres, so its pixels follow the grid's.
+        Without a `projected_grid` it is centered on the target and rotated by
+        `grid_rotation`. With one it is the `grid_bounds` rectangle, turned by the angle
+        between grid north and the scene's north and scaled from grid to scene metres,
+        so its pixels follow the grid's.
         """
         grid = self.projected_grid
         if grid is None:
-            width, height = self._footprint_m()
-            b = coords.create_rectangle(
-                self.target_center_lat,
-                self.target_center_lon,
-                width / 1000,
-                height / 1000,
-            )
             return SceneRectangle(
-                center=((b["xmin"] + b["xmax"]) / 2, (b["ymin"] + b["ymax"]) / 2),
-                size=(b["xmax"] - b["xmin"], b["ymax"] - b["ymin"]),
+                center=coords.latlon_to_scene(
+                    self.target_center_lat, self.target_center_lon
+                ),
+                size=self._footprint_m(),
+                rotation=-self.grid_rotation,
             )
         b = self.grid_bounds()
         lon, lat = Transformer.from_crs(

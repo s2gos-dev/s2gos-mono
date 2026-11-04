@@ -134,6 +134,7 @@ class TestCreateAcquisition:
         assert sensor.band_viewing_for("8a").zenith == pytest.approx(3.5, abs=1e-3)
         assert sensor.band_viewing_for("8a").azimuth == pytest.approx(350.0, abs=1e-6)
         assert sensor.grid == ProjectedGrid(crs="EPSG:32733", origin=(_ULX, _ULY))
+        assert sensor.orthorectified and sensor.output_format is None
 
 
 class TestFetchTileMetadata:

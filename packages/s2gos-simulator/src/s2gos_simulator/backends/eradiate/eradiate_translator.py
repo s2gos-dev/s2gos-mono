@@ -331,9 +331,12 @@ class EradiateTranslator:
     ) -> Dict[str, Any]:
         """Translate one measure of a satellite sensor to an Eradiate mpdistant measure.
 
-        For an 'eopf' sensor the footprint lies at the mean terrain height beneath
-        it, so rays meet the terrain at the scene coordinates their pixels are
-        labelled with, up to the local relief. Otherwise it lies at z = 0.
+        The target rectangle is the sensor's `target_rectangle`, whose up vector heads
+        toward the grid's first row, so its local x heads along the rows. For an
+        orthorectified sensor it lies at the mean terrain height beneath it, so rays
+        meet the terrain at the scene coordinates their pixels are labelled with, up to
+        the local relief. Otherwise it lies at z = 0, the scene's sea level, which
+        stands in for the ellipsoid.
 
         Args:
             sensor: Satellite sensor configuration
@@ -358,7 +361,7 @@ class EradiateTranslator:
         )
         film_resolution = sensor.band_film_resolution(band)
         z = 0.0
-        if sensor.output_format == "eopf":
+        if sensor.orthorectified:
             width, height = film_resolution
             rows, cols = np.mgrid[:height, :width]
             z = self.geometry_utils.mean_terrain_elevation(

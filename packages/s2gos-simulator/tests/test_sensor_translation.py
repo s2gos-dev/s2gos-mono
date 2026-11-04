@@ -108,10 +108,11 @@ class TestSatelliteSensorTranslation:
         assert target["up"] == [0.0, 1.0, 0.0]
         assert target["xyz"] == [0.0, 0.0, 0.0]
 
-    def test_footprint_georeferenced_only_for_eopf(
+    def test_grid_georeferences_the_footprint_without_eopf(
         self, translator, minimal_scene, dem_scene_dir
     ):
-        """create_acquisition always attaches the tile grid; it matters only for 'eopf'."""
+        """The tile grid turns the footprint to UTM north whatever the output format,
+        and a sensor that is not orthorectified stays at z = 0."""
         grid = ProjectedGrid(crs="EPSG:32720", origin=(399960.0, 5400040.0))
         sensor = _make_sentinel_sensor(film_resolution=None, grid=grid)
 
@@ -119,8 +120,40 @@ class TestSatelliteSensorTranslation:
             sensor, "2", minimal_scene, dem_scene_dir
         )["target"]
 
-        assert target["up"] == [0.0, 1.0, 0.0]
-        assert target["xyz"] == [0.0, 0.0, 0.0]
+        angle = math.radians(1.0)
+        assert target["up"] == pytest.approx(
+            [math.sin(angle), math.cos(angle), 0.0], abs=1e-3
+        )
+        assert target["xyz"][2] == 0.0
+
+    def test_rotated_orthorectified_footprint(
+        self, translator, minimal_scene, dem_scene_dir
+    ):
+        """A swath grid turned 30 deg clockwise has columns heading 120 deg and lies on
+        the terrain."""
+        import mitsuba as mi
+        from eradiate.scenes.measure import Target
+
+        sensor = _make_sentinel_sensor(
+            target_size_km=(2.0, 1.0),
+            film_resolution=(20, 10),
+            grid_rotation=30.0,
+            orthorectified=True,
+        )
+
+        target = Target.convert(
+            translator.translate_satellite_sensor(
+                sensor, "2", minimal_scene, dem_scene_dir
+            )["target"]
+        )
+
+        center = np.array(target.to_world @ mi.ScalarPoint3f(0.0, 0.0, 0.0))
+        column_edge = np.array(target.to_world @ mi.ScalarPoint3f(1.0, 0.0, 0.0))
+        column_edge -= center
+        assert center[2] == pytest.approx(TERRAIN_HEIGHT)
+        heading = math.degrees(math.atan2(column_edge[0], column_edge[1]))
+        assert heading == pytest.approx(120.0)
+        assert math.hypot(*column_edge[:2]) == pytest.approx(1000.0)
 
     def test_eopf_needs_sentinel2_msi(self):
         with pytest.raises(ValueError, match="Sentinel-2 MSI"):

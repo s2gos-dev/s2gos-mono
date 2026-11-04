@@ -373,6 +373,10 @@ class TestSatelliteSensorInstrument:
             ({"bands": ["2"], "target_size_km": 0.0}, "greater than 0"),
             ({"bands": ["2"], "srf": "sentinel_2a-msi-2"}, "Extra inputs"),
             (
+                {"bands": ["2"], "output_format": "eopf", "grid_rotation": 10.0},
+                "leave grid_rotation at 0",
+            ),
+            (
                 {
                     "instrument": {
                         "kind": "multispectral",

@@ -740,8 +740,8 @@ class EradiateBackend(SimulationBackend):
 
         Args:
             scene_description: Scene description for terrain lookup, and the scene
-                coordinate system of an 'eopf' sensor's pixels (optional; otherwise
-                pixels are placed around the sensor target)
+                coordinate system of the sensor's pixels (optional, without it pixels
+                are placed around the sensor target)
             scene_dir: Scene directory for terrain data (optional)
         """
         from s2gos_utils.coordinates import CoordinateSystem
@@ -764,7 +764,7 @@ class EradiateBackend(SimulationBackend):
                     f"'{pixel_config.satellite_sensor_id}'"
                 )
 
-            if sensor.output_format == "eopf" and scene_description is not None:
+            if scene_description is not None:
                 center = scene_description.location
                 coord_sys = CoordinateSystem(center["center_lat"], center["center_lon"])
             else:
@@ -780,7 +780,8 @@ class EradiateBackend(SimulationBackend):
                 else sensor.band_srf(band)
             )
 
-            # Get pixel size for BRF rectangle targets
+            # shortcut: BRF patches stay axis-aligned on rotated grids, rotate them
+            # once a per-pixel BRF must cover exactly its grid cell
             pixel_size_x, pixel_size_y = sensor.pixel_size_m(band)
             film_resolution = sensor.band_film_resolution(band)
 

@@ -310,7 +310,11 @@ class BasePixelMeasurementConfig(BaseModel):
         ),
     )
     pixel_indices: List[Tuple[int, int]] = Field(
-        description="List of (row, col) pixel indices to measure. Row 0 is top (north), col 0 is left (west)."
+        description=(
+            "List of (row, col) pixel indices to measure. Row 0 is the sensor grid's "
+            "first row and col 0 its first column, north and west when the grid is "
+            "not rotated."
+        )
     )
     height_offset_m: float = Field(
         default=0.5,

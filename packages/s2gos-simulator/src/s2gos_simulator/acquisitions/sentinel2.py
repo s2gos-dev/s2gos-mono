@@ -169,11 +169,14 @@ def create_acquisition(
 
     Sun and view geometry both come from the tile's MTD_TL.xml: the sun is
     computed at the tile's SENSING_TIME, and each band views the target with its
-    own angles interpolated at the target center. The sensor carries the tile's
-    pixel grid (`read_tile_grid`), used when `output_format="eopf"` is passed: the
-    product is then on the tile's pixels, so films must be at each band's native
-    GSD (10, 20 or 60 m). Use `read_tile_metadata` directly for custom sensors or
-    illumination.
+    own angles interpolated at the target center. Use `read_tile_metadata` directly
+    for custom sensors or illumination.
+
+    The sensor images the L1C tile's own pixels: it carries the tile's pixel grid
+    (`read_tile_grid`), so its footprint moves onto the coarsest band's lattice and
+    is rotated by the UTM grid's meridian convergence, and like L1C it is
+    orthorectified. Films are therefore at each band's native GSD (10, 20 or 60 m).
+    `output_format="eopf"` additionally writes the bands as one EOPF L1C product.
 
     Args:
         mtd_tl_path: Path to an MTD_TL.xml file, e.g. from `fetch_tile_metadata`.
@@ -181,8 +184,7 @@ def create_acquisition(
         target_center_lon: Target center longitude (WGS84 decimal degrees)
         bands: MSI band identifiers (e.g. "2", "8a").
         target_size_km: Target area size (km). Float for square, tuple for
-            (width, height). Must be a whole multiple of every band's GSD unless
-            `film_resolution` is given.
+            (width, height). Must be a whole multiple of every band's GSD.
         samples_per_pixel: Monte Carlo samples per pixel. Default 64
         irradiance_dataset: Name of the solar irradiance dataset to use.
             Default `coddington_2022-1_nm` (TSIS-1 HSRS).
@@ -194,13 +196,14 @@ def create_acquisition(
 
     Raises:
         ValueError: As raised by `read_tile_metadata`, or if the footprint is
-            not a whole multiple of a band's GSD and no `film_resolution` is given.
+            not a whole multiple of a band's GSD.
     """
     time, instrument, viewing = read_tile_metadata(
         mtd_tl_path, target_center_lat, target_center_lon, bands
     )
     logger.info("Sentinel-2 acquisition: %s sensed at %s", instrument, time)
     kwargs.setdefault("grid", read_tile_grid(mtd_tl_path))
+    kwargs.setdefault("orthorectified", True)
 
     illumination = DirectionalIllumination.from_date_and_location(
         time, target_center_lat, target_center_lon, irradiance_dataset
@@ -249,7 +252,7 @@ def fetch_tile_metadata(
 
     Raises:
         ValueError: `credential_id` is not an s3 credential.
-        RuntimeError: No Sentinel-2 L1C tile found near `date` at (lat, lon).
+        RuntimeError: No Sentinel-2A/2B L1C tile found near `date` at (lat, lon).
     """
     anchor = datetime.strptime(date, "%Y-%m-%d").date()
     cache_dir = Path(cache_dir)
@@ -303,10 +306,11 @@ def _download_tile_metadata(
         intersects={"type": "Point", "coordinates": [lon, lat]},
         datetime=f"{anchor - window}/{anchor + window}",
     )
-    items = list(search.items())
+    platforms = {"sentinel-2a", "sentinel-2b"}
+    items = [it for it in search.items() if it.properties.get("platform") in platforms]
     if not items:
         raise RuntimeError(
-            f"No Sentinel-2 L1C tile found near {anchor} (+-{search_window_days} d) "
+            f"No Sentinel-2A/2B L1C tile found near {anchor} (+-{search_window_days} d) "
             f"at ({lat}, {lon})."
         )
     item = min(items, key=lambda it: abs((it.datetime.date() - anchor).days))

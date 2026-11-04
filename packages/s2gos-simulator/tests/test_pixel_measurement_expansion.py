@@ -179,7 +179,7 @@ class TestExpandPixelMeasurementConfigs:
             pytest.approx(footprint.pixel_center(0, 0, (100, 100)))
         )
 
-    def test_eopf_pixels_placed_in_scene_coordinates(self):
+    def test_pixels_placed_in_scene_coordinates(self):
         """The scene is centred 0.01° north of the sensor target."""
         scene = MagicMock()
         scene.location = {"center_lat": -41.99, "center_lon": -64.5}
@@ -188,8 +188,7 @@ class TestExpandPixelMeasurementConfigs:
                 PixelBRFConfig(
                     id="pbrf", satellite_sensor_id="sat1", pixel_indices=[(50, 50)]
                 )
-            ],
-            output_format="eopf",
+            ]
         )
 
         backend._expand_pixel_measurement_configs(
@@ -203,3 +202,28 @@ class TestExpandPixelMeasurementConfigs:
         ]
         target = brf.viewing.target
         assert (target.ymin + target.ymax) / 2 == pytest.approx(-1110.0, abs=10.0)
+
+    def test_pixels_follow_a_rotated_grid(self):
+        """Turned 90 deg clockwise, the first pixel lies in the north-east corner."""
+        backend = _make_backend(
+            [
+                PixelBRFConfig(
+                    id="pbrf", satellite_sensor_id="sat1", pixel_indices=[(0, 0)]
+                )
+            ],
+            grid_rotation=90.0,
+        )
+
+        backend._expand_pixel_measurement_configs(
+            scene_description=None, scene_dir=None
+        )
+
+        (brf,) = [
+            m
+            for m in backend.simulation_config.measurements
+            if isinstance(m, BRFConfig)
+        ]
+        target = brf.viewing.target
+        assert ((target.xmin + target.xmax) / 2, (target.ymin + target.ymax) / 2) == (
+            pytest.approx((495.0, 495.0))
+        )
