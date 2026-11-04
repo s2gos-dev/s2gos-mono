@@ -4,6 +4,7 @@ import trimesh
 import xarray as xr
 
 from s2gos_generator.processors.terrain_mesh import MeshGenerator
+from s2gos_generator.processors.terrain_mesh.surround import build_buffer_strips_mesh
 
 
 @pytest.fixture
@@ -109,3 +110,30 @@ class TestAddUvCoordinates:
 
         with pytest.raises(ValueError, match=expected_error_msg):
             generator.add_uv_coordinates(mesh)
+
+
+def test_buffer_strips_fill_the_ring_and_join_the_target(generator):
+    bx = np.arange(-585.0, 586.0, 30.0)
+    buffer_dem = xr.DataArray(
+        np.sin(bx[:, None] / 97.0) * 40.0 + np.cos(bx[None, :] / 61.0) * 25.0,
+        dims=["y", "x"],
+        coords={"x": bx, "y": bx[::-1]},
+    )
+    tx = np.arange(-190.0, 191.0, 20.0)
+    target_dem = xr.DataArray(
+        np.random.default_rng(0).uniform(0.0, 100.0, (len(tx), len(tx))),
+        dims=["y", "x"],
+        coords={"x": tx, "y": tx},
+    )
+    target = generator.dem_to_mesh(target_dem)
+    buffer = build_buffer_strips_mesh(buffer_dem, target.vertices)
+
+    flat = trimesh.Trimesh(buffer.vertices * [1, 1, 0], buffer.faces, process=False)
+    assert flat.area == pytest.approx(1200.0**2 - 380.0**2)
+    assert np.all(buffer.face_normals[:, 2] > 0)
+
+    joined = trimesh.util.concatenate([target, buffer])
+    joined.merge_vertices(merge_tex=True, merge_norm=True)
+    edges, counts = np.unique(joined.edges_sorted, axis=0, return_counts=True)
+    open_vertices = joined.vertices[np.unique(edges[counts == 1])]
+    assert np.allclose(np.abs(open_vertices[:, :2]).max(axis=1), 600.0)

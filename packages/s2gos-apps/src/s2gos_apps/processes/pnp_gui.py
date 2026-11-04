@@ -204,9 +204,7 @@ def pnp_gui_generation(
     )
 
     config.buffer = BufferConfig(size_km=30.0, resolution_m=60.0)
-    config.background = BackgroundConfig(
-        size_km=120.0, resolution_m=350.0, elevation=0.0
-    )
+    config.background = BackgroundConfig(size_km=120.0, resolution_m=350.0)
     config.processing.flatten_dem = False
 
     # Configure multi-species vegetation placement

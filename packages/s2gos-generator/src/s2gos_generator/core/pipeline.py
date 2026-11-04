@@ -114,7 +114,9 @@ class SceneGenerationPipeline:
         if self.config.buffer is not None:
             self.registry.register("buffer_dem", [], process_buffer_dem)
             self.registry.register("buffer_landcover", [], process_buffer_landcover)
-            self.registry.register("buffer_mesh", ["buffer_dem"], generate_buffer_mesh)
+            self.registry.register(
+                "buffer_mesh", ["buffer_dem", "target_mesh"], generate_buffer_mesh
+            )
             buffer_texture_deps = ["buffer_landcover"]
             if self.config.snow is not None:
                 buffer_texture_deps.append("buffer_dem")
