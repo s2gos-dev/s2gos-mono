@@ -7,6 +7,8 @@ from s2gos_utils.scene import SceneDescription
 from s2gos_utils.scene.materials import Material, get_landcover_mapping, load_materials
 from upath import UPath
 
+BACKGROUND_DEPTH_M = 1.0
+
 
 def _terrain_floor(terrain_min_elevation: float) -> float:
     """Lowest atmosphere bottom keeping all terrain inside the atmosphere.
@@ -128,8 +130,6 @@ def create_s2gos_scene(
     buffer_texture_path: Optional[str] = None,
     buffer_size_km: Optional[float] = None,
     output_dir: Optional[UPath] = None,
-    background_elevation: Optional[float] = None,
-    buffer_dem_file: Optional[str] = None,
     material_config_path: Optional[UPath] = None,
     material_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
     landcover_mapping_overrides: Optional[Dict[str, str]] = None,
@@ -153,8 +153,6 @@ def create_s2gos_scene(
         buffer_texture_path: Optional path to buffer texture file
         buffer_size_km: Optional buffer size in kilometers
         output_dir: Output directory for the scene
-        background_elevation: Background elevation
-        buffer_dem_file: Optional buffer DEM file path
         material_config_path: Optional path to custom material configuration JSON
         material_overrides: Optional dictionary of material property overrides
         landcover_mapping_overrides: Optional dictionary of landcover-to-material mapping overrides
@@ -219,31 +217,10 @@ def create_s2gos_scene(
     buffer = None
     background = None
     if buffer_mesh_path and buffer_texture_path and buffer_size_km:
-        if output_dir is None:
-            output_dir = UPath(".")
-
-        buffer_resolution = int(buffer_size_km * 10)
-        target_resolution = int(aoi_size_km * 10)
-
-        from ..processors.terrain_data import generate_buffer_mask
-
-        mask_path = (
-            output_dir
-            / "textures"
-            / f"mask_{scene_name}_{int(buffer_size_km)}km_buffer_{int(aoi_size_km)}km_target.bmp"
-        )
-        generate_buffer_mask(
-            mask_size=buffer_resolution,
-            target_size=target_resolution,
-            output_path=mask_path,
-        )
-
         buffer = {
             "mesh": buffer_mesh_path,
             "selection_texture": buffer_texture_path,
             "size_km": buffer_size_km,
-            "target_size_km": aoi_size_km,
-            "mask_texture": str(mask_path.relative_to(output_dir)),
         }
 
         if hamster_data_paths and "buffer" in hamster_data_paths:
@@ -254,39 +231,12 @@ def create_s2gos_scene(
             else:
                 buffer["hamster_data"] = str(hamster_data_paths["buffer"])
 
+    terrain_min_elevation = kwargs.get("terrain_min_elevation", 0.0)
+
     if background_selection_texture and background_size_km:
-        bg_elevation = 0.0
-        if background_elevation is not None:
-            bg_elevation = background_elevation
-        elif buffer_dem_file is not None:
-            try:
-                import xarray as xr
-
-                if output_dir:
-                    dem_path = output_dir / buffer_dem_file
-                else:
-                    dem_path = UPath(buffer_dem_file)
-
-                from s2gos_utils.io.paths import exists
-
-                if exists(dem_path):
-                    from s2gos_utils.io.paths import expand_mapper
-
-                    dem_data = xr.open_zarr(expand_mapper(dem_path))
-                    if "elevation" in dem_data.data_vars:
-                        bg_elevation = float(dem_data["elevation"].mean().values)
-                    else:
-                        var_name = list(dem_data.data_vars.keys())[0]
-                        bg_elevation = float(dem_data[var_name].mean().values)
-            except Exception as e:
-                logging.warning(
-                    f"Could not calculate average elevation from {buffer_dem_file}: {e}"
-                )
-                bg_elevation = 0.0
-
         background = {
             "selection_texture": background_selection_texture,
-            "elevation": bg_elevation,
+            "elevation": terrain_min_elevation - BACKGROUND_DEPTH_M,
             "size_km": background_size_km,
         }
 
@@ -298,7 +248,6 @@ def create_s2gos_scene(
             else:
                 background["hamster_data"] = str(hamster_data_paths["background"])
 
-    terrain_min_elevation = kwargs.get("terrain_min_elevation", 0.0)
     if background:
         terrain_min_elevation = min(terrain_min_elevation, background["elevation"])
     atmosphere = _convert_atmosphere_config_to_dict(

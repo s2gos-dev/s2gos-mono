@@ -52,9 +52,7 @@ config = create_scene_config(
 config.buffer = BufferConfig(size_km=60.0, resolution_m=60.0)
 
 # Background zone — coarse terrain extending to the horizon
-config.background = BackgroundConfig(
-    size_km=150.0, resolution_m=200.0, elevation=0.0
-)
+config.background = BackgroundConfig(size_km=150.0, resolution_m=200.0)
 
 # Molecular atmosphere (US Standard, GECKO absorption database)
 config.set_atmosphere_molecular(

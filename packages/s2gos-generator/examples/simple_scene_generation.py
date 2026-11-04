@@ -43,7 +43,6 @@ def simple_scene_generation_example():
     config.enable_buffer_system(
         buffer_size_km=60.0,
         buffer_resolution_m=100.0,
-        background_elevation=0.0,
         background_resolution_m=200.0,
     )
 
@@ -93,7 +92,7 @@ def simple_scene_generation_example():
         f"  Buffer: {config.buffer.size_km} km at {config.buffer.resolution_m} m resolution"
     )
     print(
-        f"  Background: at {config.background.elevation} m elevation, {config.background.resolution_m} m resolution"
+        f"  Background: {config.background.resolution_m} m resolution"
     )
     print(f"  Atmosphere: {config.atmosphere.details.type}")
     print(f"  Output: {config.scene_output_dir}")

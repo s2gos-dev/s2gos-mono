@@ -6,7 +6,7 @@ from typing import Any, Dict
 import numpy as np
 import PIL
 from PIL import Image
-from s2gos_utils.io.paths import exists, open_file
+from s2gos_utils.io.paths import open_file
 from s2gos_utils.scene import SceneDescription
 from upath import UPath
 
@@ -85,54 +85,26 @@ class SurfaceBuilder:
             Dictionary with buffer_material and buffer_terrain entries
         """
         buffer_config = scene_description.buffer
-        buffer_mesh_path = scene_dir / buffer_config["mesh"]
-        buffer_texture_path = scene_dir / buffer_config["selection_texture"]
-        mask_path = (
-            scene_dir / buffer_config["mask_texture"]
-            if "mask_texture" in buffer_config
-            else None
-        )
+        if "mask_texture" in buffer_config:
+            raise ValueError("Scene uses the old buffer mask, regenerate it")
 
         _, _, material_dict = self._create_selectbsdf_material(
             "buffer",
             scene_description,
             scene_dir,
-            buffer_texture_path,
+            scene_dir / buffer_config["selection_texture"],
             hamster_available,
         )
 
-        result = {"buffer_material": material_dict}
-
-        buffer_bsdf_id = "buffer_material"
-
-        if mask_path and exists(mask_path):
-            with open_file(mask_path, "rb") as f:
-                mask_image = Image.open(f)
-                mask_image.load()
-            mask_data = np.array(mask_image) / 255.0
-            mask_data = np.atleast_3d(mask_data)
-
-            result["buffer_mask"] = {
-                "type": "mask",
-                "opacity": {
-                    "type": "bitmap",
-                    "raw": True,
-                    "filter_type": "nearest",
-                    "wrap_mode": "clamp",
-                    "data": mi.TensorXf(mask_data),
-                },
-                "material": {"type": "ref", "id": "buffer_material"},
-            }
-            buffer_bsdf_id = "buffer_mask"
-
-        result["buffer_terrain"] = {
-            "type": "ply",
-            "filename": str(buffer_mesh_path),
-            "bsdf": {"type": "ref", "id": buffer_bsdf_id},
-            "id": "buffer_terrain",
+        return {
+            "buffer_material": material_dict,
+            "buffer_terrain": {
+                "type": "ply",
+                "filename": str(scene_dir / buffer_config["mesh"]),
+                "bsdf": {"type": "ref", "id": "buffer_material"},
+                "id": "buffer_terrain",
+            },
         }
-
-        return result
 
     def create_background_surface(
         self,

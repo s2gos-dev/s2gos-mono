@@ -79,10 +79,8 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         )
         background_size_km = ctx.config.background.size_km
 
-    buffer_dem_file = None
     terrain_min_elevation = _dem_min_elevation(ctx.assets.dem_file)
     if ctx.has_buffer and ctx.assets.buffer_dem_file:
-        buffer_dem_file = str(ctx.assets.buffer_dem_file.relative_to(ctx.output_dir))
         terrain_min_elevation = min(
             terrain_min_elevation, _dem_min_elevation(ctx.assets.buffer_dem_file)
         )
@@ -147,10 +145,6 @@ def create_scene_description(ctx: SceneResourceContext) -> Optional[Path]:
         buffer_texture_path=buffer_texture_path,
         buffer_size_km=buffer_size_km,
         output_dir=ctx.output_dir,
-        buffer_dem_file=buffer_dem_file,
-        background_elevation=ctx.config.background.elevation
-        if ctx.config.background is not None
-        else None,
         background_selection_texture=background_selection_texture,
         background_size_km=background_size_km,
         dem_name=ctx.config.data_sources.dem.name,

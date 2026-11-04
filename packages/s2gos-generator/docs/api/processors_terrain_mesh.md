@@ -20,6 +20,10 @@ Turn DEM elevation grids into 3D triangle meshes via an adaptive quadtree, orche
 ::: s2gos_generator.processors.terrain_mesh.builder.grid_to_terrain_mesh
 ::: s2gos_generator.processors.terrain_mesh.mesh_generator.MeshGenerator
 
+## Buffer surround
+
+::: s2gos_generator.processors.terrain_mesh.surround.build_buffer_strips_mesh
+
 ## Terrain flattening
 
 ::: s2gos_generator.processors.terrain_mesh.terraforming.GradientFilter
