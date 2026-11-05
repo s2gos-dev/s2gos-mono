@@ -13,10 +13,20 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
+from . import sam_ed
 from .library import CandidateSpectrum
 from .sam import NO_CLUSTER, cluster_class_reflectance, match_clusters_to_library
 from ...core.config.material_match import SpectralMatchingConfig
 from ...core.materials import allocate_matched_indices
+
+
+def _match_clusters(cfg: SpectralMatchingConfig, palette, library):
+    """Match clusters to the library with the method ``cfg.method`` selects."""
+    if cfg.method == "sam_ed":
+        return sam_ed.match_clusters_to_library(
+            palette, library, cfg.max_sam_angle_deg, cfg.sam_ed_weight
+        )
+    return match_clusters_to_library(palette, library, cfg.max_sam_angle_deg)
 
 
 def diversify_selection_texture(
@@ -79,7 +89,7 @@ def diversify_selection_texture(
                 n_missing,
                 n_pixels,
             )
-        matches = match_clusters_to_library(palette, library, cfg.max_sam_angle_deg)
+        matches = _match_clusters(cfg, palette, library)
         per_class.append((esa_class, label_map, matches))
         matched_ids.extend(m.material_id for m in matches if m is not None)
 

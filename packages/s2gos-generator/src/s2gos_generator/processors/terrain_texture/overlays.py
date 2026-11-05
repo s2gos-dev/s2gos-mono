@@ -42,16 +42,19 @@ def apply_region_materials(
     Returns:
         (texture_2d, modified) where modified is True if any pixels were changed.
     """
+    height_px, width_px = texture_2d.shape
+
     with xr.open_zarr(expand_mapper(landcover_path)) as ds:
         landcover_data = ds[list(ds.data_vars)[0]]
-        width_px = len(landcover_data.coords["x"].values)
-        height_px = len(landcover_data.coords["y"].values)
         xmin, xmax, ymin, ymax, _ = _lc_bounds(landcover_data)
         scene_bounds = {"xmin": xmin, "xmax": xmax, "ymin": ymin, "ymax": ymax}
 
         landcover_2d = None
         if any(r.landcover_filter is not None for r in applicable_regions):
-            landcover_2d = np.flipud(landcover_data.values)
+            native = np.flipud(landcover_data.values)
+            rows = np.linspace(0, native.shape[0] - 1, height_px).round().astype(int)
+            cols = np.linspace(0, native.shape[1] - 1, width_px).round().astype(int)
+            landcover_2d = native[np.ix_(rows, cols)]
 
     from ...core.region_geometry import geometry_from_dict
 

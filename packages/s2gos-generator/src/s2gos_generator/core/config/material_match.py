@@ -7,7 +7,7 @@ reflectance to a library of candidate materials (Spectral Angle Mapper). See
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 from s2gos_utils.io.paths import PathRef
@@ -129,6 +129,16 @@ class SpectralMatchingConfig(BaseModel):
             "If set, clusters whose best SAM angle exceeds this threshold keep their "
             "base landcover material instead of a spectral match (quality gate)."
         ),
+    )
+    method: Literal["sam", "sam_ed"] = Field(
+        "sam_ed",
+        description="Matching metric: 'sam' (shape) or 'sam_ed' (shape and brightness).",
+    )
+    sam_ed_weight: float = Field(
+        0.5,
+        ge=0.0,
+        le=1.0,
+        description="SAM-ED shape weight: 1.0 is pure shape, 0.0 pure brightness.",
     )
 
     @field_validator("material_library")

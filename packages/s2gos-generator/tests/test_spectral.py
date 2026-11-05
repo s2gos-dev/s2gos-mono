@@ -9,6 +9,7 @@ import xarray as xr
 
 from s2gos_generator.core.config.material_match import SpectralMatchingConfig
 from s2gos_generator.core.materials import MAX_MATERIAL_INDEX, allocate_matched_indices
+from s2gos_generator.processors.spectral import sam_ed
 from s2gos_generator.processors.spectral.diversify import diversify_selection_texture
 from s2gos_generator.processors.spectral.library import (
     CandidateSpectrum,
@@ -667,6 +668,19 @@ class TestDiversify:
         assert indices == {"uniform_mat": 2}
         assert set(defs) == {"uniform_mat"}
         assert (out[:2, :] == 2).all()
+
+
+def test_sam_ed_prefers_close_brightness_over_identical_shape():
+    target = np.array([0.1, 0.1, 0.1, 0.5])
+    library = [
+        CandidateSpectrum("bright", {"type": "diffuse"}, target * 2.0),
+        CandidateSpectrum(
+            "close", {"type": "diffuse"}, np.array([0.09, 0.11, 0.1, 0.5])
+        ),
+    ]
+    palette = target[None, :]
+    assert match_clusters_to_library(palette, library)[0].material_id == "bright"
+    assert sam_ed.match_clusters_to_library(palette, library)[0].material_id == "close"
 
 
 class TestConfig:
