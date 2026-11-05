@@ -29,5 +29,8 @@ jobs:
             credential_provider: "dynaconf"
           EOF
 
+      - name: Install Eradiate SRF data
+        run: pixi run --frozen -e dev eradiate data install srf/core-v1
+
       - name: Run tests
         run: pixi run --frozen -e dev test

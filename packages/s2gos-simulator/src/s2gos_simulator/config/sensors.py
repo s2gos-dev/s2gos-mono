@@ -114,7 +114,7 @@ class BaseSensor(BaseModel):
         description="List of radiative quantities to be produced by this sensor configuration",
     )
     samples_per_pixel: int = Field(
-        64, ge=1, description="Number of Monte Carlo samples per pixel"
+        64, ge=1, description="Number of Monte Carlo samples per pixel."
     )
     noise_model: Optional[Dict[str, Any]] = Field(
         None, description="Noise model configuration"
