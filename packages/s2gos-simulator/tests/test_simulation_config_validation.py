@@ -400,3 +400,33 @@ class TestSatelliteSensorInstrument:
         )
         with pytest.raises(ValueError, match="specify one"):
             _make_config(sensors=[sensor], measurements=[pixel_hdrf])
+
+    @pytest.mark.parametrize(
+        "measurements",
+        [
+            [BRFConfig(id="m", radiance_sensor_id="sat")],
+            [
+                IrradianceConfig(
+                    id="irr",
+                    location=HemisphericalMeasurementLocation(
+                        target_x=0, target_y=0, target_z=1
+                    ),
+                ),
+                HDRFConfig(
+                    id="m", radiance_sensor_id="sat", irradiance_measurement_id="irr"
+                ),
+            ],
+        ],
+    )
+    def test_reference_mode_rejects_a_multispectral_sensor(self, measurements):
+        sensor = self._sensor(id="sat", bands=["2"])
+
+        with pytest.raises(ValueError, match="results are per band"):
+            _make_config(sensors=[sensor], measurements=measurements)
+
+    def test_reference_mode_accepts_a_hyperspectral_sensor(self):
+        sensor = self._sensor(id="sat", instrument="chime-hsi", target_size_km=0.3)
+
+        _make_config(
+            sensors=[sensor], measurements=[BRFConfig(id="m", radiance_sensor_id="sat")]
+        )

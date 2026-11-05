@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 from enum import Enum
 from typing import (
-    TYPE_CHECKING,
     Any,
     Dict,
     List,
@@ -25,6 +24,7 @@ from pydantic import (
     model_validator,
 )
 from pyproj import Transformer
+from s2gos_utils.coordinates import CoordinateSystem
 
 from .instruments import (
     CHIME_SRF,
@@ -41,9 +41,6 @@ from .viewing import (
     LookAtViewing,
     ViewingType,
 )
-
-if TYPE_CHECKING:
-    from s2gos_utils.coordinates import CoordinateSystem
 
 
 class PlatformType(str, Enum):
@@ -140,15 +137,33 @@ class ProjectedGrid(BaseModel):
             crs=f"EPSG:{(32600 if lat >= 0 else 32700) + zone}", origin=(0.0, 0.0)
         )
 
+    def snapped_bounds(
+        self,
+        lat: float,
+        lon: float,
+        size: Tuple[float, float],
+        step: Tuple[float, float],
+    ) -> Dict[str, float]:
+        """Rectangle of `size` (width, height) centered on a point, in `crs` units,
+        with its upper-left corner moved to the nearest node of the `step` lattice."""
+        x, y = Transformer.from_crs("EPSG:4326", self.crs, always_xy=True).transform(
+            lon, lat
+        )
+        width, height = size
+        x0, y0 = self.origin
+        xmin = x0 + round((x - width / 2 - x0) / step[0]) * step[0]
+        ymax = y0 + round((y + height / 2 - y0) / step[1]) * step[1]
+        return {"xmin": xmin, "xmax": xmin + width, "ymin": ymax - height, "ymax": ymax}
+
 
 class SceneRectangle(NamedTuple):
-    """Sensor footprint in scene coordinates (metres).
+    """Sensor footprint in scene coordinates (meters).
 
     Attributes:
-        center: (x, y) of the footprint centre
+        center: (x, y) of the footprint center
         size: (width, height) along the footprint's own axes
         rotation: Counter-clockwise angle (degrees) from the scene x axis to the
-            footprint's x axis, i.e. from scene north to the footprint's north
+            footprint's x axis, the Eradiate azimuth convention
     """
 
     center: Tuple[float, float]
@@ -162,7 +177,7 @@ class SceneRectangle(NamedTuple):
         return (-math.sin(angle), math.cos(angle), 0.0)
 
     def pixel_center(self, row, col, resolution: Tuple[int, int]):
-        """Scene (x, y) of the centre of pixel (row, col) of a film.
+        """Scene (x, y) of the center of pixel (row, col) of a film.
 
         Row 0 is the footprint's first row and col 0 its first column, north and west
         when the footprint is not rotated.
@@ -232,7 +247,11 @@ class SatelliteSensor(BaseSensor):
     )
     target_size_km: Union[PositiveFloat, Tuple[PositiveFloat, PositiveFloat]] = Field(
         ...,
-        description="Target area size: float for square (km), tuple for rectangular (width_km, height_km)",
+        description=(
+            "Target area size: float for square (km), tuple for rectangular "
+            "(width_km, height_km). In the projected grid's units when there is one, "
+            "otherwise ground kilometers along the grid axes"
+        ),
     )
     output_format: Optional[Literal["eopf"]] = Field(
         None,
@@ -245,31 +264,26 @@ class SatelliteSensor(BaseSensor):
     grid: Optional[ProjectedGrid] = Field(
         None,
         description=(
-            "Tile the footprint is aligned to. The footprint keeps its size and its "
-            "upper-left corner moves to the nearest node of the coarsest band's pixel "
-            "lattice, so every band's pixels coincide with the tile's. Every band must "
-            "then be at its native GSD"
+            "Tile the footprint is aligned to: its upper-left corner moves to the "
+            "nearest node of the coarsest band's pixel lattice. Every band must then "
+            "be at its native GSD"
         ),
     )
     grid_rotation: float = Field(
         0.0,
         description=(
-            "Clockwise rotation of the pixel grid from north-up in degrees, for a "
-            "grid that is not projected, such as a swath-aligned product grid: "
-            "columns head 90 + rotation and rows 180 + rotation. target_size_km is "
-            "measured along these axes. Must stay 0 with a `projected_grid`, which "
-            "sets the rotation itself"
+            "Counter-clockwise rotation of the pixel grid from north-up in degrees "
+            "(Eradiate azimuth), for a grid that is not projected. Columns point along "
+            "azimuth grid_rotation and rows along grid_rotation - 90. Must stay 0 with "
+            "a `projected_grid`, which sets the rotation itself"
         ),
     )
     orthorectified: bool = Field(
         False,
         description=(
-            "Whether the pixel grid lies on the terrain, as for an orthorectified "
-            "product (Sentinel-2 L1C, SLSTR L1B). The grid is then a plane at the "
-            "scene's mean terrain height over the footprint, so relief within the "
-            "footprint still shifts oblique pixels. Otherwise it lies at z = 0, the "
-            "scene's sea level, which stands in for the ellipsoid that "
-            "non-orthorectified grids such as OLCI L1B lie on. Always True for "
+            "Whether the pixel grid lies on the terrain, at the mean height over the "
+            "footprint, as for Sentinel-2 L1C and SLSTR L1B. Otherwise it lies at "
+            "z = 0, standing in for the ellipsoid, as for OLCI L1B. Always True for "
             "output_format='eopf'"
         ),
     )
@@ -366,8 +380,8 @@ class SatelliteSensor(BaseSensor):
             if viewing.target is None:
                 viewing.target = [0.0, 0.0, 0.0]
         if self.id is None:
-            zenith = self.viewing.zenith
-            view = f"oblique{int(zenith)}" if zenith > 0 else "nadir"
+            zenith = int(self.viewing.zenith)
+            view = f"oblique{zenith}" if zenith > 0 else "nadir"
             self.id = f"{self.spec.platform}_{self.spec.name}_{view}".replace("-", "_")
 
     @property
@@ -422,23 +436,20 @@ class SatelliteSensor(BaseSensor):
                 f"Sensor '{self.id}' has no projected grid: set grid or "
                 "output_format='eopf'"
             )
-        x, y = Transformer.from_crs("EPSG:4326", grid.crs, always_xy=True).transform(
-            self.target_center_lon, self.target_center_lat
-        )
-        width, height = self._footprint_m()
         sizes = [self.pixel_size_m(band) for band in self.measured_bands]
-        step_x, step_y = max(s[0] for s in sizes), max(s[1] for s in sizes)
-        x0, y0 = grid.origin
-        xmin = x0 + round((x - width / 2 - x0) / step_x) * step_x
-        ymax = y0 + round((y + height / 2 - y0) / step_y) * step_y
-        return {"xmin": xmin, "xmax": xmin + width, "ymin": ymax - height, "ymax": ymax}
+        return grid.snapped_bounds(
+            self.target_center_lat,
+            self.target_center_lon,
+            self._footprint_m(),
+            (max(s[0] for s in sizes), max(s[1] for s in sizes)),
+        )
 
     def target_rectangle(self, coords: CoordinateSystem) -> SceneRectangle:
         """Footprint in scene coordinates.
 
         Without a `projected_grid` it is centered on the target and rotated by
         `grid_rotation`. With one it is the `grid_bounds` rectangle, turned by the angle
-        between grid north and the scene's north and scaled from grid to scene metres,
+        between grid north and the scene's north and scaled from grid to scene meters,
         so its pixels follow the grid's.
         """
         grid = self.projected_grid
@@ -448,7 +459,7 @@ class SatelliteSensor(BaseSensor):
                     self.target_center_lat, self.target_center_lon
                 ),
                 size=self._footprint_m(),
-                rotation=-self.grid_rotation,
+                rotation=self.grid_rotation,
             )
         b = self.grid_bounds()
         lon, lat = Transformer.from_crs(
@@ -515,20 +526,23 @@ class SatelliteSensor(BaseSensor):
         """SRF of a measure: the hyperspectral instrument's, else the band's."""
         return self.spec.srf if self.is_hyperspectral else self.spec.bands[band].srf
 
-    def band_viewing_for(self, band: Optional[str] = None) -> AngularViewing:
+    def viewing_for(self, band: Optional[str] = None) -> AngularViewing:
         """Viewing geometry of a band: its `band_viewing` override, else `viewing`."""
         return self.band_viewing.get(band, self.viewing)
 
     def band_measure_id(self, band: Optional[str] = None) -> str:
         """Id of a measure: `<id>_<band>`, or the sensor id for a hyperspectral sensor.
 
-        The band is always part of a multispectral measure id, so a band's results are
-        named the same whichever other bands are simulated.
+        A band's results keep their name whichever other bands are simulated.
         """
         return self.id if self.is_hyperspectral else f"{self.id}_{band}"
 
     def pixel_size_m(self, band: Optional[str] = None) -> Tuple[float, float]:
-        """Ground pixel size (x, y) of a band in meters."""
+        """Pixel size (x, y) of a band in meters.
+
+        In the projected grid's units when there is one, otherwise on the ground along
+        the grid axes.
+        """
         width_m, height_m = self._footprint_m()
         width, height = self.band_film_resolution(band)
         return width_m / width, height_m / height

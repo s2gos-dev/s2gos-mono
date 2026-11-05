@@ -60,7 +60,7 @@ class GeometryUtils:
     def mean_terrain_elevation(
         self, scene_description: SceneDescription, scene_dir: UPath, x, y
     ) -> float:
-        """Mean terrain elevation in metres over scene points (x, y arrays)."""
+        """Mean terrain elevation in meters over scene points (x, y arrays)."""
         from s2gos_simulator.terrain_query import TerrainQuery
 
         terrain_query = TerrainQuery(scene_description, scene_dir)

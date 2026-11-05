@@ -15,7 +15,7 @@ from upath import UPath
 from .atmosphere_builder import AtmosphereBuilder
 from .constants import VALID_ERADIATE_MODES
 from .eradiate_translator import EradiateTranslator
-from .geometry_utils import GeometryUtils
+from .geometry_utils import GeometryUtils, sanitize_sensor_id
 from .result_processor import ResultProcessor
 from .surface_builder import SurfaceBuilder
 from ..base import SimulationBackend
@@ -169,7 +169,7 @@ class EradiateBackend(SimulationBackend):
         scene_dir: PathRef,
         output_dir: Optional[PathRef] = None,
         **kwargs,
-    ) -> xr.Dataset:
+    ) -> Dict[str, Any]:
         """Run Eradiate simulation from scene description.
 
         Automatically detects measurement types and executes appropriate workflow:
@@ -184,7 +184,8 @@ class EradiateBackend(SimulationBackend):
             **kwargs: Additional options (plot_image, etc.)
 
         Returns:
-            xarray Dataset containing all simulation results
+            Results by id: xarray Datasets, and a DataTree for each sensor written as
+            one product
         """
         if not self.is_available():
             raise RuntimeError("Eradiate is not available")
@@ -289,7 +290,7 @@ class EradiateBackend(SimulationBackend):
         include_irradiance_measures: bool = True,
         sensor_ids: Optional[set] = None,
         **kwargs,
-    ) -> xr.Dataset:
+    ) -> Dict[str, Any]:
         """Run radiance simulation with atmosphere (used for plain sensor runs).
 
         This is NOT used for BRF (no atmosphere), that is handled by `_run_brf_workflow`.
@@ -306,7 +307,8 @@ class EradiateBackend(SimulationBackend):
             **kwargs: Additional options
 
         Returns:
-            Simulation results dataset
+            Results by id: xarray Datasets, and a DataTree for each sensor written as
+            one product
         """
         logger.info("=" * 60)
         logger.info("Running experiments")
@@ -329,9 +331,7 @@ class EradiateBackend(SimulationBackend):
             raw_dataset = experiment.results[measure_id]
             raw_dataset.attrs["output_dir"] = str(output_dir)
 
-            sensor_config, band = self.eradiate_translator.get_sensor_band(
-                measure_id
-            ) or (None, None)
+            sensor_config, band = self.eradiate_translator.get_sensor_band(measure_id)
             if sensor_config:
                 post_processed_dataset = self.sensor_processor.process_sensor_result(
                     raw_dataset, sensor_config, output_dir=output_dir
@@ -407,7 +407,7 @@ class EradiateBackend(SimulationBackend):
             )
             saved = {}
             for band, dataset in band_results.items():
-                measure_id = sensor.band_measure_id(band)
+                measure_id = sanitize_sensor_id(sensor.band_measure_id(band))
                 if self.result_processor.save_result(measure_id, dataset, output_dir):
                     saved[measure_id] = dataset
             return saved
@@ -421,7 +421,7 @@ class EradiateBackend(SimulationBackend):
         hdrf_processor: HDRFProcessor,
         sensor_ids: Optional[set] = None,
         **kwargs,
-    ) -> xr.Dataset:
+    ) -> Dict[str, Any]:
         """Execute combined workflow for BOA Irradiance, HDRF/HCRF measurements.
 
         Runs two simulations with atmosphere:
@@ -440,7 +440,8 @@ class EradiateBackend(SimulationBackend):
             **kwargs: Additional options
 
         Returns:
-            Combined results dataset
+            Results by id: xarray Datasets, and a DataTree for each sensor written as
+            one product
         """
         logger.info("=" * 60)
         logger.info("Running radiance simulation Irradiance Measurements")
@@ -535,7 +536,7 @@ class EradiateBackend(SimulationBackend):
             raw_dataset.attrs["output_dir"] = str(output_dir)
 
             # Post-process with sensor processor (apply Gaussian SRF if configured)
-            sensor_config = self.eradiate_translator.get_sensor_by_id(measure_id)
+            sensor_config, _ = self.eradiate_translator.get_sensor_band(measure_id)
             if sensor_config:
                 post_processed_dataset = self.sensor_processor.process_sensor_result(
                     raw_dataset, sensor_config, output_dir=radiance_output_dir
@@ -736,7 +737,8 @@ class EradiateBackend(SimulationBackend):
         """Expand PixelHDRFConfig and PixelBRFConfig into individual measurements.
 
         For each pixel in a pixel measurement config, creates the corresponding
-        expanded config (HDRFConfig or BRFConfig) at the scene coordinates.
+        expanded config (HDRFConfig or BRFConfig) at the scene coordinates. BRF patches
+        stay axis-aligned on rotated grids.
 
         Args:
             scene_description: Scene description for terrain lookup, and the scene
@@ -780,16 +782,12 @@ class EradiateBackend(SimulationBackend):
                 else sensor.band_srf(band)
             )
 
-            # shortcut: BRF patches stay axis-aligned on rotated grids, rotate them
-            # once a per-pixel BRF must cover exactly its grid cell
             pixel_size_x, pixel_size_y = sensor.pixel_size_m(band)
             film_resolution = sensor.band_film_resolution(band)
 
-            # Expand each pixel to an individual measurement config
             for row, col in pixel_config.pixel_indices:
                 x, y = footprint.pixel_center(row, col, film_resolution)
 
-                # Query terrain elevation if scene_description is provided
                 target_z = pixel_config.height_offset_m
                 if scene_description is not None and scene_dir is not None:
                     try:

@@ -5,9 +5,11 @@ import numpy as np
 import pytest
 from pyproj import Transformer
 
+from s2gos_simulator.acquisitions._fetch import FootprintOutsideProduct
 from s2gos_simulator.acquisitions.sentinel2 import (
     create_acquisition,
     fetch_tile_metadata,
+    read_tile_footprint,
     read_tile_metadata,
 )
 from s2gos_simulator.config import ProjectedGrid
@@ -49,6 +51,7 @@ def _write_mtd_tl(path: Path, angle_grids, band_id: int = 1) -> Path:
   <n1:Geometric_Info>
     <Tile_Geocoding>
       <HORIZONTAL_CS_CODE>EPSG:32733</HORIZONTAL_CS_CODE>
+      <Size resolution="10"><NROWS>1000</NROWS><NCOLS>1000</NCOLS></Size>
       <Geoposition resolution="10"><ULX>{_ULX:.0f}</ULX><ULY>{_ULY:.0f}</ULY></Geoposition>
     </Tile_Geocoding>
     <Tile_Angles>{grids}</Tile_Angles>
@@ -67,13 +70,14 @@ class TestReadTileMetadata:
             tmp_path / "MTD_TL.xml", [("1", zenith, azimuth)], band_id=8
         )
 
-        time, instrument, views = read_tile_metadata(
-            path, *_latlon_at(0.5, 1.25), ["8a"]
-        )
-        view = views["8a"]
+        geometry = read_tile_metadata(path, *_latlon_at(0.5, 1.25), ["8a"])
+        view = geometry.viewing["8a"]
 
-        assert time == datetime(2022, 5, 4, 9, 17, 15, 123000, tzinfo=timezone.utc)
-        assert instrument == "sentinel_2a-msi"
+        assert geometry.time == datetime(
+            2022, 5, 4, 9, 17, 15, 123000, tzinfo=timezone.utc
+        )
+        assert geometry.instrument == "sentinel_2a-msi"
+        assert geometry.grid == ProjectedGrid(crs="EPSG:32733", origin=(_ULX, _ULY))
         assert view.zenith == pytest.approx(3.5, abs=1e-3)
         assert view.azimuth == pytest.approx(350.0, abs=1e-6)
 
@@ -111,6 +115,48 @@ class TestReadTileMetadata:
             read_tile_metadata(path, *_latlon_at(1.0, 1.5), ["2"])
 
 
+class TestReadTileFootprint:
+    def _tile(self, tmp_path, last_column=5.0):
+        """A 10 km tile, whose last column of angle nodes can be left without data."""
+        zenith = [[5.0, 5.0, last_column] for _ in range(3)]
+        return _write_mtd_tl(tmp_path / "MTD_TL.xml", [("1", zenith, zenith)])
+
+    def test_footprint_inside_the_tile(self, tmp_path):
+        footprint = read_tile_footprint(
+            self._tile(tmp_path), *_latlon_at(1.0, 1.0), ["2"], 1.0
+        )
+
+        assert footprint.bounds["xmax"] - footprint.bounds["xmin"] == pytest.approx(1e3)
+        assert (footprint.center_lat, footprint.center_lon) == pytest.approx(
+            _latlon_at(1.0, 1.0), abs=1e-4
+        )
+
+    @pytest.mark.parametrize("position", [(0.02, 1.0), (1.0, 1.98)])
+    def test_footprint_leaving_the_tile_raises(self, tmp_path, position):
+        with pytest.raises(FootprintOutsideProduct, match="leaves the tile"):
+            read_tile_footprint(
+                self._tile(tmp_path), *_latlon_at(*position), ["2"], 1.0
+            )
+
+    def test_footprint_in_the_unimaged_part_of_the_tile_raises(self, tmp_path):
+        """Its center has angles, but the corners next to the swath edge have no data."""
+        path = self._tile(tmp_path, last_column=np.nan)
+        position = _latlon_at(1.0, 1.25)
+
+        assert read_tile_metadata(path, *position, ["2"]).viewing["2"].zenith > 0
+        with pytest.raises(FootprintOutsideProduct, match="imaged swath of band '2'"):
+            read_tile_footprint(path, *position, ["2"], 1.0)
+        read_tile_footprint(path, *_latlon_at(1.0, 0.5), ["2"], 1.0)
+
+    def test_unknown_band_is_not_a_footprint_error(self, tmp_path):
+        with pytest.raises(ValueError, match="Unknown MSI band") as error:
+            read_tile_footprint(
+                self._tile(tmp_path), *_latlon_at(1.0, 1.0), ["99"], 1.0
+            )
+
+        assert not isinstance(error.value, FootprintOutsideProduct)
+
+
 class TestCreateAcquisition:
     def test_sun_and_view_come_from_the_tile(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
@@ -131,8 +177,14 @@ class TestCreateAcquisition:
             2022, 5, 4, 9, 17, 15, 123000, tzinfo=timezone.utc
         )
         assert sensor.spec.platform == "sentinel-2a"
-        assert sensor.band_viewing_for("8a").zenith == pytest.approx(3.5, abs=1e-3)
-        assert sensor.band_viewing_for("8a").azimuth == pytest.approx(350.0, abs=1e-6)
+        assert sensor.viewing_for("8a").zenith == pytest.approx(3.5, abs=5e-3)
+        assert sensor.viewing_for("8a").azimuth == pytest.approx(350.0, abs=1e-6)
+        footprint = read_tile_footprint(path, *_latlon_at(0.5, 1.25), ["8a"], 1.0)
+        at_center = read_tile_metadata(
+            path, footprint.center_lat, footprint.center_lon, ["8a"]
+        )
+        assert sensor.viewing_for("8a").zenith == at_center.viewing["8a"].zenith
+        assert sensor.grid_bounds() == footprint.bounds
         assert sensor.grid == ProjectedGrid(crs="EPSG:32733", origin=(_ULX, _ULY))
         assert sensor.orthorectified and sensor.output_format is None
 
@@ -140,12 +192,18 @@ class TestCreateAcquisition:
 class TestFetchTileMetadata:
     def test_cache_hit_warns_when_sensed_on_another_day(self, tmp_path, caplog):
         lat, lon = _latlon_at(1.0, 1.0)
+        cache = tmp_path / f"S2_site_{lat:.4f}_{lon:.4f}_20220506"
+        cache.mkdir()
+        zenith = [[5.0] * 3 for _ in range(3)]
         cached = _write_mtd_tl(
-            tmp_path / f"MTD_TL_site_{lat:.4f}_{lon:.4f}_20220506.xml", []
+            cache / "S2A_MSIL1C_20220504T084601_N0510_R107_T33KWP_20220504T120001.xml",
+            [("1", zenith, zenith)],
         )
 
         with caplog.at_level("WARNING"):
-            path = fetch_tile_metadata("2022-05-06", lat, lon, tmp_path, "site")
+            path = fetch_tile_metadata(
+                "2022-05-06", lat, lon, ["2"], 1.0, tmp_path, "site"
+            )
 
         assert path == cached
         assert "using the 2022-05-04 pass" in caplog.text

@@ -315,7 +315,7 @@ def pnp_gui_simulation(
         str,
         Field(
             ...,
-            description="Scene to sue for simulation",
+            description="Scene to use for simulation",
             title="Scene name",
         ),
     ],
@@ -365,13 +365,13 @@ def pnp_gui_simulation(
 
     Supported observation types:
     - CHIME: Hyperspectral satellite sensor
-    - MSI: Sentinel-2 multispectral sensor (configurable bands)
+    - MSI: Sentinel-2 multispectral sensor imaging all 13 bands
     - HYPSTAR: Ground-based hyperspectral sensor with HCRF processing
     - RGB_CAMERA: Perspective camera viewing tower from configurable position
-    - SATELLITE_PIXEL_HDRF: [PLACEHOLDER - To be implemented]
+    - SATELLITE_PIXEL_HDRF: HDRF of the CHIME pixel holding the tower
 
     Args:
-        scene_name: Name  of scene to be used
+        scene_name: Name of scene to be used
         month: Month for simulation (determines observation date)
         hour_utc: Hour of observation in UTC
         observation: Observation type configuration
@@ -379,8 +379,7 @@ def pnp_gui_simulation(
         sim_name: Name of simulation run
 
     Returns:
-        Path to simulation output directory, or None if observation type
-        is not yet implemented or simulation fails
+        Path to simulation output directory, or None if simulation fails
     """
     from s2gos_simulator.config import (
         AngularFromOriginViewing,
@@ -459,22 +458,11 @@ def pnp_gui_simulation(
                 for_reference_only=True,
             )
         )
-        # 3x3 around tower pixel
         measurements.append(
             PixelHDRFConfig(
                 id="chime_pixel_HDRF",
                 satellite_sensor_id="chime_for_pixel_hdrf",
-                pixel_indices=[
-                    # (137, 158),
-                    # (137, 159),
-                    # (137, 160),
-                    # (138, 158),
-                    (138, 159),
-                    # (138, 160),
-                    # (139, 158),
-                    # (139, 159),
-                    # (139, 160),
-                ],
+                pixel_indices=[(138, 159)],
                 height_offset_m=45,
                 samples_per_pixel=4,
                 srf=SpectralResponse(type="uniform", wmin=400, wmax=2500),

@@ -22,7 +22,7 @@ def _product(row_heading: float):
 def test_snaps_the_footprint_onto_the_product_pixels():
     grid = fit_grid(*_product(200.0), _LAT, _LON, (3000.0, 3000.0))
 
-    assert grid.rotation == pytest.approx(20.0, abs=1e-6)
+    assert grid.rotation == pytest.approx(-20.0, abs=1e-6)
     assert grid.pixel_size_m == pytest.approx((270.0, 295.0), abs=1e-3)
     assert grid.shape == (11, 10)
     assert (grid.first_row, grid.first_column) == (6, 16)

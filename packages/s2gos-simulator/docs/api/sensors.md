@@ -5,6 +5,7 @@ observing systems together with their associated instrument types.
 
 ::: s2gos_simulator.config.sensors.BaseSensor
 ::: s2gos_simulator.config.sensors.SatelliteSensor
+::: s2gos_simulator.config.sensors.ProjectedGrid
 ::: s2gos_simulator.config.sensors.GroundSensor
 
 ## Instruments

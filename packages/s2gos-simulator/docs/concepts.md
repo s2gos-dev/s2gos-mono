@@ -29,7 +29,7 @@ Built-in instruments: Sentinel-2A/2B MSI (written as an EOPF-like L1C product wi
 
 Ground-based sensors are placed at low heights for in-situ validation measurements:
 
-- **HYPSTAR** — HYPERNETS sensor
+- **HYPSTAR** — HYPERNETS network sensor. Circular FOV, approximate SRF
 - **Perspective camera** — Standard camera with configurable FOV
 - **Radiancemeter** — Directional radiance measurement
 

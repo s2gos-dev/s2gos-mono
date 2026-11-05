@@ -35,6 +35,7 @@ def _band_result(sensor, band, value=None):
         {
             "brf_srf": (("x_index", "y_index"), rows),
             "irradiance_srf": (("sza", "saa"), irradiance),
+            "w_srf": 665.0,
         }
     )
 
@@ -142,8 +143,9 @@ def test_stac_discovery(product):
     assert props["platform"] == "sentinel-2a"
     assert props["product:type"] == "S02MSIL1C"
     assert [b["name"] for b in props["bands"]] == ["b04", "b8a", "b01"]
-    assert (b04["eo:common_name"], b04["eo:full_width_half_max"]) == ("red", 0.030)
-    assert b04["eo:solar_illumination"] == pytest.approx(1500.0)
+    assert (b04["common_name"], b04["full_width_half_max"]) == ("red", 0.030)
+    assert b04["center_wavelength"] == 665.0
+    assert b04["solar_illumination"] == pytest.approx(1500.0)
     assert props["bands"][2]["raster:spatial_resolution"] == "60"
     assert "reflectance_correction_factor" not in str(product.attrs["other_metadata"])
     west, south, east, north = stac["bbox"]
@@ -222,7 +224,7 @@ def test_grid_requires_native_pixels():
         )
 
 
-def test_grid_pixel_centres_follow_tile_pixels():
+def test_grid_pixel_centers_follow_tile_pixels():
     """At 50° N, 2.9° east of the central meridian, grid north is 2.2° east of north."""
     lat, lon = 50.0, 5.9
     grid = ProjectedGrid(crs="EPSG:32631", origin=(600000.0, 5600040.0))
@@ -275,16 +277,17 @@ def test_store_named_like_an_l1c_product(tmp_path):
     assert product.attrs["stac_discovery"]["id"] == "S2A_MSIL1C_20240622T091715_sim_s2"
 
 
-def _route_bands(tmp_path, monkeypatch, writer):
+def _route_bands(tmp_path, monkeypatch, writer, sensor_id="s2"):
     """Run the backend's measure loop on fake results of an 'eopf' sensor's two bands,
     with ``writer`` as the 'eopf' product writer."""
     from types import SimpleNamespace
 
     from s2gos_simulator.backends.eradiate import backend as backend_module
+    from s2gos_simulator.backends.eradiate.geometry_utils import sanitize_sensor_id
     from s2gos_simulator.config import SimulationConfig
 
     sensor = SatelliteSensor(
-        id="s2",
+        id=sensor_id,
         instrument="sentinel_2a-msi",
         bands=["2", "3"],
         viewing=AngularViewing(zenith=3.0, azimuth=0.0),
@@ -296,7 +299,9 @@ def _route_bands(tmp_path, monkeypatch, writer):
     results = {}
     for band in sensor.bands:
         result = _band_result(sensor, band)
-        results[sensor.band_measure_id(band)] = result.assign(radiance=result.brf_srf)
+        results[sanitize_sensor_id(sensor.band_measure_id(band))] = result.assign(
+            radiance=result.brf_srf
+        )
     experiment = SimpleNamespace(
         measures=[SimpleNamespace(id=measure_id) for measure_id in results],
         results=results,
@@ -328,6 +333,19 @@ def test_backend_hands_every_band_to_the_product_writer(tmp_path, monkeypatch):
     assert sorted(received) == ["2", "3"]
     assert saved == {"s2": "product"}
     assert not list(UPath(tmp_path).glob("sim_s2_[23].zarr"))
+
+
+def test_backend_finds_the_writer_for_a_sensor_id_with_a_dot(tmp_path, monkeypatch):
+    received = {}
+
+    def writer(sensor, band_results, *args):
+        received.update(band_results)
+        return "product"
+
+    saved = _route_bands(tmp_path, monkeypatch, writer, sensor_id="s2.a")
+
+    assert sorted(received) == ["2", "3"]
+    assert saved == {"s2.a": "product"}
 
 
 def test_backend_saves_the_bands_separately_when_the_writer_fails(

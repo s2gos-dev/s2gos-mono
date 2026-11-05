@@ -5,9 +5,12 @@ import numpy as np
 import pytest
 import xarray as xr
 
+from s2gos_simulator.acquisitions import sentinel3
+from s2gos_simulator.acquisitions._fetch import FootprintOutsideProduct
 from s2gos_simulator.acquisitions.sentinel3 import (
     create_acquisition,
     fetch_product_geometry,
+    read_product_footprint,
     read_product_geometry,
 )
 
@@ -30,9 +33,13 @@ def _latlon_at(row: float, col: float) -> tuple[float, float]:
 _MANIFEST = "".join(
     f'<slstr:{view}ImageSize grid="{grid}"><sentinel3:startOffset>{start}'
     f"</sentinel3:startOffset><sentinel3:trackOffset>{track}"
-    "</sentinel3:trackOffset></slstr:{view}ImageSize>"
+    f"</sentinel3:trackOffset><sentinel3:rows>{rows}</sentinel3:rows>"
+    f"<sentinel3:columns>{columns}</sentinel3:columns></slstr:{view}ImageSize>"
     for view in ("nadir", "oblique")
-    for grid, start, track in (("Tie Points", 100, 64), ("0.5 km stripe A", 199, 2100))
+    for grid, start, track, rows, columns in (
+        ("Tie Points", 100, 64, _ROWS, _COLS),
+        ("0.5 km stripe A", 199, 2100, 8, 200),
+    )
 )
 
 
@@ -124,6 +131,38 @@ class TestReadProductGeometry:
         with pytest.raises(ValueError, match="outside the oblique swath"):
             read_product_geometry(product_dir, *_latlon_at(1.0, 2.5), view="oblique")
 
+    def test_target_at_the_antimeridian_raises(self, tmp_path):
+        product_dir = _olci(tmp_path)
+        lat, _ = _latlon_at(1.0, 1.0)
+        lon = np.where(np.arange(_COLS) < 2, 179.9, -179.9)
+        rows, _ = np.mgrid[0:_ROWS, 0:_COLS]
+        _write(
+            product_dir,
+            "tie_geo_coordinates",
+            latitude=_grid(_latlon_at(rows, 0.0)[0]),
+            longitude=_grid(lon),
+        )
+
+        with pytest.raises(ValueError, match="antimeridian"):
+            read_product_geometry(product_dir, lat, 179.95)
+
+
+class TestReadProductFootprint:
+    @pytest.mark.parametrize("tie_row", [0.0, 3.0])
+    def test_footprint_leaving_the_image_raises(self, tmp_path, tie_row):
+        """A 4 km footprint at the first or last row hangs over the 8-row image."""
+        with pytest.raises(FootprintOutsideProduct, match="8 x 200 nadir image"):
+            read_product_footprint(_slstr(tmp_path), *_latlon_at(tie_row, 1.0), 4.0)
+
+    def test_olci_image_size_comes_from_the_tie_grid(self, tmp_path):
+        """OLCI has one image row per tie row, so 5 km of 1 km rows cannot fit in 4."""
+        product_dir = _olci(tmp_path)
+        target = _latlon_at(1.5, 1.5)
+
+        assert read_product_footprint(product_dir, *target, 1.0).first_row >= 0
+        with pytest.raises(FootprintOutsideProduct, match="4 x 193 nadir image"):
+            read_product_footprint(product_dir, *target, 5.0)
+
 
 class TestCreateAcquisition:
     def test_sun_and_view_come_from_the_product(self, tmp_path, caplog):
@@ -148,6 +187,7 @@ class TestCreateAcquisition:
         ]
         assert sensor.film_resolution == (2, 2)
         assert sensor.orthorectified
+        assert sensor.id == "sentinel_3b_slstr_oblique"
         assert sensor.grid_rotation == pytest.approx(0.0, abs=0.1)
         assert "product rows 3:5 and columns 69:71" in caplog.text
         assert sensor.viewing.zenith == pytest.approx(55.0)
@@ -161,8 +201,40 @@ class TestFetchProductGeometry:
 
         with caplog.at_level("WARNING"):
             path = fetch_product_geometry(
-                "olci", "2024-06-13", lat, lon, tmp_path, "site"
+                "olci", "2024-06-13", lat, lon, 1.0, tmp_path, "site"
             )
 
         assert path == cached
         assert "using the 2024-06-11 pass" in caplog.text
+
+    def test_cached_product_of_another_satellite_is_not_reused(
+        self, tmp_path, monkeypatch
+    ):
+        lat, lon = _latlon_at(1.0, 1.0)
+        folder = tmp_path / f"S3_olci_site_S3A_{lat:.4f}_{lon:.4f}_20240611"
+        cached = _olci(folder).rename(folder / _OLCI.replace("S3B", "S3A"))
+        downloaded = _olci(tmp_path / "downloaded")
+        monkeypatch.setattr(
+            sentinel3, "_search_products", lambda *args: {_OLCI: lambda: downloaded}
+        )
+
+        def fetch(satellite):
+            return fetch_product_geometry(
+                "olci",
+                "2024-06-11",
+                lat,
+                lon,
+                1.0,
+                tmp_path,
+                "site",
+                satellite=satellite,
+            )
+
+        assert fetch("s3a") == cached
+        assert fetch("S3B") == downloaded
+
+    def test_unknown_view_stops_before_searching(self, tmp_path):
+        with pytest.raises(ValueError, match="no 'oblique' view"):
+            fetch_product_geometry(
+                "olci", "2024-06-11", 10.0, 20.0, 1.0, tmp_path, view="oblique"
+            )

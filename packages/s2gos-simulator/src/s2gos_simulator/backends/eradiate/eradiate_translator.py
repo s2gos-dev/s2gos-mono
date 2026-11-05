@@ -8,7 +8,6 @@ import logging
 from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 import numpy as np
-import xarray as xr
 from s2gos_utils.coordinates import CoordinateSystem
 from s2gos_utils.scene import SceneDescription
 from upath import UPath
@@ -331,12 +330,9 @@ class EradiateTranslator:
     ) -> Dict[str, Any]:
         """Translate one measure of a satellite sensor to an Eradiate mpdistant measure.
 
-        The target rectangle is the sensor's `target_rectangle`, whose up vector heads
-        toward the grid's first row, so its local x heads along the rows. For an
-        orthorectified sensor it lies at the mean terrain height beneath it, so rays
-        meet the terrain at the scene coordinates their pixels are labelled with, up to
-        the local relief. Otherwise it lies at z = 0, the scene's sea level, which
-        stands in for the ellipsoid.
+        The target is the sensor's `target_rectangle`, with its up vector toward the
+        grid's first row. It lies at the mean terrain height beneath it when
+        orthorectified, otherwise at z = 0, the scene's sea level.
 
         Args:
             sensor: Satellite sensor configuration
@@ -370,7 +366,7 @@ class EradiateTranslator:
                 *footprint.pixel_center(rows, cols, film_resolution),
             )
 
-        viewing = sensor.band_viewing_for(band)
+        viewing = sensor.viewing_for(band)
         measure_config = {
             "type": "mpdistant",
             "construct": "from_angles",
@@ -901,67 +897,21 @@ class EradiateTranslator:
             samples_per_pixel=brf_config.samples_per_pixel or 512,
         )
 
-    def get_sensor_band(self, measure_id: str) -> Optional[Tuple[Any, Optional[str]]]:
+    def get_sensor_band(self, measure_id: str) -> Tuple[Optional[Any], Optional[str]]:
         """Find the sensor, and for satellite sensors the band, behind a measure.
 
         Args:
-            measure_id: Sensor ID, or band measure ID of a satellite sensor
+            measure_id: Sanitized id of a measure (see `sanitize_sensor_id`)
 
         Returns:
             (sensor, band), with band None unless `measure_id` is a satellite band
-            measure, or None
+            measure, or (None, None) when no sensor matches
         """
         for sensor in self.simulation_config.sensors:
             if isinstance(sensor, SatelliteSensor):
                 for band in sensor.measured_bands:
-                    if sensor.band_measure_id(band) == measure_id:
+                    if sanitize_sensor_id(sensor.band_measure_id(band)) == measure_id:
                         return sensor, band
-            if sensor.id == measure_id:
+            if sanitize_sensor_id(sensor.id) == measure_id:
                 return sensor, None
-        return None
-
-    def get_sensor_by_id(self, sensor_id: str):
-        """Find sensor config by ID or by band measure ID.
-
-        Args:
-            sensor_id: Sensor ID to find
-
-        Returns:
-            Sensor configuration or None
-        """
-        match = self.get_sensor_band(sensor_id)
-        return match[0] if match else None
-
-    def apply_post_processing_to_sensors(
-        self, sensor_results: Dict[str, xr.Dataset]
-    ) -> Dict[str, xr.Dataset]:
-        """Apply post-processing to sensor results.
-
-        Args:
-            sensor_results: Dictionary of sensor results
-
-        Returns:
-            Dictionary of post-processed results
-        """
-        from ...processors.sensor_processor import SensorProcessor
-
-        sensor_processor = SensorProcessor(self.simulation_config)
-        processed_results = {}
-
-        for sensor_id, dataset in sensor_results.items():
-            logger.debug(f"Processing sensor: {sensor_id}")
-            sensor = self.get_sensor_by_id(sensor_id)
-            if sensor:
-                logger.debug(f"Found sensor config: {sensor_id}")
-                post_processed_dataset = sensor_processor.process_sensor_result(
-                    dataset, sensor
-                )
-                # Only save raw version if post-processing changed the data
-                if post_processed_dataset is not dataset:
-                    logger.debug(f"Post-processing applied: {sensor_id}")
-                    processed_results[f"{sensor_id}_raw_eradiate"] = dataset
-                processed_results[sensor_id] = post_processed_dataset
-            else:
-                logger.debug(f"No sensor config found: {sensor_id}, passing through")
-                processed_results[sensor_id] = dataset
-        return processed_results
+        return None, None

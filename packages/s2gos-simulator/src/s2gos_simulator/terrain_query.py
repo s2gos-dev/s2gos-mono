@@ -142,7 +142,7 @@ class TerrainQuery:
                 return 0.0
 
     def mean_elevation_at_scene_coords(self, x, y) -> float:
-        """Mean terrain elevation in metres over scene points, ignoring points off the DEM.
+        """Mean terrain elevation in meters over scene points, ignoring points off the DEM.
 
         Raises:
             FileNotFoundError: If DEM file not found

@@ -30,7 +30,6 @@ from .measurements import (
     PixelHDRFConfig,
 )
 from .sensors import GroundSensor, SatelliteSensor
-from .spectral import SpectralResponse
 from .._version import get_version
 
 
@@ -294,6 +293,15 @@ class SimulationConfig(BaseModel):
                             f"(type: {type(sensor).__name__})"
                         )
 
+            radiance_id = getattr(measurement, "radiance_sensor_id", None)
+            sensor = self.get_sensor(radiance_id) if radiance_id else None
+            if isinstance(sensor, SatelliteSensor) and not sensor.is_hyperspectral:
+                errors.append(
+                    f"'{measurement.id}' references multispectral satellite sensor "
+                    f"'{radiance_id}', whose results are per band. Use a pixel "
+                    "measurement instead"
+                )
+
             if isinstance(measurement, BasePixelMeasurementConfig):
                 sensor = self.get_sensor(measurement.satellite_sensor_id)
                 if isinstance(sensor, SatelliteSensor):
@@ -395,27 +403,6 @@ class SimulationConfig(BaseModel):
                 # Default to radiance for all sensors
                 quantities.append("radiance")
         return list(set(quantities))
-
-    @property
-    def wavelength_range(self) -> tuple:
-        """Get wavelength range based on sensors."""
-        min_wl, max_wl = float("inf"), 0.0
-
-        for sensor in self.sensors:
-            if isinstance(sensor.srf, SpectralResponse):
-                if sensor.srf.type == "delta" and sensor.srf.wavelengths:
-                    min_wl = min(min_wl, min(sensor.srf.wavelengths))
-                    max_wl = max(max_wl, max(sensor.srf.wavelengths))
-                elif (
-                    sensor.srf.type == "uniform" and sensor.srf.wmin and sensor.srf.wmax
-                ):
-                    min_wl = min(min_wl, sensor.srf.wmin)
-                    max_wl = max(max_wl, sensor.srf.wmax)
-
-        if min_wl == float("inf"):
-            return (400.0, 2500.0)
-
-        return (min_wl, max_wl)
 
     def validate_configuration(self) -> List[str]:
         """Validate the complete configuration and return any errors."""

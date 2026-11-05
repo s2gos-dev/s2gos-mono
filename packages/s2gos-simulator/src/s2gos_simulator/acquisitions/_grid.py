@@ -16,7 +16,7 @@ class Grid(NamedTuple):
     center_lon: float
 
     rotation: float
-    """Clockwise rotation from north-up in degrees within [-180, 180), as
+    """Counter-clockwise rotation from north-up in degrees within [-180, 180), as
     `SatelliteSensor.grid_rotation`."""
 
     pixel_size_m: tuple[float, float]
@@ -33,8 +33,8 @@ class Grid(NamedTuple):
     """Product column of the footprint's first column."""
 
 
-def _heading(vector: np.ndarray) -> float:
-    return float(np.degrees(np.arctan2(vector[0], vector[1])) % 360.0)
+def _azimuth(vector: np.ndarray) -> float:
+    return float(np.degrees(np.arctan2(vector[1], vector[0])))
 
 
 def fit_grid(
@@ -46,7 +46,7 @@ def fit_grid(
     lon: float,
     size_m: tuple[float, float],
 ) -> Grid:
-    """Snaps a footprint centered on (lat, lon) onto a product's pixel grid.
+    """Snap a footprint centered on (lat, lon) onto a product's pixel grid.
 
     The grid is the affine map from pixel index to local ground meters, fitted on
     pixel centers near the target. The footprint holds the whole number of pixels
@@ -73,11 +73,11 @@ def fit_grid(
     affine = np.linalg.lstsq(design, np.c_[np.ravel(x), np.ravel(y)], rcond=None)[0]
     column, row, origin = affine
 
-    rotation = (_heading(column) + 90.0) % 360.0 - 180.0
-    if abs((_heading(row) - _heading(column)) % 360.0 - 90.0) > 1.0:
+    rotation = (_azimuth(column) + 180.0) % 360.0 - 180.0
+    if abs((_azimuth(column) - _azimuth(row)) % 360.0 - 90.0) > 1.0:
         raise ValueError(
-            f"Product grid with columns heading {_heading(column):.1f} deg and rows "
-            f"{_heading(row):.1f} deg is not a rotated north-up grid"
+            f"Product grid with columns at azimuth {_azimuth(column):.1f} deg and rows "
+            f"at {_azimuth(row):.1f} deg is not a rotated north-up grid"
         )
 
     spacing = (float(np.hypot(*column)), float(np.hypot(*row)))

@@ -129,15 +129,15 @@ class TestSatelliteSensorTranslation:
     def test_rotated_orthorectified_footprint(
         self, translator, minimal_scene, dem_scene_dir
     ):
-        """A swath grid turned 30 deg clockwise has columns heading 120 deg and lies on
-        the terrain."""
+        """A swath grid rotated -30 deg (clockwise) has columns heading 120 deg and lies
+        on the terrain."""
         import mitsuba as mi
         from eradiate.scenes.measure import Target
 
         sensor = _make_sentinel_sensor(
             target_size_km=(2.0, 1.0),
             film_resolution=(20, 10),
-            grid_rotation=30.0,
+            grid_rotation=-30.0,
             orthorectified=True,
         )
 
@@ -179,10 +179,10 @@ class TestSatelliteSensorTranslation:
     def test_satellite_footprint_at_mean_terrain_height(
         self, translator, minimal_scene, scene_dir
     ):
-        """A 1 km footprint over a valley 600 m deep at its centre averages 450 m.
+        """A 1 km footprint over a valley 600 m deep at its center averages 450 m.
 
         The footprint is turned 1° to UTM north and snapped to the 100 m pixels, which
-        moves the mean by a few metres.
+        moves the mean by a few meters.
         """
         valley = np.full((5, 5), 600.0)
         valley[2, 2] = 0.0

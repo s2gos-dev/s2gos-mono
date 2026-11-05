@@ -180,7 +180,7 @@ class TestExpandPixelMeasurementConfigs:
         )
 
     def test_pixels_placed_in_scene_coordinates(self):
-        """The scene is centred 0.01° north of the sensor target."""
+        """The scene is centered 0.01° north of the sensor target."""
         scene = MagicMock()
         scene.location = {"center_lat": -41.99, "center_lon": -64.5}
         backend = _make_backend(
@@ -204,14 +204,14 @@ class TestExpandPixelMeasurementConfigs:
         assert (target.ymin + target.ymax) / 2 == pytest.approx(-1110.0, abs=10.0)
 
     def test_pixels_follow_a_rotated_grid(self):
-        """Turned 90 deg clockwise, the first pixel lies in the north-east corner."""
+        """Rotated -90 deg (clockwise), the first pixel lies in the north-east corner."""
         backend = _make_backend(
             [
                 PixelBRFConfig(
                     id="pbrf", satellite_sensor_id="sat1", pixel_indices=[(0, 0)]
                 )
             ],
-            grid_rotation=90.0,
+            grid_rotation=-90.0,
         )
 
         backend._expand_pixel_measurement_configs(

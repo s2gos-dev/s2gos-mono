@@ -4,9 +4,13 @@ An instrument is data: its platform, its name, and either its bands (multispectr
 its spectral response (hyperspectral). Built-in instruments live in `INSTRUMENTS` and are
 referenced by key. A custom instrument is passed inline, or added to `INSTRUMENTS` to
 make it available by key.
+
+A satellite is spelled `sentinel-3b` as a `platform`, `sentinel_3b-olci` as an
+`INSTRUMENTS` key (like Eradiate's SRF ids), `sentinel_3b_olci_nadir` in a sensor id, and
+`S3B` in the acquisition readers (like its product names).
 """
 
-from typing import Annotated, Dict, Literal, Optional, Union
+from typing import Annotated, Dict, Literal, NamedTuple, Optional, Union
 
 from pydantic import BaseModel, Field, PositiveFloat
 
@@ -76,22 +80,41 @@ CHIME_SRF = SpectralResponse(
     output_grid=WavelengthGrid(mode="regular", wmin_nm=400, wmax_nm=2500, step_nm=8.4),
 )
 
-MSI_GSD_M = {
-    "1": 60,
-    "2": 10,
-    "3": 10,
-    "4": 10,
-    "5": 20,
-    "6": 20,
-    "7": 20,
-    "8": 10,
-    "8a": 20,
-    "9": 60,
-    "10": 60,
-    "11": 20,
-    "12": 20,
+
+class MsiBand(NamedTuple):
+    """Facts about one Sentinel-2 MSI band."""
+
+    band_id: int
+    """Index of the band in the bandId attributes of MTD_TL.xml."""
+
+    gsd_m: int
+    """Native ground sampling distance (m)."""
+
+    common_name: str
+    """Common name, as in the EOPF L1C STAC ``bands``."""
+
+    fwhm_um: float
+    """Nominal FWHM (µm), as in the EOPF L1C STAC ``bands``."""
+
+
+MSI_BANDS = {
+    "1": MsiBand(0, 60, "coastal", 0.020),
+    "2": MsiBand(1, 10, "blue", 0.065),
+    "3": MsiBand(2, 10, "green", 0.035),
+    "4": MsiBand(3, 10, "red", 0.030),
+    "5": MsiBand(4, 20, "rededge", 0.015),
+    "6": MsiBand(5, 20, "rededge", 0.015),
+    "7": MsiBand(6, 20, "rededge", 0.020),
+    "8": MsiBand(7, 10, "nir", 0.105),
+    "8a": MsiBand(8, 20, "nir08", 0.020),
+    "9": MsiBand(9, 60, "nir09", 0.020),
+    "10": MsiBand(10, 60, "cirrus", 0.030),
+    "11": MsiBand(11, 20, "swir16", 0.090),
+    "12": MsiBand(12, 20, "swir22", 0.180),
 }
-"""Sentinel-2 MSI native ground sampling distance (m) per band."""
+"""Sentinel-2 MSI bands by identifier."""
+
+_MSI_GSD_M = {band: spec.gsd_m for band, spec in MSI_BANDS.items()}
 
 OLCI_GSD_M = {str(band): 300 for band in range(1, 22)}
 """Sentinel-3 OLCI full-resolution ground sampling distance (m) per band."""
@@ -113,8 +136,8 @@ def _eradiate_instrument(
 
 
 INSTRUMENTS: Dict[str, Instrument] = {
-    "sentinel_2a-msi": _eradiate_instrument("sentinel-2a", "msi", MSI_GSD_M),
-    "sentinel_2b-msi": _eradiate_instrument("sentinel-2b", "msi", MSI_GSD_M),
+    "sentinel_2a-msi": _eradiate_instrument("sentinel-2a", "msi", _MSI_GSD_M),
+    "sentinel_2b-msi": _eradiate_instrument("sentinel-2b", "msi", _MSI_GSD_M),
     "sentinel_3a-olci": _eradiate_instrument("sentinel-3a", "olci", OLCI_GSD_M),
     "sentinel_3b-olci": _eradiate_instrument("sentinel-3b", "olci", OLCI_GSD_M),
     "sentinel_3a-slstr": _eradiate_instrument("sentinel-3a", "slstr", SLSTR_GSD_M),

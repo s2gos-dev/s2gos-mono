@@ -167,7 +167,11 @@ class BRFConfig(BaseModel):
 
     # Mode 1: Reference existing sensor
     radiance_sensor_id: Optional[str] = Field(
-        None, description="ID of sensor providing radiance measurement"
+        None,
+        description=(
+            "ID of sensor providing radiance measurement. Not a multispectral "
+            "satellite sensor, use a pixel measurement for those"
+        ),
     )
 
     # Mode 2: Auto-generation mode
@@ -220,7 +224,11 @@ class HDRFConfig(BaseModel):
 
     # Mode 1: Reference existing sensor + measurement
     radiance_sensor_id: Optional[str] = Field(
-        None, description="ID of sensor providing radiance measurement"
+        None,
+        description=(
+            "ID of sensor providing radiance measurement. Not a multispectral "
+            "satellite sensor, use a pixel measurement for those"
+        ),
     )
     irradiance_measurement_id: Optional[str] = Field(
         None, description="ID of IrradianceConfig providing BOA irradiance"

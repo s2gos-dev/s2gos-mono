@@ -15,16 +15,12 @@ The store is an ``xr.DataTree`` laid out like ESA's EOPF Sentinel-2 L1C product:
     quality/l1c_quicklook/r10m             tci (band, y, x) uint8, only when B02/B03/B04
                                            are all simulated
 
-Each band stays on the grid it was rendered at, so nothing is resampled. All bands share
-the footprint's upper-left corner, so coarse pixels nest exactly inside the fine ones as in
-a real tile. The store is in the CRS of the sensor's `projected_grid` (the tile's UTM
-zone), with the pixels, the 60 m classification mask and the 5 km angle grids on that
-grid's lattices. Reflectance is stored as L1C digital counts (see
-`REFLECTANCE_ENCODING`) and decodes to float on open. The angle grids hold the geometry
-that was simulated, one sun and one viewing direction per band. Angles follow the
-Sentinel-2 convention (azimuth from north, clockwise). The masks describe a simulated
-scene: one detector (`DETECTOR`), no clouds or snow, no defective pixels; only pixels
-clipped to the largest storable count are flagged ``saturated_pixel``.
+Each band stays on the grid it was rendered at, with no resampling, and all bands share
+the footprint's upper-left corner. The store is in the CRS of the sensor's
+`projected_grid`. Reflectance is stored as L1C digital counts (see `REFLECTANCE_ENCODING`)
+and decodes to float on open. Angles follow the Sentinel-2 convention (azimuth from north,
+clockwise). The masks describe a simulated scene: one detector, no clouds or snow, and only
+pixels clipped to the largest storable count flagged ``saturated_pixel``.
 Open with ``xr.open_datatree(path, engine="zarr")``.
 """
 
@@ -45,28 +41,12 @@ from ..config.illumination import (
     Illumination,
     solar_position,
 )
+from ..config.instruments import MSI_BANDS
 from ..config.sensors import SatelliteSensor
 
 logger = logging.getLogger(__name__)
 
 AU_KM = 149_597_870.7
-
-MSI_BANDS = {
-    "b01": ("coastal", 0.020),
-    "b02": ("blue", 0.065),
-    "b03": ("green", 0.035),
-    "b04": ("red", 0.030),
-    "b05": ("rededge", 0.015),
-    "b06": ("rededge", 0.015),
-    "b07": ("rededge", 0.020),
-    "b08": ("nir", 0.105),
-    "b8a": ("nir08", 0.020),
-    "b09": ("nir09", 0.020),
-    "b10": ("cirrus", 0.030),
-    "b11": ("swir16", 0.090),
-    "b12": ("swir22", 0.180),
-}
-"""Common name and nominal FWHM (µm) of each MSI band, as in the EOPF L1C STAC ``bands``."""
 
 SUN_DISTANCE_FACTOR_KEY = (
     "reflectance_correction_factor_from_the_sun_earth_distance_variation_computed_"
@@ -93,7 +73,7 @@ MAX_REFLECTANCE = (
     REFLECTANCE_ENCODING["add_offset"]
     + np.iinfo(REFLECTANCE_ENCODING["dtype"]).max * REFLECTANCE_ENCODING["scale_factor"]
 )
-"""Largest reflectance `REFLECTANCE_ENCODING` can store; larger values are clipped to it."""
+"""Largest reflectance `REFLECTANCE_ENCODING` can store. Larger values are clipped to it."""
 
 SATURATED_PIXEL = 128
 """``quality/mask`` bit of a pixel clipped to `MAX_REFLECTANCE`."""
@@ -161,8 +141,7 @@ def _resolution_group(sensor: SatelliteSensor, band: str) -> str:
 def _pixel_coords(
     bounds: Dict[str, float], nx: int, ny: int, px: float, py: float
 ) -> Dict[str, xr.DataArray]:
-    """Pixel-centre x/y of an ``nx`` × ``ny`` grid from the footprint's upper-left corner."""
-    xmin, ymax = float(bounds["xmin"]), float(bounds["ymax"])
+    """Pixel-center x/y of an ``nx`` × ``ny`` grid from the footprint's upper-left corner."""
     return {
         axis: xr.DataArray(
             values,
@@ -174,8 +153,8 @@ def _pixel_coords(
             },
         )
         for axis, values in (
-            ("x", xmin + (np.arange(nx) + 0.5) * px),
-            ("y", ymax - (np.arange(ny) + 0.5) * py),
+            ("x", bounds["xmin"] + (np.arange(nx) + 0.5) * px),
+            ("y", bounds["ymax"] - (np.arange(ny) + 0.5) * py),
         )
     }
 
@@ -200,7 +179,7 @@ def _reflectance(
     nx, ny = sensor.band_film_resolution(band)
     px, py = sensor.pixel_size_m(band)
 
-    xmin, ymax = float(bounds["xmin"]), float(bounds["ymax"])
+    xmin, ymax = bounds["xmin"], bounds["ymax"]
     wavelength = f" {float(result['w_srf']):.1f} nm" if "w_srf" in result else ""
 
     # Eradiate film rows start at the south edge, L1C rows at the north edge.
@@ -264,7 +243,7 @@ def _geometry(
     viewing = np.array(
         [
             [v.zenith, s2_azimuth(v.azimuth)]
-            for v in map(sensor.band_viewing_for, sensor.bands)
+            for v in map(sensor.viewing_for, sensor.bands)
         ]
     )
     nodes = _angle_grid_nodes(bounds, origin)
@@ -384,7 +363,7 @@ def _masks(
 
 
 def _quicklook(groups: Dict[str, xr.Dataset]) -> Optional[Tuple[str, xr.Dataset]]:
-    """TCI true-colour quicklook of the group holding B04/B03/B02, if any."""
+    """TCI true-color quicklook of the group holding B04/B03/B02, if any."""
     rgb = ["b04", "b03", "b02"]
     for name, group in groups.items():
         if all(band in group for band in rgb):
@@ -399,11 +378,15 @@ def _quicklook(groups: Dict[str, xr.Dataset]) -> Optional[Tuple[str, xr.Dataset]
     return None
 
 
+def _sensing_time(illumination: Illumination) -> Optional[datetime]:
+    return getattr(illumination, "irradiance_datetime", None)
+
+
 def _sun_distance_factor(
     illumination: Illumination, lat: float, lon: float
 ) -> Optional[float]:
     """U = (1 AU / d)², the factor the irradiance was scaled by, or None if it was not."""
-    time = getattr(illumination, "irradiance_datetime", None)
+    time = _sensing_time(illumination)
     if time is None:
         return None
     return (AU_KM / solar_position(time, lat, lon).distance_km) ** 2
@@ -416,23 +399,21 @@ def _band_entry(
     illumination: Illumination,
     sun_distance_factor: Optional[float],
 ) -> Dict[str, Any]:
-    """STAC ``bands`` entry, with the simulated SRF centre and solar illumination."""
-    name = band_name(band)
-    common_name, fwhm = MSI_BANDS[name]
+    """STAC ``bands`` entry, named like EOPF L1C: center wavelength in nm, FWHM in µm."""
     entry = {
-        "name": name,
-        "eo:common_name": common_name,
-        "eo:full_width_half_max": fwhm,
+        "name": band_name(band),
+        "common_name": MSI_BANDS[band].common_name,
+        "full_width_half_max": MSI_BANDS[band].fwhm_um,
         "raster:spatial_resolution": f"{min(sensor.pixel_size_m(band)):g}",
     }
     if "w_srf" in result:
-        entry["eo:center_wavelength"] = float(result["w_srf"]) / 1000.0
+        entry["center_wavelength"] = float(result["w_srf"])
     if "irradiance_srf" in result and isinstance(
         illumination, AbstractDirectionalIllumination
     ):
         # Eradiate's irradiance is E(d)·cos(SZA) in W m⁻² nm⁻¹, ESUN is E(1 AU) per µm.
         irradiance = float(result["irradiance_srf"].squeeze())
-        entry["eo:solar_illumination"] = (
+        entry["solar_illumination"] = (
             irradiance
             / math.cos(math.radians(illumination.zenith))
             / (sun_distance_factor or 1.0)
@@ -448,7 +429,7 @@ def _band_description(
     description = {}
     for band in sensor.bands:
         entry = {
-            "bandwidth": f"{MSI_BANDS[band_name(band)][1] * 1000:.1f}",
+            "bandwidth": f"{MSI_BANDS[band].fwhm_um * 1000:.1f}",
             "units": "nm",
         }
         if "w_srf" in band_results[band]:
@@ -466,13 +447,13 @@ def _stac_discovery(
     sun_distance_factor: Optional[float],
     product_id: str,
 ) -> Dict[str, Any]:
-    xmin, ymin = float(bounds["xmin"]), float(bounds["ymin"])
-    xmax, ymax = float(bounds["xmax"]), float(bounds["ymax"])
+    xmin, ymin = bounds["xmin"], bounds["ymin"]
+    xmax, ymax = bounds["xmax"], bounds["ymax"]
     lon, lat = Transformer.from_crs(crs, "EPSG:4326", always_xy=True).transform(
         [xmin, xmax, xmax, xmin], [ymin, ymin, ymax, ymax]
     )
     ring = [[float(x), float(y)] for x, y in zip(lon, lat)]
-    time = getattr(illumination, "irradiance_datetime", None)
+    time = _sensing_time(illumination)
     time = time.isoformat() if time else None
     epsg = crs.to_epsg()
     pixel = max(max(sensor.pixel_size_m(band)) for band in sensor.bands)
@@ -527,11 +508,11 @@ def product_name(
     """Store name, e.g. ``S2A_MSIL1C_20240622T091715_gobabeb_s2.zarr``.
 
     It starts like an ESA L1C product name, which EOPF readers such as xarray-eopf
-    use to recognise the product type. The sensing time is left out when the
+    use to recognize the product type. The sensing time is left out when the
     illumination has none, and taken as UTC when naive.
     """
     parts = [f"S2{sensor.spec.platform[-1].upper()}", "MSIL1C"]
-    time = getattr(illumination, "irradiance_datetime", None)
+    time = _sensing_time(illumination)
     if time is not None:
         if time.tzinfo is not None:
             time = time.astimezone(timezone.utc)
@@ -558,7 +539,7 @@ def write_msi_l1c(
         simulation_name: Name of the simulation, part of the store name
 
     Returns:
-        The stored tree, opened lazily (see module docstring). x/y are pixel centres
+        The stored tree, opened lazily (see module docstring). x/y are pixel centers
         in the CRS of ``sensor.projected_grid``, which each band's ``proj:wkt2`` holds
     """
     path = output_dir / product_name(sensor, illumination, simulation_name)
@@ -591,7 +572,6 @@ def write_msi_l1c(
         "target_center_lat": sensor.target_center_lat,
         "target_center_lon": sensor.target_center_lon,
         "target_size_km": sensor.target_size_km,
-        "horizontal_crs_code": f"EPSG:{crs.to_epsg()}",
         "horizontal_crs_name": crs.name,
         "band_description": _band_description(sensor, band_results),
     }
@@ -606,6 +586,8 @@ def write_msi_l1c(
                 ),
             }
         )
+    if crs.to_epsg() is not None:
+        other_metadata["horizontal_crs_code"] = f"EPSG:{crs.to_epsg()}"
     if sun_distance_factor is not None:
         other_metadata[SUN_DISTANCE_FACTOR_KEY] = sun_distance_factor
     tree.attrs = {
