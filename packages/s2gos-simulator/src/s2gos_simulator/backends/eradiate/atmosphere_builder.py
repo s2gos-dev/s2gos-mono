@@ -21,7 +21,7 @@ try:
         HeterogeneousAtmosphere,
         HomogeneousAtmosphere,
         MolecularAtmosphere,
-        ParticleLayer,
+        ParticleOTComponent,
         UniformParticleDistribution,
     )
     from eradiate.units import unit_context_config as ucc
@@ -36,7 +36,7 @@ except ImportError:
 if ERADIATE_AVAILABLE:
 
     @define(eq=False, slots=False, init=False)
-    class _ParticleLayer(ParticleLayer):
+    class _ParticleLayer(ParticleOTComponent):
         """Particle layer whose bottom may lie below sea level."""
 
         bottom: pint.Quantity = pinttrs.field(
@@ -183,7 +183,7 @@ class AtmosphereBuilder:
             layer_dict: Dictionary with particle layer configuration
 
         Returns:
-            ParticleLayer object
+            ParticleOTComponent object
         """
         bottom = layer_dict["altitude_bottom"]
         top = layer_dict["altitude_top"]
@@ -210,7 +210,7 @@ class AtmosphereBuilder:
             distribution = UniformParticleDistribution()
 
         return _ParticleLayer(
-            dataset=layer_dict["aerosol_dataset"],
+            particle_properties=layer_dict["aerosol_dataset"],
             tau_ref=layer_dict["optical_thickness"],
             w_ref=layer_dict["reference_wavelength"],
             bottom=bottom,
@@ -277,7 +277,8 @@ class AtmosphereBuilder:
         ]
 
         atmosphere = HeterogeneousAtmosphere(
-            molecular_atmosphere=molecular_atmosphere, particle_layers=particle_layers
+            molecular_atmosphere=molecular_atmosphere,
+            particle_components=particle_layers,
         )
 
         return atmosphere
