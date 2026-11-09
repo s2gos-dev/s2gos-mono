@@ -262,12 +262,39 @@ class ParticleLayerConfig(BaseModel):
         return self
 
 
+class CloudFieldConfig(BaseModel):
+    """Configuration for a 3D liquid cloud field, repeated periodically over the scene.
+
+    Experimental, validated in mono mode only.
+
+    Attributes:
+        field_file: Cloud field NetCDF in the Eradiate Ppr-MS v1 format, with
+            ``mass_concentration``, ``reff`` and ``veff`` on ``(z, y, x)`` and
+            regularly spaced ``z_edges`` in metres relative to ``base_altitude_m``.
+        properties_file: Droplet optical properties in the Eradiate Prt-MS v1 format.
+        base_altitude_m: Altitude of the height origin of the cloud field, normally
+            the mean ground elevation of the scene.
+    """
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    field_file: PathRef
+    properties_file: PathRef
+    base_altitude_m: float = 0.0
+
+    @field_validator("field_file", "properties_file", mode="before")
+    @classmethod
+    def resolve_paths(cls, v):
+        """Resolve file paths using configured search paths."""
+        return resolve_asset_path(v, asset_type="NetCDF")
+
+
 class HeterogeneousAtmosphereConfig(BaseModel):
-    """Configuration for a vertically-resolved heterogeneous atmosphere.
+    """Configuration for a heterogeneous atmosphere.
 
     Combines an optional molecular background (Rayleigh scattering and gas
-    absorption) with one or more discrete particle layers.
-    At least one of ``molecular`` or ``particle_layers`` must be specified.
+    absorption) with discrete particle layers and an optional 3D cloud field.
+    At least one of ``molecular``, ``particle_layers`` or ``clouds`` must be specified.
 
     Attributes:
         type: Discriminator literal fixed to ``"heterogeneous"``.
@@ -275,6 +302,7 @@ class HeterogeneousAtmosphereConfig(BaseModel):
             background. ``None`` omits the molecular component.
         particle_layers: Ordered list of aerosol or particle layers stacked
             within the atmosphere column.
+        clouds: 3D cloud field. ``None`` keeps the atmosphere vertically resolved.
     """
 
     type: Literal["heterogeneous"] = "heterogeneous"
@@ -284,13 +312,15 @@ class HeterogeneousAtmosphereConfig(BaseModel):
     particle_layers: list[ParticleLayerConfig] = Field(
         default_factory=list, description="Particle layer configurations"
     )
+    clouds: Optional[CloudFieldConfig] = Field(None, description="3D cloud field")
 
     @model_validator(mode="after")
     def validate_heterogeneous_config(self):
         """Validate that at least one component is configured."""
-        if not self.molecular and not self.particle_layers:
+        if not self.molecular and not self.particle_layers and not self.clouds:
             raise ValueError(
-                "Heterogeneous atmosphere requires at least molecular atmosphere or particle layers"
+                "Heterogeneous atmosphere requires at least molecular atmosphere, "
+                "particle layers or clouds"
             )
         return self
 

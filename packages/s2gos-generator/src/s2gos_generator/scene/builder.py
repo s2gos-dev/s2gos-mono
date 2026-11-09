@@ -82,6 +82,14 @@ def _convert_atmosphere_config_to_dict(
                 heterogeneous_config.molecular
             )
 
+        if heterogeneous_config.clouds:
+            clouds = heterogeneous_config.clouds
+            base_dict["clouds"] = {
+                "field_file": str(clouds.field_file),
+                "properties_file": str(clouds.properties_file),
+                "base_altitude_m": clouds.base_altitude_m,
+            }
+
         if heterogeneous_config.particle_layers:
             base_dict["particle_layers"] = []
             for layer in heterogeneous_config.particle_layers:

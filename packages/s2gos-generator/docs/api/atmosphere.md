@@ -6,6 +6,7 @@ Configuration classes for atmosphere.
 ::: s2gos_generator.core.config.atmosphere.MolecularAtmosphereConfig
 ::: s2gos_generator.core.config.atmosphere.HomogeneousAtmosphereConfig
 ::: s2gos_generator.core.config.atmosphere.HeterogeneousAtmosphereConfig
+::: s2gos_generator.core.config.atmosphere.CloudFieldConfig
 ::: s2gos_generator.core.config.atmosphere.ThermophysicalConfig
 ::: s2gos_generator.core.config.atmosphere.ParticleLayerConfig
 ::: s2gos_generator.core.config.atmosphere.ExponentialDistribution
