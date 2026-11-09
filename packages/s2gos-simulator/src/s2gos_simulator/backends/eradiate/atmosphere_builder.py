@@ -9,11 +9,16 @@ from s2gos_utils.scene import SceneDescription
 
 logger = logging.getLogger(__name__)
 
+# Timed with Eradiate 1.3 eovolpath, scalar_mono_double, Pisa LES clouds
+NULL_COLLISION_COST = 16.0
+
 try:
+    import attrs
     import joseki
     import pint
     import pinttrs
     from eradiate.attrs import define
+    from eradiate.grid import CartesianGrid
     from eradiate.radprops import get_default_absdb
     from eradiate.scenes.atmosphere import (
         ExponentialParticleDistribution,
@@ -21,9 +26,11 @@ try:
         HeterogeneousAtmosphere,
         HomogeneousAtmosphere,
         MolecularAtmosphere,
+        ParticleMSComponent,
         ParticleOTComponent,
         UniformParticleDistribution,
     )
+    from eradiate.spectral.index import SpectralIndex
     from eradiate.units import unit_context_config as ucc
     from eradiate.units import unit_registry as ureg
     from joseki.profiles.core import extrapolate
@@ -62,6 +69,54 @@ def _extend_below(thermoprops, altitude):
     return extrapolate(thermoprops, z_extra=z_extra * jureg.m, direction="down")
 
 
+def estimate_extremum_resolution(
+    atmosphere, w=None, null_cost=NULL_COLLISION_COST, n_candidates=16
+):
+    """Uniform extremum grid resolution that minimises the expected tracking cost.
+
+    The cost per unit track length is ``null_cost * mean(majorant) + 0.5 *
+    sum(n_i / L_i)``, null collisions plus cell crossings (Yue et al. 2010, ACM TOG
+    29(6)). The extinction is evaluated at a single wavelength.
+
+    Args:
+        atmosphere: Eradiate atmosphere with its geometry and 3D grid set.
+        w: Wavelength to evaluate the extinction at, 550 nm by default.
+        null_cost: Cost of one null collision relative to one cell crossing.
+        n_candidates: Number of cell counts tried per axis.
+
+    Returns:
+        Resolution ``(nx, ny, nz)``.
+    """
+    w = 550.0 * ureg.nm if w is None else w
+    grid = atmosphere.geometry.grid
+    sigma = atmosphere.eval_sigma_t(SpectralIndex.new(w=w)).m_as("1/m")
+    for axis in range(3):
+        starts = np.arange(0, sigma.shape[axis], 2)
+        sigma = np.maximum.reduceat(sigma, starts, axis=axis)
+    extent = np.array(
+        [grid.x_extent.m_as("m"), grid.y_extent.m_as("m"), grid.z_extent.m_as("m")]
+    )
+
+    def pool(a, n, axis):
+        return np.maximum.reduceat(a, np.arange(n) * a.shape[axis] // n, axis=axis)
+
+    nx_, ny_, nz_ = (
+        np.unique(np.geomspace(1, size, n_candidates).astype(int))
+        for size in sigma.shape
+    )
+    best_cost, best = np.inf, (1, 1, 1)
+    for nz in nz_:
+        by_z = pool(sigma, nz, 2)
+        for ny in ny_:
+            by_yz = pool(by_z, ny, 1)
+            for nx in nx_:
+                majorant = pool(by_yz, nx, 0).mean()
+                cost = null_cost * majorant + 0.5 * np.sum([nx, ny, nz] / extent)
+                if cost < best_cost:
+                    best_cost, best = cost, (int(nx), int(ny), int(nz))
+    return best
+
+
 class AtmosphereBuilder:
     """Builder for creating Eradiate atmosphere configurations from scene descriptions."""
 
@@ -85,18 +140,57 @@ class AtmosphereBuilder:
         atmosphere = scene_description.atmosphere
         if not atmosphere:
             return {"type": "plane_parallel"}
+        cloud_grid = None
+        if "clouds" in atmosphere:
+            _, cloud_grid = self._load_cloud_field(atmosphere)
+        return self._geometry_from_dict(atmosphere, cloud_grid)
 
+    def _geometry_from_dict(self, atmosphere, cloud_grid=None):
+        """Plane-parallel geometry for an atmosphere dictionary, repeating
+        ``cloud_grid`` horizontally when one is given."""
         if atmosphere["boa"] <= -0.01 * atmosphere["toa"]:
             raise ValueError(
                 f"Bottom of atmosphere ({atmosphere['boa']} m) must be above -1 % "
                 f"of toa ({-0.01 * atmosphere['toa']} m); increase toa."
             )
 
-        return {
+        geometry = {
             "type": "plane_parallel",
             "toa_altitude": atmosphere["toa"],
             "ground_altitude": atmosphere["boa"],
         }
+        if cloud_grid is not None:
+            geometry["wrap_mode"] = "repeat"
+            geometry["grid"] = cloud_grid
+        return geometry
+
+    @staticmethod
+    def _load_cloud_field(atmosphere):
+        """Load the cloud field of an atmosphere dictionary and its render grid.
+
+        The render levels span the atmosphere at the field layer thickness. The field
+        is moved by less than half a layer onto them, so that each render layer takes
+        exactly one field layer.
+
+        Returns:
+            The field with altitudes as ``z_edges``, and the render grid
+        """
+        clouds = atmosphere["clouds"]
+        with open_dataset(to_upath(clouds["field_file"])) as source:
+            field = source.load()
+        heights = field["z_edges"].values
+        boa, toa = atmosphere["boa"], atmosphere["toa"]
+        thickness = heights[1] - heights[0]
+        levels = np.linspace(boa, toa, round((toa - boa) / thickness) + 1)
+        start = int(np.abs(levels - heights[0] - clouds["base_altitude_m"]).argmin())
+        altitudes = levels[start : start + heights.size]
+        field = field.assign_coords(z_edges=("z_edges", altitudes, {"units": "m"}))
+        grid = CartesianGrid(
+            x_edges=field["x_edges"].values * ureg.m,
+            y_edges=field["y_edges"].values * ureg.m,
+            levels=levels * ureg.m,
+        )
+        return field, grid
 
     def create_atmosphere_from_config(self, scene_description: SceneDescription):
         """Create atmosphere based on scene description format.
@@ -276,9 +370,21 @@ class AtmosphereBuilder:
             for layer_dict in atmosphere_dict.get("particle_layers", [])
         ]
 
+        if "clouds" not in atmosphere_dict:
+            return HeterogeneousAtmosphere(
+                molecular_atmosphere=molecular_atmosphere,
+                particle_components=particle_layers,
+            )
+
+        field, grid = self._load_cloud_field(atmosphere_dict)
+        cloud = ParticleMSComponent(
+            profile=field, properties=str(atmosphere_dict["clouds"]["properties_file"])
+        )
         atmosphere = HeterogeneousAtmosphere(
             molecular_atmosphere=molecular_atmosphere,
-            particle_components=particle_layers,
+            particle_components=[*particle_layers, cloud],
+            geometry=self._geometry_from_dict(atmosphere_dict, grid),
         )
-
-        return atmosphere
+        resolution = estimate_extremum_resolution(atmosphere)
+        logger.info(f"Extremum grid resolution {resolution}")
+        return attrs.evolve(atmosphere, extremum_resolution=resolution)

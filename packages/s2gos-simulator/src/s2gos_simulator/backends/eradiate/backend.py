@@ -669,6 +669,9 @@ class EradiateBackend(SimulationBackend):
 
         self.surface_builder.validate_material_ids(kdict, scene_description)
 
+        has_clouds = atmosphere_obj is not None and "clouds" in (
+            scene_description.atmosphere or {}
+        )
         experiment = AtmosphereExperiment(
             geometry=geometry,
             atmosphere=atmosphere_obj,
@@ -677,6 +680,12 @@ class EradiateBackend(SimulationBackend):
             measures=measures,
             kdict=kdict,
             kpmap=kpmap,
+            # The default path tracer is slow and very noisy through thick clouds
+            **(
+                {"integrator": {"type": "eovolpath", "use_vroom": False}}
+                if has_clouds
+                else {}
+            ),
         )
         experiment.integrator.moment = self._eradiate_moment
         return experiment
