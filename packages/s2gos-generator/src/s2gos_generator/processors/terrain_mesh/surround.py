@@ -1,19 +1,19 @@
 """Buffer mesh that surrounds the target without overlapping it."""
 
-from __future__ import annotations
-
 import numpy as np
 import trimesh
 import xarray as xr
 
-from .builder import _make_elevation_fn, extract_dem
+from .builder import extract_dem, grid_faces, make_elevation_fn
 
 
 def _axis(lo: float, hi: float, step: float) -> np.ndarray:
+    """Evenly spaced samples from lo to hi inclusive, at most step apart."""
     return np.linspace(lo, hi, max(int(np.ceil((hi - lo) / step)), 1) + 1)
 
 
 def _boundary(vertices: np.ndarray, axis: int, value: float, along: int):
+    """Sorted positions along one target edge and their elevations."""
     on_edge = np.isclose(vertices[:, axis], value, rtol=0.0, atol=1e-6)
     t, idx = np.unique(vertices[on_edge, along], return_index=True)
     return t, vertices[on_edge][idx, 2]
@@ -33,16 +33,6 @@ def _stitch(ia: np.ndarray, ta: np.ndarray, ib: np.ndarray, tb: np.ndarray):
     return faces
 
 
-def _grid_faces(nx: int, ny: int) -> np.ndarray:
-    q = np.arange(nx * ny).reshape(ny, nx)[:-1, :-1].ravel()
-    return np.vstack(
-        [
-            np.column_stack([q, q + 1, q + nx + 1]),
-            np.column_stack([q, q + nx + 1, q + nx]),
-        ]
-    )
-
-
 def _strip(inner_t, inner_z, regular_t, across, to_xy, elevation_fn):
     """One strip: an irregular inner row at ``across[0]`` and regular rows beyond."""
     t, s = np.meshgrid(regular_t, across[1:])
@@ -57,13 +47,12 @@ def _strip(inner_t, inner_z, regular_t, across, to_xy, elevation_fn):
     )
     k = len(inner_t)
     seam = _stitch(np.arange(k), inner_t, k + np.arange(len(regular_t)), regular_t)
-    faces = np.vstack(
-        [np.array(seam), k + _grid_faces(len(regular_t), len(across) - 1)]
-    )
+    faces = np.vstack([np.array(seam), k + grid_faces(len(regular_t), len(across) - 1)])
     return vertices, faces
 
 
 def _orient_up(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
+    """Flip faces to point up and drop those with zero area in plan view."""
     a, b, c = (vertices[faces[:, i], :2] for i in range(3))
     u, v = b - a, c - a
     cross = u[:, 0] * v[:, 1] - u[:, 1] * v[:, 0]
@@ -88,6 +77,7 @@ def _assemble(parts, bounds, handle_nans: bool) -> trimesh.Trimesh:
 
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
     mesh.remove_unreferenced_vertices()
+    mesh.merge_vertices()
 
     xmin, xmax, ymin, ymax = bounds
     uv = (mesh.vertices[:, :2] - [xmin, ymin]) / [xmax - xmin, ymax - ymin]
@@ -100,25 +90,47 @@ def build_buffer_strips_mesh(
     target_vertices: np.ndarray,
     handle_nans: bool = True,
 ) -> trimesh.Trimesh:
-    """Mesh the buffer DEM as four strips sharing the target boundary vertices."""
+    """Mesh the buffer DEM as four strips sharing the target boundary vertices.
+
+    The north and south strips span the full buffer width and cover the corners,
+    while the east and west strips span only the height of the target.
+
+    Args:
+        dem_data: Buffer DEM, covering the target and extending past it on all sides.
+        target_vertices: Vertices of the target mesh as saved. Boundary vertices are
+            copied unchanged so the two meshes share their seam.
+        handle_nans: Drop faces with a NaN elevation.
+
+    Returns:
+        Upward-facing mesh with UVs spanning the buffer DEM's pixel edges.
+
+    Raises:
+        ValueError: If the buffer DEM does not extend past the target on every side.
+    """
     x, y, elev = extract_dem(dem_data)
-    elevation_fn = _make_elevation_fn(x, y, elev)
+    elevation_fn = make_elevation_fn(x, y, elev)
     dx, dy = abs(x[1] - x[0]), abs(y[1] - y[0])
     step = min(dx, dy)
 
-    bounds = X0, X1, Y0, Y1 = (
+    bounds = outer_x0, outer_x1, outer_y0, outer_y1 = (
         x.min() - dx / 2,
         x.max() + dx / 2,
         y.min() - dy / 2,
         y.max() + dy / 2,
     )
-    x0, y0 = target_vertices[:, :2].min(axis=0)
-    x1, y1 = target_vertices[:, :2].max(axis=0)
-    if not (X0 < x0 and x1 < X1 and Y0 < y0 and y1 < Y1):
+    inner_x0, inner_y0 = target_vertices[:, :2].min(axis=0)
+    inner_x1, inner_y1 = target_vertices[:, :2].max(axis=0)
+    if not (outer_x0 < inner_x0 < inner_x1 < outer_x1) or not (
+        outer_y0 < inner_y0 < inner_y1 < outer_y1
+    ):
         raise ValueError("Buffer DEM must extend beyond the target mesh on all sides")
 
-    xs_w, xs_mid, xs_e = _axis(X0, x0, step), _axis(x0, x1, step), _axis(x1, X1, step)
-    ys_s, ys_mid, ys_n = _axis(Y0, y0, step), _axis(y0, y1, step), _axis(y1, Y1, step)
+    xs_w = _axis(outer_x0, inner_x0, step)
+    xs_mid = _axis(inner_x0, inner_x1, step)
+    xs_e = _axis(inner_x1, outer_x1, step)
+    ys_s = _axis(outer_y0, inner_y0, step)
+    ys_mid = _axis(inner_y0, inner_y1, step)
+    ys_n = _axis(inner_y1, outer_y1, step)
     full_x = np.concatenate([xs_w[:-1], xs_mid, xs_e[1:]])
 
     def horizontal(t, s):
@@ -128,7 +140,7 @@ def build_buffer_strips_mesh(
         return np.column_stack([s, t])
 
     parts = []
-    for y_edge, across in ((y1, ys_n), (y0, ys_s[::-1])):
+    for y_edge, across in ((inner_y1, ys_n), (inner_y0, ys_s[::-1])):
         edge_t, edge_z = _boundary(target_vertices, 1, y_edge, 0)
         wing_w = horizontal(xs_w[:-1], np.full(len(xs_w) - 1, y_edge))
         wing_e = horizontal(xs_e[1:], np.full(len(xs_e) - 1, y_edge))
@@ -136,7 +148,7 @@ def build_buffer_strips_mesh(
         inner_z = np.concatenate([elevation_fn(wing_w), edge_z, elevation_fn(wing_e)])
         parts.append(_strip(inner_t, inner_z, full_x, across, horizontal, elevation_fn))
 
-    for x_edge, across in ((x1, xs_e), (x0, xs_w[::-1])):
+    for x_edge, across in ((inner_x1, xs_e), (inner_x0, xs_w[::-1])):
         edge_t, edge_z = _boundary(target_vertices, 0, x_edge, 1)
         parts.append(_strip(edge_t, edge_z, ys_mid, across, vertical, elevation_fn))
 

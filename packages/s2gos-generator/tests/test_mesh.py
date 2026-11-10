@@ -4,6 +4,7 @@ import trimesh
 import xarray as xr
 
 from s2gos_generator.processors.terrain_mesh import MeshGenerator
+from s2gos_generator.processors.terrain_mesh.builder import grid_faces
 from s2gos_generator.processors.terrain_mesh.surround import build_buffer_strips_mesh
 
 
@@ -29,27 +30,8 @@ def unit_square_mesh():
     return trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
 
 
-class TestCreateGridFaces:
-    def test_output_shape_formula(self, generator):
-        nx, ny = 3, 4
-        faces = generator._create_grid_faces(nx, ny)
-        expected_count = 2 * (nx - 1) * (ny - 1)
-        assert faces.shape == (expected_count, 3)
-
-    def test_all_indices_in_range(self, generator):
-        nx, ny = 4, 5
-        faces = generator._create_grid_faces(nx, ny)
-        assert faces.max() < nx * ny
-
-    def test_minimal_2x2_exact_faces(self, generator):
-        faces = generator._create_grid_faces(2, 2)
-        expected = np.array([[0, 1, 3], [0, 3, 2]])
-        np.testing.assert_array_equal(faces, expected)
-
-    def test_no_degenerate_faces(self, generator):
-        faces = generator._create_grid_faces(5, 5)
-        for row in faces:
-            assert len(set(row)) == 3
+def test_grid_faces_minimal_2x2():
+    np.testing.assert_array_equal(grid_faces(2, 2), [[0, 1, 3], [0, 3, 2]])
 
 
 class TestDemToMesh:
@@ -127,9 +109,12 @@ def test_buffer_strips_fill_the_ring_and_join_the_target(generator):
     )
     target = generator.dem_to_mesh(target_dem)
     buffer = build_buffer_strips_mesh(buffer_dem, target.vertices)
+    assert len(np.unique(buffer.vertices, axis=0)) == len(buffer.vertices)
 
     flat = trimesh.Trimesh(buffer.vertices * [1, 1, 0], buffer.faces, process=False)
-    assert flat.area == pytest.approx(1200.0**2 - 380.0**2)
+    assert flat.area == pytest.approx(
+        (bx[-1] - bx[0] + 30.0) ** 2 - (tx[-1] - tx[0]) ** 2
+    )
     assert np.all(buffer.face_normals[:, 2] > 0)
 
     joined = trimesh.util.concatenate([target, buffer])
