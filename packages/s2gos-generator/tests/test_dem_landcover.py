@@ -1,6 +1,14 @@
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
+import xarray as xr
+from s2gos_utils.setting.paths import to_pathref
+from upath import UPath
+
+from s2gos_generator.dataset import Zarr
+from s2gos_generator.processors.terrain_data import DEMProcessor, regrid_to_projection
+from s2gos_generator.utils import create_aoi_polygon
 
 
 @pytest.fixture
@@ -119,3 +127,30 @@ class TestGenerateTargetMesh:
         mock_generator.add_uv_coordinates.assert_called_once()
         assert mock_generator.save_mesh.call_args.args[1] == expected
         assert mock_ctx.assets.mesh_file == expected
+
+
+def test_regridded_dem_edges_match_unclipped_source(tmp_path):
+    lat0, lon0, size_km = 43.7, 10.3, 5.0
+    lat = np.arange(lat0 + 0.1, lat0 - 0.1, -1 / 3600)
+    lon = np.arange(lon0 - 0.1, lon0 + 0.1, 1 / 3600)
+    elevation = np.random.default_rng(0).uniform(0.0, 100.0, (len(lat), len(lon)))
+    source = xr.Dataset(
+        {"elevation": (("lat", "lon"), elevation)}, coords={"lat": lat, "lon": lon}
+    )
+    source.to_zarr(tmp_path / "src.zarr")
+
+    processor = DEMProcessor(
+        Zarr(name="dem", path=to_pathref(str(tmp_path / "src.zarr")))
+    )
+    dem = processor.generate_dem(
+        create_aoi_polygon(lat0, lon0, size_km),
+        UPath(tmp_path / "out.zarr"),
+        fillna_value=None,
+        target_resolution_m=30.0,
+        center_lat=lat0,
+        center_lon=lon0,
+        aoi_size_km=size_km,
+    )
+    expected = regrid_to_projection(source, 30.0, lat0, lon0, size_km)
+
+    np.testing.assert_allclose(dem["elevation"].values, expected["elevation"].values)

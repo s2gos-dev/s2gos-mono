@@ -7,7 +7,8 @@ from upath import UPath
 from .base_processor import BaseTileProcessor
 from ...dataset import Dataset, IndexedGeoTiff, Zarr
 
-# Keeps source data beyond the AOI for interpolating the outermost regridded pixels.
+# Source data beyond the AOI so the outermost regridded pixels are interpolated,
+# not extrapolated.
 REGRID_MARGIN_DEG = 0.005
 
 

@@ -10,6 +10,8 @@ from s2gos_generator import SceneGenerationPipeline
 from s2gos_generator.core.config import (
     AbsorptionDatabase,
     AerosolDataset,
+    BackgroundConfig,
+    BufferConfig,
     ExponentialDistribution,
     MolecularAtmosphereConfig,
     ParticleLayerConfig,
@@ -39,12 +41,8 @@ def simple_scene_generation_example():
         description="Simple scene generation example using S2GOS with buffer/background",
     )
 
-    # Enable buffer/background system like in simple_integration_example.py
-    config.enable_buffer_system(
-        buffer_size_km=60.0,
-        buffer_resolution_m=100.0,
-        background_resolution_m=200.0,
-    )
+    config.buffer = BufferConfig(size_km=60.0, resolution_m=100.0)
+    config.background = BackgroundConfig(resolution_m=200.0)
 
     # Configure atmosphere - using heterogeneous atmosphere like simple_integration_example.py
     molecular_config = MolecularAtmosphereConfig(
@@ -91,9 +89,7 @@ def simple_scene_generation_example():
     print(
         f"  Buffer: {config.buffer.size_km} km at {config.buffer.resolution_m} m resolution"
     )
-    print(
-        f"  Background: {config.background.resolution_m} m resolution"
-    )
+    print(f"  Background: {config.background.resolution_m} m resolution")
     print(f"  Atmosphere: {config.atmosphere.details.type}")
     print(f"  Output: {config.scene_output_dir}")
 

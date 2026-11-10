@@ -86,7 +86,9 @@ class SurfaceBuilder:
         """
         buffer_config = scene_description.buffer
         if "mask_texture" in buffer_config:
-            raise ValueError("Scene uses the old buffer mask, regenerate it")
+            raise ValueError(
+                "Buffer mask_texture is not supported, regenerate the scene"
+            )
 
         _, _, material_dict = self._create_selectbsdf_material(
             "buffer",

@@ -42,6 +42,8 @@ The target is defined by a centre coordinate and an AOI size in kilometres ([`Sc
 
 The **buffer zone** (optional) surrounds the target at a coarser resolution. Its purpose is to reduce adjacency and edge-of-scene artifacts.
 
+Its mesh is a ring around the target. It shares the target's boundary vertices, so the two surfaces meet without a gap or an overlap.
+
 Configure via [`BufferConfig`][s2gos_generator.core.config.scene.BufferConfig]:
 
 ```python
@@ -50,7 +52,7 @@ buffer = BufferConfig(size_km=60.0, resolution_m=100.0)
 
 ### Background
 
-The **background zone** (optional) is the outermost ring, extending the scene to the horizon. It uses a flat surface 1 m below the lowest point of the target and buffer DEMs.
+The **background zone** (optional) is the outermost ring, extending the scene to the horizon. It uses a flat surface 1 m below the lowest point of the target and buffer DEMs, so it never covers terrain.
 
 Configure via [`BackgroundConfig`][s2gos_generator.core.config.scene.BackgroundConfig]:
 
@@ -152,7 +154,7 @@ After generation, the output directory looks like:
 
 ```
 <output_dir>/<scene_name>/
-├── meshes/          # PLY mesh files (target, buffer, background)
+├── meshes/          # PLY mesh files (target, buffer)
 ├── textures/        # Material texture images
 ├── data/            # Intermediate data (clipped DEM, landcover)
 └── scene.yaml       # SceneDescription file for the simulator

@@ -137,6 +137,7 @@ def create_s2gos_scene(
     background_size_km: Optional[float] = None,
     hamster_data_paths: Optional[Dict[str, UPath]] = None,
     additional_material_libraries: Optional[List[Dict[str, Dict[str, Any]]]] = None,
+    terrain_min_elevation: float = 0.0,
     **kwargs,
 ) -> SceneDescription:
     """Create standard S2GOS scene configuration.
@@ -160,6 +161,8 @@ def create_s2gos_scene(
         background_size_km: Optional background size in kilometers
         hamster_data_paths: Optional dictionary of paths to processed HAMSTER albedo zarr files for each surface area
         additional_material_libraries: Optional list of material libraries to merge (e.g., from XML imports)
+        terrain_min_elevation: Lowest target and buffer DEM elevation in meters. The
+            background is placed 1 m below it and the atmosphere bottom below both.
         **kwargs: Additional configuration parameters
 
     Returns:
@@ -230,8 +233,6 @@ def create_s2gos_scene(
                 )
             else:
                 buffer["hamster_data"] = str(hamster_data_paths["buffer"])
-
-    terrain_min_elevation = kwargs.get("terrain_min_elevation", 0.0)
 
     if background_selection_texture and background_size_km:
         background = {

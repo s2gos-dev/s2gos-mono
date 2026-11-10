@@ -75,6 +75,8 @@ class BackgroundConfig(BaseModel):
         200.0, gt=0.0, description="Background resolution in meters"
     )
 
+    model_config = {"extra": "forbid"}
+
 
 class SceneLocation(BaseModel):
     """Geographic location configuration."""
