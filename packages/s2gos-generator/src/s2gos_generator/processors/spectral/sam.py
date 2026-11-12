@@ -1,4 +1,4 @@
-"""Clustering and Spectral Angle Mapper matching."""
+"""Clustering and spectral matching (SAM, optionally with a Euclidean brightness term)."""
 
 from __future__ import annotations
 
@@ -80,37 +80,59 @@ def cluster_class_reflectance(
     return label_map.reshape(ny, nx), palette
 
 
+def spectral_distance(v1: np.ndarray, v2: np.ndarray, sam_weight: float = 1.0) -> float:
+    """Blend of spectral angle and normalised Euclidean distance, in ``[0, 1]``.
+
+    ``sam_weight * angle / (pi/2) + (1 - sam_weight) * |v1 - v2| / (|v1| + |v2|)``.
+    The angle term compares shape only, the Euclidean term also separates
+    brightness. ``sam_weight=1.0`` ranks candidates exactly like SAM.
+    """
+    norms = float(np.linalg.norm(v1)) + float(np.linalg.norm(v2))
+    euclidean = float(np.linalg.norm(v1 - v2)) / norms if norms else 0.0
+    angle = spectral_angle(v1, v2) / (np.pi / 2)
+    return sam_weight * angle + (1.0 - sam_weight) * euclidean
+
+
 def match_clusters_to_library(
     palette: np.ndarray,
     library: List[CandidateSpectrum],
     max_sam_angle_deg: Optional[float] = None,
+    sam_weight: float = 1.0,
 ) -> List[Optional[CandidateSpectrum]]:
-    """Match each non-empty cluster to its closest library material by SAM.
+    """Match each non-empty cluster to its closest library material.
 
     Args:
         palette: ``(n_clusters, band)`` mean reflectance per cluster.
         library: Candidate materials with band-aligned vectors.
-        max_sam_angle_deg: If set, clusters whose best angle exceeds this keep no
-            match (``None`` in the returned list), so the caller can fall back to
-            the base landcover material.
+        max_sam_angle_deg: If set, only candidates within this spectral angle of a
+            cluster are considered, and a cluster with none keeps no match
+            (``None`` in the returned list), so the caller can fall back to the
+            base landcover material.
+        sam_weight: Weight of the spectral angle in :func:`spectral_distance`,
+            which ranks the remaining candidates. 1.0 is pure SAM.
 
     Returns:
-        List aligned with ``palette`` rows; entry is the matched
+        List aligned with ``palette`` rows. Each entry is the matched
         :class:`CandidateSpectrum`, or ``None`` for an empty cluster, an all-zero
-        centroid, or a rejected match, each of which leaves the base landcover material in place.
+        centroid, or no candidate within the angle gate, each of which leaves the
+        base landcover material in place.
     """
     matches: List[Optional[CandidateSpectrum]] = []
     for centroid in palette:
         if not np.isfinite(centroid).all() or not centroid.any():
             matches.append(None)
             continue
-        best, best_angle = None, float("inf")
-        for candidate in library:
-            angle = spectral_angle(centroid, candidate.s2_vector)
-            if angle < best_angle:
-                best, best_angle = candidate, angle
-        if max_sam_angle_deg is not None and np.degrees(best_angle) > max_sam_angle_deg:
-            matches.append(None)
-        else:
-            matches.append(best)
+        allowed = [
+            c
+            for c in library
+            if max_sam_angle_deg is None
+            or np.degrees(spectral_angle(centroid, c.s2_vector)) <= max_sam_angle_deg
+        ]
+        matches.append(
+            min(
+                allowed,
+                key=lambda c: spectral_distance(centroid, c.s2_vector, sam_weight),
+                default=None,
+            )
+        )
     return matches

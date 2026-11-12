@@ -52,8 +52,13 @@ def apply_region_materials(
         landcover_2d = None
         if any(r.landcover_filter is not None for r in applicable_regions):
             native = np.flipud(landcover_data.values)
-            rows = np.linspace(0, native.shape[0] - 1, height_px).round().astype(int)
-            cols = np.linspace(0, native.shape[1] - 1, width_px).round().astype(int)
+            # Same pixel mapping as the PIL NEAREST upsampling in apply_ways.
+            rows = ((np.arange(height_px) + 0.5) * native.shape[0] / height_px).astype(
+                int
+            )
+            cols = ((np.arange(width_px) + 0.5) * native.shape[1] / width_px).astype(
+                int
+            )
             landcover_2d = native[np.ix_(rows, cols)]
 
     from ...core.region_geometry import geometry_from_dict

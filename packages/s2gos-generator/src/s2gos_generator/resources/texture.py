@@ -30,7 +30,7 @@ def _apply_spectral_matching(
     """Re-texture landcover classes from Sentinel-2 + a material library.
 
     Clusters the reflectance of each configured landcover class and paints
-    SAM-matched materials into ``texture_2d``. Writes a sidecar describing the new
+    spectrally matched materials into ``texture_2d``. Writes a sidecar describing the new
     materials and their indices (read later by the scene step). Returns
     ``(texture_2d, changed)``.
     """

@@ -2,8 +2,8 @@
 
 Functions behind spectral material matching, the algorithm layer called by the
 texture pipeline. They fetch Sentinel-2 reflectance, cluster and match it against a
-material library with the Spectral Angle Mapper, and (de)serialize the matched-material
-result. For more information see
+material library with the Spectral Angle Mapper (optionally blended with a brightness
+term), and (de)serialize the matched-material result. For more information see
 [Spectral material matching](../concepts.md#spectral-material-matching) and
 [Spectral Matching config](spectral_matching.md).
 
@@ -14,6 +14,7 @@ result. For more information see
 ## Spectral Angle Mapper
 
 ::: s2gos_generator.processors.spectral.sam.spectral_angle
+::: s2gos_generator.processors.spectral.sam.spectral_distance
 ::: s2gos_generator.processors.spectral.sam.cluster_class_reflectance
 ::: s2gos_generator.processors.spectral.sam.match_clusters_to_library
 

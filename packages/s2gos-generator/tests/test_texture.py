@@ -5,13 +5,17 @@ import pytest
 import xarray as xr
 from shapely.geometry import box
 
-from s2gos_generator.processors.terrain_texture import apply_ways
+from s2gos_generator.core.config.assets import MaterialRegion
+from s2gos_generator.processors.terrain_texture import (
+    apply_region_materials,
+    apply_ways,
+)
 
 
-def _write_landcover(path):
+def _write_landcover(path, values=None):
     """A 4x4 landcover zarr on a 10 m grid spanning 0..30 m (pixel centres)."""
     da = xr.DataArray(
-        np.zeros((4, 4), dtype=np.int32),
+        np.zeros((4, 4), dtype=np.int32) if values is None else values,
         dims=("y", "x"),
         coords={"y": [0.0, 10.0, 20.0, 30.0], "x": [0.0, 10.0, 20.0, 30.0]},
     )
@@ -52,6 +56,33 @@ def test_apply_ways_paints_nothing(tmp_path, way_polys, index_map):
     out, union_mask = apply_ways(texture, lc_path, way_polys, index_map)
     assert union_mask is None
     assert (out == 0).all()
+
+
+def test_region_landcover_filter_follows_upsampled_texture(tmp_path):
+    values = np.zeros((4, 4), dtype=np.int32)
+    values[:, 1] = 40
+    lc_path = _write_landcover(tmp_path / "lc.zarr", values)
+    region = MaterialRegion(
+        region_id="all",
+        geometry={
+            "geometry_type": "rectangle",
+            "center": (15.0, 15.0),
+            "coord_type": "scene",
+            "width_m": 100.0,
+            "height_m": 100.0,
+        },
+        material_name="field",
+        landcover_filter=[40],
+    )
+    texture = np.zeros((12, 12), dtype=np.uint8)  # x3, as after apply_ways
+
+    out, modified = apply_region_materials(
+        texture, lc_path, [region], None, {"field": 5}
+    )
+
+    assert modified
+    assert (np.flatnonzero(out[0] == 5) == [3, 4, 5]).all()
+    assert (out == out[0]).all()
 
 
 def test_matched_materials_sidecar_roundtrip():
