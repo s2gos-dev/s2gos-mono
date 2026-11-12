@@ -1,7 +1,8 @@
 """Spectral matching configuration.
 
 Optionally re-textures selected landcover classes by matching clustered Sentinel-2
-reflectance to a library of candidate materials (Spectral Angle Mapper). See
+reflectance to a library of candidate materials (Spectral Angle Mapper, optionally
+weighted with brightness). See
 [SpectralMatchingConfig][s2gos_generator.core.config.material_match.SpectralMatchingConfig].
 """
 
@@ -29,8 +30,9 @@ class SpectralMatchingConfig(BaseModel):
     [SceneGenConfig][s2gos_generator.core.config.scene.SceneGenConfig] enables the
     feature. For each listed landcover class the generator fetches Sentinel-2
     reflectance, k-means clusters the pixels of that class, and matches each cluster
-    to the best-fitting **diffuse** material from ``material_library`` via
-    Spectral Angle Mapper — painting those richer materials into the selection
+    to the best-fitting **diffuse** material from ``material_library`` by
+    Spectral Angle Mapper, optionally blended with a brightness term
+    (``sam_weight``), painting those richer materials into the selection
     texture instead of a single flat index.
 
     Copernicus credentials are resolved by ``credential_id`` through the
@@ -126,8 +128,19 @@ class SpectralMatchingConfig(BaseModel):
         gt=0.0,
         le=90.0,
         description=(
-            "If set, clusters whose best SAM angle exceeds this threshold keep their "
-            "base landcover material instead of a spectral match (quality gate)."
+            "If set, only candidates within this spectral angle of a cluster are "
+            "considered, and clusters with none keep their base landcover material "
+            "instead of a spectral match (quality gate)."
+        ),
+    )
+    sam_weight: float = Field(
+        1.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Share of spectral angle (shape) in the match distance. 1.0 is pure SAM. "
+            "Lower values blend in a normalised Euclidean distance, which also "
+            "separates materials of the same shape but different brightness."
         ),
     )
 

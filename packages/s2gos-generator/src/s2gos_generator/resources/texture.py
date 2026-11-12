@@ -30,7 +30,7 @@ def _apply_spectral_matching(
     """Re-texture landcover classes from Sentinel-2 + a material library.
 
     Clusters the reflectance of each configured landcover class and paints
-    SAM-matched materials into ``texture_2d``. Writes a sidecar describing the new
+    spectrally matched materials into ``texture_2d``. Writes a sidecar describing the new
     materials and their indices (read later by the scene step). Returns
     ``(texture_2d, changed)``.
     """
@@ -109,21 +109,6 @@ def _generate_texture(
     texture_2d = raw[:, :, 0] if raw.ndim == 3 else raw.copy()
     dirty = False
 
-    if ctx.config.material_regions:
-        applicable_regions = [
-            r for r in ctx.config.material_regions if area_name in r.applies_to
-        ]
-        if applicable_regions:
-            texture_2d, changed = apply_region_materials(
-                texture_2d,
-                landcover_path,
-                applicable_regions,
-                ctx.coordinate_system,
-                material_index_map,
-                f"{area_name} texture",
-            )
-            dirty |= changed
-
     if ctx.config.spectral_matching is not None and area_name == "target":
         texture_2d, changed = _apply_spectral_matching(
             ctx, texture_2d, landcover_path, material_index_map
@@ -142,6 +127,21 @@ def _generate_texture(
         )
         if way_mask is not None:
             dirty = True
+
+    if ctx.config.material_regions:
+        applicable_regions = [
+            r for r in ctx.config.material_regions if area_name in r.applies_to
+        ]
+        if applicable_regions:
+            texture_2d, changed = apply_region_materials(
+                texture_2d,
+                landcover_path,
+                applicable_regions,
+                ctx.coordinate_system,
+                material_index_map,
+                f"{area_name} texture",
+            )
+            dirty |= changed
 
     if dirty:
         Image.fromarray(texture_2d, mode="L").save(selection_texture_path)

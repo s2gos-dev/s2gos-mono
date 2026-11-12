@@ -130,14 +130,16 @@ For each configured class the pipeline:
 2. Clusters the per-pixel reflectance of that class into `clusters_per_class`
    groups with k-means.
 3. Matches each cluster to the closest **diffuse** material in a spectral library
-   using the Spectral Angle Mapper (SAM, [Kruse et al., 1993](#references)), which 
-   compares spectral *shape* independent of brightness.
+   using the Spectral Angle Mapper (SAM, [Kruse et al., 1993](#references)), which
+   compares spectral *shape* independent of brightness. Setting `sam_weight` below
+   1 blends in a normalised Euclidean distance, so materials of the same shape but
+   different brightness are told apart.
 4. Paints the matched materials back into the class's pixels in the selection
    texture.
 
-An optional SAM-angle threshold acts as a quality gate: clusters with no
-sufficiently close library match keep their base landcover material rather than
-being forced onto a poor fit. Reading Sentinel-2 from the Copernicus Data Space
+An optional SAM-angle threshold acts as a quality gate: only candidates within
+that angle of a cluster are ranked, and clusters with none keep their base
+landcover material rather than being forced onto a poor fit. Reading Sentinel-2 from the Copernicus Data Space
 requires S3 credentials.
 
 See [Spectral material matching configuration](configuration.md#spectral-material-matching)
