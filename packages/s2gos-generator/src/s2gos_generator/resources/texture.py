@@ -110,9 +110,14 @@ def _generate_texture(
     dirty = False
 
     if ctx.config.spectral_matching is not None and area_name == "target":
+        snow_mask = (
+            None if snow_material_index is None else texture_2d == snow_material_index
+        )
         texture_2d, changed = _apply_spectral_matching(
             ctx, texture_2d, landcover_path, material_index_map
         )
+        if snow_mask is not None:
+            texture_2d[snow_mask] = snow_material_index
         dirty |= changed
 
     way_mask: Optional[np.ndarray] = None
