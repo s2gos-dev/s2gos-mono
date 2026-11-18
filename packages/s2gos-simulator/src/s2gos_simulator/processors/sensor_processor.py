@@ -6,6 +6,39 @@ import xarray as xr
 logger = logging.getLogger(__name__)
 
 
+def image_circle_area_px(attrs: dict) -> float | None:
+    """Area in pixels of a fisheye result's image circle, None for other results.
+
+    Eradiate leaves the pixels outside the image circle at 0 and the pixels on its
+    rim partly lit, so the sum over all pixels divided by this area is the exact mean
+    over the image circle. For the equisolid projection every pixel spans the same
+    solid angle, which makes it the radiance averaged over the FOV cone.
+
+    Args:
+        attrs: Attributes of the simulation result, as published by Eradiate's
+            fisheye measure
+
+    Returns:
+        The image circle area in pixels, or None when the result is not a fisheye
+
+    Raises:
+        ValueError: if the image circle extends beyond the film
+    """
+    if "image_circle_radius" not in attrs:
+        return None
+
+    width, height = attrs["film_width"], attrs["film_height"]
+    radius = attrs["image_circle_radius"] * width * min(1.0, attrs["rho_max"])
+    center_x, center_y = attrs["center_x"] * width, attrs["center_y"] * height
+    if min(center_x, width - center_x, center_y, height - center_y) < radius:
+        raise ValueError(
+            "Spatial averaging needs the image circle inside the film, got radius "
+            f"{radius:g} px around ({center_x:g}, {center_y:g}) on a "
+            f"{width}x{height} film"
+        )
+    return np.pi * radius**2
+
+
 class SensorProcessor:
     """Unified sensor processor for all sensor types.
 
@@ -60,9 +93,6 @@ class SensorProcessor:
         original_radiance = dataset["radiance"]
         radiance = original_radiance
         pp = getattr(sensor, "post_processing", None)
-        valid = dataset.get("valid")
-
-        radiance = self._apply_fov_mask_step(radiance, sensor, pp, valid)
 
         if pp is not None and getattr(pp, "generate_rgb_image", False):
             from upath import UPath
@@ -71,7 +101,7 @@ class SensorProcessor:
                 output_dir = UPath(dataset.attrs.get("output_dir", "./output"))
             self._generate_rgb_image(radiance, sensor.id, output_dir, pp)
 
-        radiance = self._apply_averaging_step(radiance, pp)
+        radiance = self._apply_averaging_step(radiance, pp, dataset.attrs)
         spatial_changed = radiance is not original_radiance
 
         spectral_changed = False
@@ -95,43 +125,12 @@ class SensorProcessor:
             return dataset
 
         return self._build_result(
-            dataset,
-            radiance,
-            sensor,
-            pp,
-            spectral_changed=spectral_changed,
-            valid=valid,
+            dataset, radiance, pp, spectral_changed=spectral_changed
         )
 
-    def _apply_fov_mask_step(
-        self, data: xr.DataArray, sensor, pp, valid: xr.DataArray | None = None
+    def _apply_averaging_step(
+        self, data: xr.DataArray, pp, attrs: dict
     ) -> xr.DataArray:
-        """Apply the circular FOV mask if the sensor is configured for it.
-
-        The simulation's ``valid`` pixel mask is used when there is one (fisheye
-        cameras), otherwise the disk inscribed in the film.
-
-        Returns the input object unchanged when the step does not apply, so callers
-        can detect a no-op with an identity check.
-        """
-        if pp is None or not getattr(pp, "apply_circular_mask", False):
-            return data
-
-        if valid is not None:
-            masked = data.where(valid)
-            masked.attrs["circular_mask_applied"] = True
-            return masked
-
-        fov = getattr(sensor, "fov", None)
-        if fov is None:
-            logger.warning(
-                f"Circular mask enabled but sensor '{sensor.id}' has no fov. Skipping."
-            )
-            return data
-
-        return self._apply_circular_fov_mask(data, fov)
-
-    def _apply_averaging_step(self, data: xr.DataArray, pp) -> xr.DataArray:
         """Apply spatial averaging if the sensor is configured for it.
 
         Returns the input object unchanged when the step does not apply, so callers
@@ -140,19 +139,7 @@ class SensorProcessor:
         if pp is None or not getattr(pp, "spatial_averaging", True):
             return data
 
-        return self._apply_spatial_averaging(data)
-
-    def _apply_spatial_ops(
-        self, data: xr.DataArray, sensor, pp, valid: xr.DataArray | None = None
-    ) -> xr.DataArray:
-        """Apply the configured spatial operations (FOV mask, then averaging).
-
-        Used to keep the extra simulation variables consistent with the processed
-        radiance. RGB generation is deliberately not part of this: it is a
-        radiance-only side effect that must run between the two steps.
-        """
-        data = self._apply_fov_mask_step(data, sensor, pp, valid)
-        return self._apply_averaging_step(data, pp)
+        return self._apply_spatial_averaging(data, image_circle_area_px(attrs))
 
     def _resolve_target_wavelengths(self, srf_config, radiance: xr.DataArray):
         """Determine target wavelengths for SRF convolution.
@@ -170,20 +157,17 @@ class SensorProcessor:
         self,
         original_dataset: xr.Dataset,
         processed_radiance: xr.DataArray,
-        sensor=None,
         pp=None,
         spectral_changed: bool = False,
-        valid: xr.DataArray | None = None,
     ) -> xr.Dataset:
         """Assemble output dataset, propagating available variables at new wavelength grid.
 
         Args:
             original_dataset: Raw simulation result
             processed_radiance: Post-processed radiance
-            sensor: Sensor that produced the result (needed to replay spatial ops)
-            pp: PostProcessingOptions of that sensor (may be None)
+            pp: PostProcessingOptions of the sensor (may be None), replayed on the
+                extra pixel variables except Eradiate's ``valid`` mask
             spectral_changed: Whether the wavelength grid changed
-            valid: Pixel mask of the simulation, kept as is when present
 
         Returns:
             Post-processed dataset
@@ -208,7 +192,9 @@ class SensorProcessor:
                 if name != "valid" and any(
                     d in variable.dims for d in ("x_index", "y_index")
                 ):
-                    variable = self._apply_spatial_ops(variable, sensor, pp, valid)
+                    variable = self._apply_averaging_step(
+                        variable, pp, original_dataset.attrs
+                    )
                 result[name] = variable
 
         return xr.Dataset(result, attrs=original_dataset.attrs)
@@ -302,77 +288,26 @@ class SensorProcessor:
 
         return result_radiance
 
-    def _apply_spatial_averaging(self, radiance: xr.DataArray) -> xr.DataArray:
+    def _apply_spatial_averaging(
+        self, radiance: xr.DataArray, circle_area_px: float | None = None
+    ) -> xr.DataArray:
         """Average over spatial dimensions (FOV pixels).
-
-        Uses nanmean to properly handle NaN values from circular masking.
-        Pixels outside the circular FOV are excluded from averaging.
 
         Args:
             radiance: Radiance DataArray with spatial dimensions
+            circle_area_px: Image circle area of a fisheye result (see
+                `image_circle_area_px`), whose sum over all pixels is then divided
+                by it. Other results take the mean, skipping NaN pixels.
 
         Returns:
             Radiance averaged over spatial dimensions
         """
         spatial_dims = [d for d in ["x_index", "y_index"] if d in radiance.dims]
-        if spatial_dims:
-            return radiance.reduce(np.nanmean, dim=spatial_dims)
-        return radiance
-
-    def _apply_circular_fov_mask(
-        self,
-        radiance: xr.DataArray,
-        fov_degrees: float,
-    ) -> xr.DataArray:
-        """Apply circular FOV mask to camera data.
-
-        Sets pixels outside the circular field of view to NaN.
-        Uses simple geometric approach: circle radius = min(width, height) / 2.
-
-        Args:
-            radiance: Radiance DataArray with spatial dimensions (x_index, y_index)
-            fov_degrees: Field of view in degrees (for metadata only)
-
-        Returns:
-            Radiance with circular mask applied (values outside circle are NaN)
-        """
-        if "x_index" not in radiance.dims or "y_index" not in radiance.dims:
-            logger.warning(
-                "Circular mask requires x_index and y_index dimensions. Skipping."
-            )
+        if not spatial_dims:
             return radiance
-
-        ny, nx = len(radiance.y_index), len(radiance.x_index)
-
-        center_x = (nx - 1) / 2.0
-        center_y = (ny - 1) / 2.0
-        radius_pixels = min(nx, ny) / 2.0
-
-        y_coords, x_coords = np.meshgrid(np.arange(ny), np.arange(nx), indexing="ij")
-        distances = np.sqrt((x_coords - center_x) ** 2 + (y_coords - center_y) ** 2)
-        circular_mask_array = distances <= radius_pixels
-
-        circular_mask = xr.DataArray(
-            circular_mask_array,
-            dims=["y_index", "x_index"],
-            coords={
-                "y_index": radiance.coords["y_index"],
-                "x_index": radiance.coords["x_index"],
-            },
-        )
-
-        masked_radiance = radiance.where(circular_mask, other=np.nan)
-
-        masked_radiance.attrs["circular_mask_applied"] = True
-        masked_radiance.attrs["fov_degrees"] = fov_degrees
-        masked_radiance.attrs["mask_radius_pixels"] = float(radius_pixels)
-
-        logger.info(
-            f"Applied circular FOV mask: radius={radius_pixels:.1f} pixels, "
-            f"FOV={fov_degrees}°"
-        )
-
-        return masked_radiance
+        if circle_area_px is not None:
+            return radiance.sum(dim=spatial_dims) / circle_area_px
+        return radiance.reduce(np.nanmean, dim=spatial_dims)
 
     def _generate_rgb_image(
         self,

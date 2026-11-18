@@ -64,23 +64,19 @@ class GroundInstrumentType(str, Enum):
 class PostProcessingOptions(BaseModel):
     """Post-processing pipeline options for ground sensors.
 
-    Controls spatial averaging, SRF convolution, circular FOV mask, and RGB output.
+    Controls spatial averaging, SRF convolution and RGB output.
     """
 
     apply_srf: bool = Field(default=True, description="Apply Gaussian SRF convolution")
     spatial_averaging: bool = Field(
-        default=False, description="Average over spatial dimensions (x_index, y_index)"
+        default=False,
+        description=(
+            "Average over spatial dimensions (x_index, y_index). For HYPSTAR and "
+            "fisheye_camera results, the mean over the image circle"
+        ),
     )
     spatial_statistic: Literal["mean", "median"] = Field(
         default="mean", description="Statistic for spatial averaging"
-    )
-    apply_circular_mask: bool = Field(
-        default=False,
-        description=(
-            "Apply circular FOV mask before spatial averaging. "
-            "Pixels outside the circular FOV are set to NaN and excluded. "
-            "Enable for HYPSTAR-style circular aperture sensors."
-        ),
     )
     generate_rgb_image: bool = Field(
         default=False,
@@ -600,9 +596,9 @@ class GroundSensor(BaseSensor):
         None,
         description=(
             "Field of view in degrees (for camera-like instruments: HYPSTAR, "
-            "perspective_camera, fisheye_camera). For fisheye_camera, the full angle "
-            "of the image circle, or for a polynomial lens the full angle its "
-            "calibration was fitted over"
+            "perspective_camera, fisheye_camera). For HYPSTAR and fisheye_camera, the "
+            "full angle of the circular FOV, or for a polynomial lens the full angle "
+            "its calibration was fitted over"
         ),
     )
     resolution: Optional[List[int]] = Field(
@@ -650,9 +646,7 @@ class GroundSensor(BaseSensor):
                 data["resolution"] = [32, 32]
 
             if data.get("post_processing") is None:
-                data["post_processing"] = PostProcessingOptions(
-                    apply_circular_mask=True
-                )
+                data["post_processing"] = PostProcessingOptions(spatial_averaging=True)
 
             if data.get("srf") is None:
                 data["srf"] = SpectralResponse(
@@ -677,17 +671,12 @@ class GroundSensor(BaseSensor):
                     f"('directional' or 'angular_from_origin'), not '{self.viewing.type}'."
                 )
 
-        is_fisheye = self.instrument == GroundInstrumentType.FISHEYE_CAMERA
-        if self.lens is not None and not is_fisheye:
+        if (
+            self.lens is not None
+            and self.instrument != GroundInstrumentType.FISHEYE_CAMERA
+        ):
             raise ValueError(
                 f"'lens' is only used by 'fisheye_camera', not '{self.instrument.value}'."
-            )
-
-        pp = self.post_processing
-        if is_fisheye and pp and pp.spatial_averaging and not pp.apply_circular_mask:
-            raise ValueError(
-                "Spatial averaging of a 'fisheye_camera' needs apply_circular_mask, "
-                "otherwise the pixels outside the image circle enter the average."
             )
 
         if self.id is None:
@@ -731,6 +720,7 @@ def create_hypstar_sensor(
     HYPSTAR (HYPERNETS Land Network) specifications:
     - VNIR detector (Si): 380–1000 nm, FWHM ≈ 3 nm
     - SWIR detector (InGaAs): 1000–1680 nm, FWHM ≈ 10 nm
+    - 5° circular radiance FOV, rendered as an equisolid fisheye
 
     When reference_file is provided, SRF post-processing outputs wavelengths
     from that file (for direct comparison against real HYPSTAR observations).
@@ -765,9 +755,7 @@ def create_hypstar_sensor(
 
     kwargs.setdefault(
         "post_processing",
-        PostProcessingOptions(
-            apply_circular_mask=True, spatial_averaging=True, generate_rgb_image=True
-        ),
+        PostProcessingOptions(spatial_averaging=True, generate_rgb_image=True),
     )
 
     return GroundSensor(

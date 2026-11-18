@@ -484,7 +484,6 @@ def pnp_gui_simulation(
                 samples_per_pixel=spp,
                 srf=SpectralResponse(type="uniform", wmin=380, wmax=1680),
                 post_processing=PostProcessingOptions(
-                    apply_circular_mask=True,
                     generate_rgb_image=True,
                     rgb_wavelengths=(660.0, 550.0, 440.0),
                     rgb_brightness_factor=1.8,

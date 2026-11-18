@@ -479,20 +479,19 @@ class EradiateTranslator:
             if sensor.instrument in [
                 GroundInstrumentType.PERSPECTIVE_CAMERA,
                 GroundInstrumentType.FISHEYE_CAMERA,
+                GroundInstrumentType.HYPSTAR,
             ]:
-                is_fisheye = sensor.instrument == GroundInstrumentType.FISHEYE_CAMERA
+                is_fisheye = (
+                    sensor.instrument != GroundInstrumentType.PERSPECTIVE_CAMERA
+                )
                 base_measure["type"] = "fisheye" if is_fisheye else "perspective"
                 base_measure["film_resolution"] = sensor.resolution or [1024, 1024]
                 base_measure["fov"] = sensor.fov or (180.0 if is_fisheye else 70.0)
                 base_measure["up"] = view.up or [0, 0, 1]
+                if sensor.instrument == GroundInstrumentType.HYPSTAR:
+                    base_measure["projection_model"] = "equisolid"
                 if sensor.lens is not None:
                     base_measure.update(sensor.lens.model_dump(exclude_none=True))
-
-            elif sensor.instrument == GroundInstrumentType.HYPSTAR:
-                base_measure["type"] = "perspective"
-                base_measure["film_resolution"] = sensor.resolution or [5, 5]
-                base_measure["fov"] = sensor.fov or 5.0
-                base_measure["up"] = view.up or [0, 0, 1]
 
             elif sensor.instrument == GroundInstrumentType.RADIANCEMETER:
                 base_measure["type"] = "radiancemeter"

@@ -233,18 +233,18 @@ def combine_hcrf_results(
 # ==============================================================================
 
 
-def ensure_aer_core_v2(aerosol_path: str, out_dir: Path) -> str:
-    """Ensure the aerosol dataset is in Eradiate 1.2's aer_core_v2 format."""
+def ensure_prt_core_v1(aerosol_path: str, out_dir: Path) -> str:
+    """Ensure the aerosol dataset is in Eradiate's Prt-Core v1 format (has 'phamat')."""
     ds = xr.open_dataset(aerosol_path)
-    if "phamat" in ds.dims:  # already aer_core_v2
+    if "phamat" in ds.dims:
         return aerosol_path
 
-    from eradiate.data.convert import aer_v1_to_aer_core_v2
+    from eradiate.data.convert import aer_v1_to_prt_core_v1
 
-    v2 = aer_v1_to_aer_core_v2(ds)  # defaults: normalize=True, check="full"
-    out_path = out_dir / f"{Path(aerosol_path).stem}_v2.nc"
-    v2.to_netcdf(out_path)
-    print(f"  Converted aerosol dataset to aer_core_v2: {out_path.name}")
+    converted = aer_v1_to_prt_core_v1(ds)
+    out_path = out_dir / f"{Path(aerosol_path).stem}_prt_core_v1.nc"
+    converted.to_netcdf(out_path)
+    print(f"  Converted aerosol dataset to Prt-Core v1: {out_path.name}")
     return str(out_path)
 
 
@@ -306,7 +306,7 @@ def build_scene_config(resolved_paths: dict) -> object:
     aod, aer_h = get_atmosphere_params(atm_time, resolved_paths)
     print(f"  Atmosphere Params: AOD={aod:.3f}, Height={aer_h:.1f}m")
 
-    aerosol_ds = ensure_aer_core_v2(resolved_paths["aerosol"], OUTPUT_DIR)
+    aerosol_ds = ensure_prt_core_v1(resolved_paths["aerosol"], OUTPUT_DIR)
 
     config.set_atmosphere_heterogeneous(
         MolecularAtmosphereConfig(

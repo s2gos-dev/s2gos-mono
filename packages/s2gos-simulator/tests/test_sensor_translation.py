@@ -495,7 +495,8 @@ class TestGroundSensorTranslation:
         result = self._translate_ground(translator, sensor, minimal_scene, scene_dir)
 
         assert result["id"] == "hyp"
-        assert result["type"] == "perspective"
+        assert result["type"] == "fisheye"
+        assert result["projection_model"] == "equisolid"
         assert result["srf"] == {"type": "uniform", "wmin": 380.0, "wmax": 1680.0}
         assert result["origin"] == pytest.approx([0, 0, 1])
         assert result["target"] == pytest.approx([0, 0, 0])
