@@ -4,11 +4,13 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import trimesh
 import xarray as xr
 from s2gos_utils.io.paths import expand_mapper
 
 from ..core.context import SceneResourceContext
 from ..processors.terrain_mesh import MeshGenerator, TerraformOperation
+from ..processors.terrain_mesh.surround import build_buffer_strips_mesh
 
 
 def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
@@ -79,29 +81,23 @@ def generate_target_mesh(ctx: SceneResourceContext) -> Optional[Path]:
 
 
 def generate_buffer_mesh(ctx: SceneResourceContext) -> Optional[Path]:
-    """Generate 3D mesh from buffer area DEM data (if buffer is enabled).
-
-    Args:
-        ctx: Scene resource context
-
-    Returns:
-        Path to the generated buffer mesh PLY file, or None if buffer disabled
-    """
+    """Generate the buffer mesh as four strips around the target mesh."""
     buffer_dem_file_path = ctx.dependency_outputs["buffer_dem"]
     if buffer_dem_file_path is None:
         raise ValueError("Buffer DEM file not found from dependencies")
 
-    mesh_generator = MeshGenerator()
+    dem_data = xr.open_zarr(expand_mapper(buffer_dem_file_path))["elevation"]
+    with ctx.dependency_outputs["target_mesh"].open("rb") as f:
+        target_vertices = trimesh.load(f, file_type="ply", process=False).vertices
 
-    mesh_path = ctx.meshes_dir / f"{ctx.scene_name}_buffer_terrain.ply"
-
-    _ = mesh_generator.generate_mesh_from_dem_file(
-        dem_file_path=buffer_dem_file_path,
-        output_path=mesh_path,
-        add_uvs=True,
+    mesh = build_buffer_strips_mesh(
+        dem_data,
+        target_vertices,
         handle_nans=ctx.config.processing.handle_dem_nans,
     )
 
+    mesh_path = ctx.meshes_dir / f"{ctx.scene_name}_buffer_terrain.ply"
+    MeshGenerator().save_mesh(mesh, mesh_path)
     ctx.assets.buffer_mesh_file = mesh_path
 
     return mesh_path

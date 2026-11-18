@@ -18,11 +18,7 @@ from s2gos_utils.io.resolver import resolver
 from s2gos_utils.setting.paths import to_pathref
 
 from .assets import HamsterConfig, MaterialRegion, UserAssets, XmlSceneConfig
-from .atmosphere import (
-    AtmosphereConfig,
-    ThermophysicalConfig,
-    _default_atmosphere_config,
-)
+from .atmosphere import AtmosphereConfig, ThermophysicalConfig
 from .buildings import BuildingsConfig
 from .material_match import SpectralMatchingConfig
 from .mesh_refinement import MeshRefinementConfig
@@ -78,7 +74,8 @@ class BackgroundConfig(BaseModel):
     resolution_m: float = Field(
         200.0, gt=0.0, description="Background resolution in meters"
     )
-    elevation: float = Field(0.0, description="Background elevation in meters")
+
+    model_config = {"extra": "forbid"}
 
 
 class SceneLocation(BaseModel):
@@ -237,9 +234,9 @@ class SceneGenConfig(BaseModel):
     processing: ProcessingOptions = Field(
         default_factory=ProcessingOptions, description="Processing options"
     )
-    atmosphere: AtmosphereConfig = Field(
-        default_factory=_default_atmosphere_config,
-        description="Atmosphere configuration",
+    atmosphere: Optional[AtmosphereConfig] = Field(
+        None,
+        description="Atmosphere configuration (None disables the atmosphere). See [create_molecular_atmosphere_config][s2gos_generator.core.config.atmosphere.create_molecular_atmosphere_config] for a ready-made molecular one.",
     )
     buffer: Optional[BufferConfig] = Field(
         None,
@@ -377,17 +374,15 @@ class SceneGenConfig(BaseModel):
 
     def set_atmosphere_homogeneous(
         self,
-        aerosol_dataset,
-        optical_thickness: float = 0.1,
-        scale_height: float = 1000.0,
+        sigma_s: Optional[float] = None,
+        sigma_a: float = 0.0,
+        phase: str = "rayleigh",
     ):
         """Set atmosphere using homogeneous configuration."""
         from .atmosphere import HomogeneousAtmosphereConfig
 
         homogeneous_config = HomogeneousAtmosphereConfig(
-            aerosol_dataset=aerosol_dataset,
-            optical_thickness=optical_thickness,
-            scale_height=scale_height,
+            sigma_s=sigma_s, sigma_a=sigma_a, phase=phase
         )
         self.atmosphere = AtmosphereConfig(
             details=homogeneous_config,
@@ -463,7 +458,7 @@ def create_scene_config(
             - dem_index: Custom DEM index file
             - landcover_index: Custom landcover index file
             - materials_config: Custom materials config file
-        atmosphere: Optional atmosphere configuration
+        atmosphere: Optional atmosphere configuration (None runs without atmosphere)
         **kwargs: Additional configuration options
     """
     data_sources = DataSources(**(data_overrides or {}))
@@ -478,6 +473,6 @@ def create_scene_config(
         output_dir=output_dir,
         dem_resolution_m=dem_resolution_m,
         landcover_resolution_m=landcover_resolution_m,
-        atmosphere=atmosphere or _default_atmosphere_config(),
+        atmosphere=atmosphere,
         **kwargs,
     )

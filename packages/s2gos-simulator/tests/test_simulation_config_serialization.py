@@ -5,15 +5,16 @@ import pytest
 
 from s2gos_simulator.config import (
     AstroObjectIllumination,
+    Band,
     DirectionalIllumination,
     GroundInstrumentType,
     GroundSensor,
     HemisphericalMeasurementLocation,
     IrradianceConfig,
-    SatelliteInstrument,
-    SatellitePlatform,
+    MultispectralInstrument,
     SatelliteSensor,
     SimulationConfig,
+    SpectralResponse,
 )
 from s2gos_simulator.config.viewing import AngularViewing, LookAtViewing
 
@@ -25,9 +26,8 @@ def _illumination():
 def _sat_sensor(sensor_id="sat1"):
     return SatelliteSensor(
         id=sensor_id,
-        platform=SatellitePlatform.SENTINEL_2A,
-        instrument=SatelliteInstrument.MSI,
-        band="2",
+        instrument="sentinel_2a-msi",
+        bands=["2"],
         viewing=AngularViewing(zenith=0.0, azimuth=0.0),
         film_resolution=(10, 10),
         target_center_lat=-42.0,
@@ -117,12 +117,32 @@ class TestFromJson:
         sensor = restored.sensors[0]
         assert isinstance(sensor, SatelliteSensor)
         assert sensor.id == "sat1"
-        assert sensor.platform == SatellitePlatform.SENTINEL_2A
-        assert sensor.instrument == SatelliteInstrument.MSI
-        assert sensor.band == "2"
+        assert sensor.instrument == "sentinel_2a-msi"
+        assert sensor.bands == ["2"]
         assert sensor.film_resolution == (10, 10)
         assert sensor.target_center_lat == pytest.approx(-42.0)
         assert sensor.target_center_lon == pytest.approx(-64.5)
+
+    def test_from_json_preserves_a_custom_instrument(self, tmp_path):
+        camera = MultispectralInstrument(
+            platform="my-sat",
+            name="cam",
+            bands={
+                "red": Band(
+                    srf=SpectralResponse(type="uniform", wmin=630.0, wmax=690.0),
+                    gsd_m=10,
+                )
+            },
+        )
+        sensor = _sat_sensor().model_copy(
+            update={"instrument": camera, "bands": ["red"]}
+        )
+        restored = SimulationConfig.from_json(
+            self._write(_make_config(sensors=[sensor]), tmp_path)
+        ).sensors[0]
+
+        assert restored.spec == camera
+        assert restored.band_srf("red").wmax == 690.0
 
     def test_from_json_preserves_illumination_fields(self, tmp_path):
         config = _make_config(sensors=[_sat_sensor()])

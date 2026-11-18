@@ -53,9 +53,7 @@ def generation_configs(
     )
 
     config.buffer = BufferConfig(size_km=60.0, resolution_m=60.0)
-    config.background = BackgroundConfig(
-        size_km=150.0, resolution_m=200.0, elevation=0.0
-    )
+    config.background = BackgroundConfig(size_km=150.0, resolution_m=200.0)
 
     # Configure multi-species vegetation placement with trees and shrubs
     config.vegetation_placement = VegetationPlacementConfig(

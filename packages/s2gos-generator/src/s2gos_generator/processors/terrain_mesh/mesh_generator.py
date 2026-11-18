@@ -3,7 +3,6 @@ import logging
 import numpy as np
 import trimesh
 import xarray as xr
-from s2gos_utils.io.paths import expand_mapper
 from upath import UPath
 
 
@@ -17,7 +16,7 @@ class MeshGenerator:
         self, dem_data: xr.DataArray, handle_nans: bool = True
     ) -> trimesh.Trimesh:
         """Convert a DEM DataArray to a Trimesh object."""
-        from .builder import extract_dem
+        from .builder import extract_dem, grid_faces
 
         x_coords, y_coords, elevation = extract_dem(dem_data)
         nx, ny = len(x_coords), len(y_coords)
@@ -25,7 +24,7 @@ class MeshGenerator:
         x_grid, y_grid = np.meshgrid(x_coords, y_coords)
         vertices = np.vstack([x_grid.ravel(), y_grid.ravel(), elevation.ravel()]).T
 
-        faces = self._create_grid_faces(nx, ny)
+        faces = grid_faces(nx, ny)
 
         if handle_nans:
             valid_vertex_mask = ~np.isnan(vertices[:, 2])
@@ -37,26 +36,6 @@ class MeshGenerator:
         mesh.remove_unreferenced_vertices()
 
         return mesh
-
-    def _create_grid_faces(self, nx: int, ny: int) -> np.ndarray:
-        """
-        Creates triangular faces for a regular grid.
-
-        Args:
-            nx: Number of points in x direction.
-            ny: Number of points in y direction.
-
-        Returns:
-            Array of face indices with shape (num_faces, 3).
-        """
-        i = np.arange(nx * ny).reshape(ny, nx)
-
-        quad_indices = i[:-1, :-1].ravel()
-
-        faces1 = np.vstack([quad_indices, quad_indices + 1, quad_indices + nx + 1]).T
-        faces2 = np.vstack([quad_indices, quad_indices + nx + 1, quad_indices + nx]).T
-
-        return np.vstack([faces1, faces2])
 
     def add_uv_coordinates(self, mesh: trimesh.Trimesh) -> trimesh.Trimesh:
         """
@@ -132,44 +111,6 @@ class MeshGenerator:
         from .builder import build_refined_mesh
 
         return build_refined_mesh(dem_data, operations, refinement_config, handle_nans)
-
-    def generate_mesh_from_dem_file(
-        self,
-        dem_file_path: UPath,
-        output_path: UPath,
-        add_uvs: bool = True,
-        handle_nans: bool = True,
-    ) -> trimesh.Trimesh:
-        """
-        Complete pipeline: loads DEM from file, generates mesh, and saves.
-
-        Args:
-            dem_file_path: UPath to the DEM NetCDF file.
-            output_path: UPath where the mesh will be saved.
-            add_uvs: Whether to add UV coordinates.
-            handle_nans: Whether to handle NaN values in the DEM.
-
-        Returns:
-            The generated mesh.
-        """
-
-        dem_dataset = xr.open_zarr(expand_mapper(dem_file_path))
-        dem_data = dem_dataset["elevation"]
-
-        if isinstance(dem_data, xr.Dataset):
-            if "elevation" in dem_data.data_vars:
-                dem_data = dem_data["elevation"]
-            else:
-                dem_data = dem_data[list(dem_data.data_vars.keys())[0]]
-
-        mesh = self.dem_to_mesh(dem_data, handle_nans=handle_nans)
-
-        if add_uvs:
-            mesh = self.add_uv_coordinates(mesh)
-
-        self.save_mesh(mesh, output_path)
-
-        return mesh
 
     def get_mesh_info(self, mesh: trimesh.Trimesh) -> dict:
         """

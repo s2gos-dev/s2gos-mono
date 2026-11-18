@@ -130,7 +130,7 @@
     "asphalt": {
       "type": "diffuse",
       "reflectance": {
-        "path": "spectra/spectrum_paving_asphalt.nc",
+        "path": "spectra/spectrum_manmade_road_pavingasphalt_0674uuuasp.nc",
         "variable": "reflectance"
       }
     },

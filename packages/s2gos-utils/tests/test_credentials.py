@@ -150,6 +150,21 @@ class TestCredentialToUPathKwargs:
         assert kwargs["secret"] == "mysecret"
         assert kwargs["endpoint_url"] == "https://s3.example.com"
 
+    @pytest.mark.parametrize(
+        "endpoint, expected",
+        [
+            (
+                "eodata.dataspace.copernicus.eu",
+                "https://eodata.dataspace.copernicus.eu",
+            ),
+            ("http://localhost:9000", "http://localhost:9000"),
+        ],
+    )
+    def test_s3_endpoint_gets_a_scheme(self, endpoint, expected):
+        cred = S3Credential(id="test", key="k", secret="s", endpoint_url=endpoint)
+
+        assert cred.endpoint_url == expected
+
     def test_s3_without_endpoint(self):
         """Test S3 credential without endpoint URL"""
         cred = S3Credential(id="test", key="mykey", secret="mysecret")

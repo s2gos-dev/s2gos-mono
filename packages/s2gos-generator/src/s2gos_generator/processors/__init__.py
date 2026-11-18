@@ -3,7 +3,6 @@ from .terrain_data import (
     BaseTileProcessor,
     DEMProcessor,
     LandCoverProcessor,
-    generate_buffer_mask,
 )
 from .terrain_mesh import MeshGenerator
 from .terrain_texture import TerrainMaterialGenerator
@@ -18,7 +17,6 @@ __all__ = [
     "LandCoverProcessor",
     "MeshGenerator",
     "TerrainMaterialGenerator",
-    "generate_buffer_mask",
     "import_xml_assets",
     "merge_material_libraries",
 ]

@@ -16,12 +16,12 @@ The simulator supports the following platform types, each with different instrum
 
 ### Satellite
 
-Satellite sensors produce 2D imagery at a specified ground resolution. Two main instrument categories:
+Satellite sensors produce 2D imagery of a target footprint with an instrument, either built in (by key from `INSTRUMENTS`) or defined inline. Two kinds of instrument:
 
-- **MSI** (MultiSpectral Instrument) — Few broad bands. Sentinel-2A/2B. Each band is simulated independently with its spectral response function.
-- **HSI** (HyperSpectral Instrument) — Hundreds of narrow contiguous channels such as the future CHIME mission. Gaussian SRF post-processing simulates the instrument's spectral response.
+- **Multispectral** — Few broad bands, each simulated at its native resolution.
+- **Hyperspectral** — Hundreds of narrow contiguous channels, simulated as one measure. Gaussian SRF post-processing simulates the instrument's spectral response.
 
-Built-in satellite platforms: Sentinel-2A/2B, Sentinel-3A/3B, CHIME (approximation), EnMAP. Custom platforms are supported with user-provided SRFs.
+Built-in instruments: Sentinel-2A/2B MSI (written as an EOPF-like L1C product with `output_format="eopf"`), Sentinel-3A/3B OLCI and SLSTR, CHIME (approximation). The acquisition readers in `s2gos_simulator.acquisitions` set up these sensors on a real product's own pixel grid.
 
 **CKD mode** is recommended for all satellite instrument simulations.
 
@@ -31,9 +31,10 @@ Ground-based sensors are placed at low heights for in-situ validation measuremen
 
 - **HYPSTAR** — HYPERNETS network sensor. Circular FOV, approximate SRF
 - **Perspective camera** — Standard camera with configurable FOV
+- **Fisheye camera** — Camera with a circular image, configurable FOV and lens projection
 - **Radiancemeter** — Directional radiance measurement
 
-See the [Sensors API reference](api/sensors.md) for full configuration details and helper functions like [`create_chime_sensor()`][s2gos_simulator.config.sensors.create_chime_sensor] and [`create_hypstar_sensor()`][s2gos_simulator.config.sensors.create_hypstar_sensor].
+See the [Sensors API reference](api/sensors.md) for full configuration details and the [`create_hypstar_sensor()`][s2gos_simulator.config.sensors.create_hypstar_sensor] helper.
 
 ## Level 2 Products
 
