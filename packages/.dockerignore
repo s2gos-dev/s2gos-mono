@@ -1,0 +1,9 @@
+# Build context for packages/s2gos-apps/free-tier.Dockerfile (context: packages/).
+# Allowlist: only what that image copies.
+*
+!s2gos-utils/pyproject.toml
+!s2gos-utils/README.md
+!s2gos-utils/src
+!s2gos-apps/pyproject.toml
+!s2gos-apps/src
+**/__pycache__
