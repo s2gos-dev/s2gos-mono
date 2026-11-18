@@ -60,8 +60,9 @@ class SensorProcessor:
         original_radiance = dataset["radiance"]
         radiance = original_radiance
         pp = getattr(sensor, "post_processing", None)
+        valid = dataset.get("valid")
 
-        radiance = self._apply_fov_mask_step(radiance, sensor, pp)
+        radiance = self._apply_fov_mask_step(radiance, sensor, pp, valid)
 
         if pp is not None and getattr(pp, "generate_rgb_image", False):
             from upath import UPath
@@ -94,17 +95,32 @@ class SensorProcessor:
             return dataset
 
         return self._build_result(
-            dataset, radiance, sensor, pp, spectral_changed=spectral_changed
+            dataset,
+            radiance,
+            sensor,
+            pp,
+            spectral_changed=spectral_changed,
+            valid=valid,
         )
 
-    def _apply_fov_mask_step(self, data: xr.DataArray, sensor, pp) -> xr.DataArray:
+    def _apply_fov_mask_step(
+        self, data: xr.DataArray, sensor, pp, valid: xr.DataArray | None = None
+    ) -> xr.DataArray:
         """Apply the circular FOV mask if the sensor is configured for it.
+
+        The simulation's ``valid`` pixel mask is used when there is one (fisheye
+        cameras), otherwise the disk inscribed in the film.
 
         Returns the input object unchanged when the step does not apply, so callers
         can detect a no-op with an identity check.
         """
         if pp is None or not getattr(pp, "apply_circular_mask", False):
             return data
+
+        if valid is not None:
+            masked = data.where(valid)
+            masked.attrs["circular_mask_applied"] = True
+            return masked
 
         fov = getattr(sensor, "fov", None)
         if fov is None:
@@ -126,14 +142,16 @@ class SensorProcessor:
 
         return self._apply_spatial_averaging(data)
 
-    def _apply_spatial_ops(self, data: xr.DataArray, sensor, pp) -> xr.DataArray:
+    def _apply_spatial_ops(
+        self, data: xr.DataArray, sensor, pp, valid: xr.DataArray | None = None
+    ) -> xr.DataArray:
         """Apply the configured spatial operations (FOV mask, then averaging).
 
         Used to keep the extra simulation variables consistent with the processed
         radiance. RGB generation is deliberately not part of this: it is a
         radiance-only side effect that must run between the two steps.
         """
-        data = self._apply_fov_mask_step(data, sensor, pp)
+        data = self._apply_fov_mask_step(data, sensor, pp, valid)
         return self._apply_averaging_step(data, pp)
 
     def _resolve_target_wavelengths(self, srf_config, radiance: xr.DataArray):
@@ -155,6 +173,7 @@ class SensorProcessor:
         sensor=None,
         pp=None,
         spectral_changed: bool = False,
+        valid: xr.DataArray | None = None,
     ) -> xr.Dataset:
         """Assemble output dataset, propagating available variables at new wavelength grid.
 
@@ -164,6 +183,7 @@ class SensorProcessor:
             sensor: Sensor that produced the result (needed to replay spatial ops)
             pp: PostProcessingOptions of that sensor (may be None)
             spectral_changed: Whether the wavelength grid changed
+            valid: Pixel mask of the simulation, kept as is when present
 
         Returns:
             Post-processed dataset
@@ -185,8 +205,10 @@ class SensorProcessor:
         else:
             for name in extras:
                 variable = original_dataset[name]
-                if any(d in variable.dims for d in ("x_index", "y_index")):
-                    variable = self._apply_spatial_ops(variable, sensor, pp)
+                if name != "valid" and any(
+                    d in variable.dims for d in ("x_index", "y_index")
+                ):
+                    variable = self._apply_spatial_ops(variable, sensor, pp, valid)
                 result[name] = variable
 
         return xr.Dataset(result, attrs=original_dataset.attrs)

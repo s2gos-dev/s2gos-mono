@@ -57,7 +57,7 @@ class GroundInstrumentType(str, Enum):
     PERSPECTIVE_CAMERA = "perspective_camera"
     PYRANOMETER = "pyranometer"
     FLUX_METER = "flux_meter"
-    DHP_CAMERA = "dhp_camera"
+    FISHEYE_CAMERA = "fisheye_camera"
     RADIANCEMETER = "radiancemeter"
 
 
@@ -98,6 +98,44 @@ class PostProcessingOptions(BaseModel):
         default=1.8,
         gt=0.0,
         description="Brightness multiplier for RGB visualization",
+    )
+
+
+class FisheyeLens(BaseModel):
+    """Lens of a fisheye camera, passed to Eradiate's ``fisheye`` measure.
+
+    Pixel quantities are expressed at ``calibration_resolution``, which defaults to
+    the film resolution. Unset fields fall back to Eradiate's defaults: the optical
+    centre at the film centre and the image circle inscribed in the film.
+    """
+
+    projection_model: Literal[
+        "equidistant", "equisolid", "stereographic", "orthographic", "polynomial"
+    ] = Field(
+        default="equisolid",
+        description="Radial mapping from the angle to the optical axis to image radius",
+    )
+    lens_coefficients: Optional[List[float]] = Field(
+        default=None,
+        description=(
+            "Polynomial coefficients [c0, c1, ...] of rho(theta) = c0*theta + "
+            "c1*theta**2 + ..., theta in radians (polynomial model only)"
+        ),
+    )
+    center_x: Optional[float] = Field(
+        default=None,
+        description="Optical centre x in pixels from the left edge of the image",
+    )
+    center_y: Optional[float] = Field(
+        default=None,
+        description="Optical centre y in pixels from the top edge of the image",
+    )
+    image_circle_radius: Optional[float] = Field(
+        default=None, gt=0.0, description="Image circle radius in pixels"
+    )
+    calibration_resolution: Optional[Tuple[int, int]] = Field(
+        default=None,
+        description="Resolution (width, height) the pixel quantities are given at",
     )
 
 
@@ -560,11 +598,20 @@ class GroundSensor(BaseSensor):
     ] = Field(..., description="Viewing geometry")
     fov: Optional[float] = Field(
         None,
-        description="Field of view in degrees (for camera-like instruments: HYPSTAR, perspective_camera, dhp_camera)",
+        description=(
+            "Field of view in degrees (for camera-like instruments: HYPSTAR, "
+            "perspective_camera, fisheye_camera). For fisheye_camera, the full angle "
+            "of the image circle, or for a polynomial lens the full angle its "
+            "calibration was fitted over"
+        ),
     )
     resolution: Optional[List[int]] = Field(
         None,
-        description="Film resolution [width, height] (for camera-like instruments: HYPSTAR, perspective_camera, dhp_camera)",
+        description="Film resolution [width, height] (for camera-like instruments: HYPSTAR, perspective_camera, fisheye_camera)",
+    )
+    lens: Optional[FisheyeLens] = Field(
+        None,
+        description="Fisheye lens (fisheye_camera only), Eradiate defaults when unset",
     )
     post_processing: Optional[PostProcessingOptions] = Field(
         None,
@@ -620,7 +667,7 @@ class GroundSensor(BaseSensor):
         camera_instruments = [
             GroundInstrumentType.HYPSTAR,
             GroundInstrumentType.PERSPECTIVE_CAMERA,
-            GroundInstrumentType.DHP_CAMERA,
+            GroundInstrumentType.FISHEYE_CAMERA,
         ]
 
         if self.instrument in camera_instruments:
@@ -629,6 +676,19 @@ class GroundSensor(BaseSensor):
                     f"'{self.instrument.value}' requires a pointing view "
                     f"('directional' or 'angular_from_origin'), not '{self.viewing.type}'."
                 )
+
+        is_fisheye = self.instrument == GroundInstrumentType.FISHEYE_CAMERA
+        if self.lens is not None and not is_fisheye:
+            raise ValueError(
+                f"'lens' is only used by 'fisheye_camera', not '{self.instrument.value}'."
+            )
+
+        pp = self.post_processing
+        if is_fisheye and pp and pp.spatial_averaging and not pp.apply_circular_mask:
+            raise ValueError(
+                "Spatial averaging of a 'fisheye_camera' needs apply_circular_mask, "
+                "otherwise the pixels outside the image circle enter the average."
+            )
 
         if self.id is None:
             if hasattr(self.viewing, "origin"):

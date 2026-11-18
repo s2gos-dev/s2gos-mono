@@ -16,6 +16,7 @@ from s2gos_simulator.backends.eradiate.geometry_utils import (
 from s2gos_simulator.config import (
     BRFConfig,
     DirectionalIllumination,
+    FisheyeLens,
     GroundInstrumentType,
     GroundSensor,
     HCRFConfig,
@@ -436,6 +437,49 @@ class TestGroundSensorTranslation:
         assert result["up"] == pytest.approx([0, 1, 0])
         assert result["fov"] == pytest.approx(70.0)
         assert result["film_resolution"] == [512, 512]
+
+    def test_ground_fisheye_camera(self, translator, minimal_scene, scene_dir):
+        viewing = LookAtViewing(
+            origin=[0, 0, 2],
+            target=[0, 0, 10],
+            up=[0, 1, 0],
+            terrain_relative_height=False,
+        )
+        default = GroundSensor(
+            id="fish", instrument=GroundInstrumentType.FISHEYE_CAMERA, viewing=viewing
+        )
+        result = self._translate_ground(translator, default, minimal_scene, scene_dir)
+
+        assert result["type"] == "fisheye"
+        assert result["fov"] == pytest.approx(180.0)
+        assert result["film_resolution"] == [1024, 1024]
+        assert result["up"] == pytest.approx([0, 1, 0])
+        assert "projection_model" not in result
+
+        lens = FisheyeLens(
+            projection_model="polynomial",
+            lens_coefficients=[0.62, 0.0, -0.02],
+            center_x=512.3,
+            center_y=509.8,
+            image_circle_radius=500.0,
+            calibration_resolution=(1024, 1024),
+        )
+        calibrated = GroundSensor(
+            id="fish",
+            instrument=GroundInstrumentType.FISHEYE_CAMERA,
+            viewing=viewing,
+            lens=lens,
+        )
+        result = self._translate_ground(
+            translator, calibrated, minimal_scene, scene_dir
+        )
+
+        assert result["projection_model"] == "polynomial"
+        assert result["lens_coefficients"] == [0.62, 0.0, -0.02]
+        assert result["center_x"] == 512.3
+        assert result["center_y"] == 509.8
+        assert result["image_circle_radius"] == 500.0
+        assert tuple(result["calibration_resolution"]) == (1024, 1024)
 
     def test_ground_hypstar(self, translator, minimal_scene, scene_dir):
         sensor = GroundSensor(

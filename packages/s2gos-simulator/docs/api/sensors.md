@@ -16,4 +16,5 @@ observing systems together with their associated instrument types.
 
 ::: s2gos_simulator.config.sensors.GroundInstrumentType
 ::: s2gos_simulator.config.sensors.PostProcessingOptions
+::: s2gos_simulator.config.sensors.FisheyeLens
 ::: s2gos_simulator.config.sensors.create_hypstar_sensor

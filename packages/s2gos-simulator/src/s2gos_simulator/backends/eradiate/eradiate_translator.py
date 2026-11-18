@@ -478,16 +478,15 @@ class EradiateTranslator:
 
             if sensor.instrument in [
                 GroundInstrumentType.PERSPECTIVE_CAMERA,
-                GroundInstrumentType.DHP_CAMERA,
+                GroundInstrumentType.FISHEYE_CAMERA,
             ]:
-                base_measure["type"] = "perspective"
+                is_fisheye = sensor.instrument == GroundInstrumentType.FISHEYE_CAMERA
+                base_measure["type"] = "fisheye" if is_fisheye else "perspective"
                 base_measure["film_resolution"] = sensor.resolution or [1024, 1024]
-                base_measure["fov"] = sensor.fov or (
-                    180.0
-                    if sensor.instrument == GroundInstrumentType.DHP_CAMERA
-                    else 70.0
-                )
+                base_measure["fov"] = sensor.fov or (180.0 if is_fisheye else 70.0)
                 base_measure["up"] = view.up or [0, 0, 1]
+                if sensor.lens is not None:
+                    base_measure.update(sensor.lens.model_dump(exclude_none=True))
 
             elif sensor.instrument == GroundInstrumentType.HYPSTAR:
                 base_measure["type"] = "perspective"

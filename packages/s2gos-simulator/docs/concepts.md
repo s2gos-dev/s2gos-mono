@@ -31,6 +31,7 @@ Ground-based sensors are placed at low heights for in-situ validation measuremen
 
 - **HYPSTAR** — HYPERNETS network sensor. Circular FOV, approximate SRF
 - **Perspective camera** — Standard camera with configurable FOV
+- **Fisheye camera** — Camera with a circular image, configurable FOV and lens projection
 - **Radiancemeter** — Directional radiance measurement
 
 See the [Sensors API reference](api/sensors.md) for full configuration details and the [`create_hypstar_sensor()`][s2gos_simulator.config.sensors.create_hypstar_sensor] helper.
