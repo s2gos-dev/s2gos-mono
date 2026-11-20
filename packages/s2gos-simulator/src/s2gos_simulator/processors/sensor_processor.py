@@ -69,9 +69,16 @@ class SensorProcessor:
                 dataset attributes (which strips credentials).
 
         Returns:
-            Post-processed dataset with SRF convolution, averaging, etc.
+            Post-processed dataset with SRF convolution, averaging, etc. A
+            irradiancemeter's is its irradiance (see `irradiancemeter.to_irradiance`).
         """
-        return self._apply_post_processing(dataset, sensor, output_dir=output_dir)
+        from ..config import GroundInstrumentType
+        from ..irradiancemeter import to_irradiance
+
+        processed = self._apply_post_processing(dataset, sensor, output_dir=output_dir)
+        if getattr(sensor, "instrument", None) == GroundInstrumentType.IRRADIANCEMETER:
+            return to_irradiance(processed, sensor)
+        return processed
 
     def _apply_post_processing(
         self, dataset: xr.Dataset, sensor, output_dir=None

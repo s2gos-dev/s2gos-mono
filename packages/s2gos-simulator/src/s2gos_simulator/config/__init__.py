@@ -21,7 +21,6 @@ from .measurements import (
     HCRFConfig,
     HDRFConfig,
     HemisphericalMeasurementLocation,
-    IrradianceConfig,
     MeasurementConfig,
     PixelBHRConfig,
     PixelBRFConfig,
@@ -30,6 +29,7 @@ from .measurements import (
 from .sensors import (
     HYPSTAR_SPECTRAL_REGIONS,
     HYPSTAR_SRF,
+    PAR_SRF,
     BaseSensor,
     FisheyeLens,
     GroundInstrumentType,
@@ -67,7 +67,6 @@ __all__ = [
     "HCRFConfig",
     "HDRFConfig",
     "HemisphericalMeasurementLocation",
-    "IrradianceConfig",
     "MeasurementConfig",
     "PixelBHRConfig",
     "PixelBRFConfig",
@@ -83,6 +82,7 @@ __all__ = [
     # sensors
     "HYPSTAR_SPECTRAL_REGIONS",
     "HYPSTAR_SRF",
+    "PAR_SRF",
     "BaseSensor",
     "FisheyeLens",
     "GroundInstrumentType",

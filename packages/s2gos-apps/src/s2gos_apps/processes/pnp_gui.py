@@ -386,8 +386,6 @@ def pnp_gui_simulation(
         GroundInstrumentType,
         GroundSensor,
         HDRFConfig,
-        HemisphericalMeasurementLocation,
-        IrradianceConfig,
         LookAtViewing,
         PixelHDRFConfig,
         PostProcessingOptions,
@@ -493,28 +491,27 @@ def pnp_gui_simulation(
             )
         )
 
-        # Add irradiance measurement and HDRF config
-        measurements.extend(
-            [
-                IrradianceConfig(
-                    id="hypstar_irradiance",
-                    location=HemisphericalMeasurementLocation(
-                        target_x=TOWER_COORDS[0],
-                        target_y=TOWER_COORDS[1],
-                        target_z=4,
-                        height_offset_m=45,
-                        terrain_relative_height=True,
-                        srf=SpectralResponse(type="uniform", wmin=380, wmax=1680),
-                        samples_per_pixel=spp,
-                    ),
-                    samples_per_pixel=spp,
+        # Upward irradiancemeter on the tower giving the BOA irradiance of the HDRF
+        sensors.append(
+            GroundSensor(
+                id="hypstar_irradiance",
+                instrument=GroundInstrumentType.IRRADIANCEMETER,
+                viewing=AngularFromOriginViewing(
+                    origin=[TOWER_COORDS[0], TOWER_COORDS[1], 45.0],
+                    zenith=0.0,
+                    terrain_relative_height=True,
                 ),
-                HDRFConfig(
-                    id="hypstar_hcrf",
-                    radiance_sensor_id="hypstar",
-                    irradiance_measurement_id="hypstar_irradiance",
-                ),
-            ]
+                srf="hypstar",
+                # One ray per sample: as many as the former 32x32 reference film
+                samples_per_pixel=spp * 1024,
+            )
+        )
+        measurements.append(
+            HDRFConfig(
+                id="hypstar_hcrf",
+                radiance_sensor_id="hypstar",
+                irradiance_sensor_id="hypstar_irradiance",
+            )
         )
 
     elif observation == ObservationType.RGB_CAMERA:

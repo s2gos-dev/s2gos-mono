@@ -4,9 +4,9 @@ from typing import Dict, List
 import xarray as xr
 from upath import UPath
 
+from .backends.eradiate.geometry_utils import sanitize_sensor_id
 from .backends.eradiate.reflectance_computation import compute_hcrf, compute_hdrf
 from .config import HCRFConfig, HDRFConfig
-from .irradiance_processor import IrradianceProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -17,24 +17,21 @@ class HDRFProcessor:
     def __init__(self, backend):
         self.backend = backend
         self.simulation_config = backend.simulation_config
-        self.irradiance_processor = IrradianceProcessor(backend)
 
     def requires_hdrf(self) -> bool:
-        """Check if any measurements require HDRF computation.
+        """Check if any measurements require HDRF or HCRF computation.
 
         Returns:
-            True if HDRF computation is needed
+            True if HDRF or HCRF computation is needed
         """
-        from .config import HDRFConfig
 
         # Check if any sensor produces HDRF
         for sensor in self.simulation_config.sensors:
             if hasattr(sensor, "produces") and "hdrf" in sensor.produces:
                 return True
 
-        # Check if any measurement is an HDRF config
         for measurement in self.simulation_config.measurements:
-            if isinstance(measurement, HDRFConfig):
+            if isinstance(measurement, (HDRFConfig, HCRFConfig)):
                 return True
 
         return False
@@ -106,8 +103,12 @@ class HDRFProcessor:
 
         for config in derived_configs:
             meas_id = config.id
-            rad_id = getattr(config, "radiance_sensor_id", None)
-            irr_id = getattr(config, "irradiance_measurement_id", None)
+            rad_id = config.radiance_sensor_id and sanitize_sensor_id(
+                config.radiance_sensor_id
+            )
+            irr_id = config.irradiance_sensor_id and sanitize_sensor_id(
+                config.irradiance_sensor_id
+            )
 
             if isinstance(config, HDRFConfig):
                 ref_type = "hdrf"
@@ -135,7 +136,7 @@ class HDRFProcessor:
             E_ds = raw_results[irr_id]
 
             L_data = L_ds.get("radiance")
-            E_data = E_ds.get("boa_irradiance")
+            E_data = E_ds.get("irradiance")
 
             if L_data is None or E_data is None:
                 logger.error(f"Missing data variables in datasets for {meas_id}")

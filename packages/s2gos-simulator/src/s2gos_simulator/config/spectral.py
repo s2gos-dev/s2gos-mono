@@ -127,6 +127,7 @@ class SpectralResponse(BaseModel):
     - **uniform**: Wavelength range (wmin, wmax) → Eradiate's uniform
     - **dataset**: String ID for predefined SRFs → Eradiate's internal database
     - **gaussian**: Gaussian SRF with configurable FWHM (for hyperspectral instruments)
+    - **band**: Tabulated relative response (wavelengths + values) → Eradiate's band SRF
 
     Gaussian SRF Example (CHIME-like):
         SpectralResponse(
@@ -140,14 +141,22 @@ class SpectralResponse(BaseModel):
         )
     """
 
-    type: Literal["delta", "uniform", "dataset", "gaussian"] = Field(
-        "delta", description="SRF type: 'delta', 'uniform', 'dataset', or 'gaussian'"
+    type: Literal["delta", "uniform", "dataset", "gaussian", "band"] = Field(
+        "delta",
+        description="SRF type: 'delta', 'uniform', 'dataset', 'gaussian', or 'band'",
     )
 
-    # Delta SRF fields
+    # Delta and band SRF fields
     wavelengths: Optional[List[float]] = Field(
         None,
-        description="Wavelengths in nm for delta SRF",
+        description="Wavelengths in nm for a delta SRF, or the nodes of a band SRF",
+    )
+    values: Optional[List[float]] = Field(
+        None,
+        description=(
+            "Relative response at each of `wavelengths` for a band SRF, linearly "
+            "interpolated between nodes and zero outside them"
+        ),
     )
 
     # Uniform SRF fields
@@ -189,6 +198,8 @@ class SpectralResponse(BaseModel):
             raise ValueError("Delta SRF requires wavelengths")
         elif self.type == "uniform" and (not self.wmin or not self.wmax):
             raise ValueError("Uniform SRF requires wmin and wmax")
+        elif self.type == "band":
+            self._validate_band()
         elif self.type == "dataset" and not self.dataset_id:
             raise ValueError("Dataset SRF requires dataset_id")
         elif self.type == "gaussian":
@@ -201,6 +212,26 @@ class SpectralResponse(BaseModel):
             if has_single_fwhm and has_regions:
                 raise ValueError("Specify fwhm_nm OR spectral_regions, not both")
         return self
+
+    def _validate_band(self):
+        w, v = self.wavelengths, self.values
+        if not w or v is None or len(w) != len(v) or len(w) < 2:
+            raise ValueError(
+                "Band SRF requires 'wavelengths' and 'values' of the same length (>= 2)"
+            )
+        if any(b <= a for a, b in zip(w, w[1:])):
+            raise ValueError("Band SRF wavelengths must be strictly increasing")
+        if min(v) < 0:
+            raise ValueError("Band SRF values must be non-negative")
+
+    def integral(self) -> float:
+        """Integral of a band SRF over wavelength, in nm."""
+        if self.type != "band":
+            raise ValueError(f"Only a band SRF has an integral, not '{self.type}'")
+        w, v = self.wavelengths, self.values
+        return sum(
+            (w1 - w0) * (v0 + v1) / 2 for w0, w1, v0, v1 in zip(w, w[1:], v, v[1:])
+        )
 
     def get_fwhm_for_wavelength(self, wavelength_nm: float) -> float:
         """Get FWHM for a given wavelength.

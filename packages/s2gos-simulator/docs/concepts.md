@@ -33,16 +33,17 @@ Ground-based sensors are placed at low heights for in-situ validation measuremen
 - **Perspective camera** — Standard camera with configurable FOV
 - **Fisheye camera** — Camera with a circular image, configurable FOV and lens projection
 - **Radiancemeter** — Directional radiance measurement
+- **Irradiancemeter** — Irradiance on a flat collector facing any direction: up for BOA irradiance, down for reflected flux. SRF preset `"par"`
 
 See the [Sensors API reference](api/sensors.md) for full configuration details and the [`create_hypstar_sensor()`][s2gos_simulator.config.sensors.create_hypstar_sensor] helper.
 
 ## Level 2 Products
 
-Every simulation includes top of atmosphere solar irradiance automatically. All other quantities are BOA (bottom-of-atmosphere) measurements and must be explicitly requested by listing them under `measurements` in [`SimulationConfig`][s2gos_simulator.config.simulation.SimulationConfig].
+Every simulation includes top of atmosphere solar irradiance automatically. BOA irradiance comes from irradiancemeters. The other quantities are BOA (bottom-of-atmosphere) measurements and must be explicitly requested by listing them under `measurements` in [`SimulationConfig`][s2gos_simulator.config.simulation.SimulationConfig].
 
 | Quantity | Illumination | Outgoing geometry |
 |---|---|---|
-| **Irradiance** | — | Downwelling flux at the surface (BOA) |
+| **Irradiance** | — | Flux on a collector, measured by an irradiancemeter sensor |
 | **BRF** | Direct beam only | Single direction |
 | **HDRF** | Direct + diffuse (atmosphere) | Single direction |
 | **HCRF** | Direct + diffuse (atmosphere) | Finite cone (camera FOV) |

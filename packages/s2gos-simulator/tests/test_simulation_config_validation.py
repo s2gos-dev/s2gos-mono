@@ -2,13 +2,13 @@ import pytest
 
 from s2gos_simulator.config import (
     Band,
+    BHRConfig,
     BRFConfig,
     DirectionalIllumination,
     GroundInstrumentType,
     GroundSensor,
     HDRFConfig,
     HemisphericalMeasurementLocation,
-    IrradianceConfig,
     MultispectralInstrument,
     PixelHDRFConfig,
     SatelliteSensor,
@@ -57,8 +57,22 @@ def _location():
     )
 
 
-def _irradiance_config(irr_id="irr1"):
-    return IrradianceConfig(id=irr_id, location=_location())
+def _irradiancemeter(sensor_id="irr1", zenith=0.0):
+    return GroundSensor(
+        id=sensor_id,
+        instrument=GroundInstrumentType.IRRADIANCEMETER,
+        viewing=AngularFromOriginViewing(origin=[0.0, 0.0, 2.0], zenith=zenith),
+        srf="par",
+    )
+
+
+def _brf_config(brf_id="brf1"):
+    return BRFConfig(
+        id=brf_id,
+        viewing=AngularFromOriginViewing(
+            origin=[0.0, 0.0, 1.0], zenith=0.0, azimuth=0.0
+        ),
+    )
 
 
 def _make_config(**kwargs):
@@ -121,66 +135,72 @@ class TestSensorIDUniqueness:
 
 class TestMeasurementIDUniqueness:
     def test_duplicate_measurement_ids_raises(self):
-        irr1 = _irradiance_config("irr1")
-        irr2 = _irradiance_config("irr1")  # same id
         with pytest.raises(ValueError, match="Duplicate measurement ID"):
-            _make_config(sensors=[_sat_sensor()], measurements=[irr1, irr2])
+            _make_config(
+                sensors=[_sat_sensor()],
+                measurements=[_brf_config("m1"), _brf_config("m1")],
+            )
 
     def test_unique_measurement_ids_passes(self):
-        irr1 = _irradiance_config("irr1")
-        irr2 = _irradiance_config("irr2")
-        _make_config(sensors=[_sat_sensor()], measurements=[irr1, irr2])
+        _make_config(
+            sensors=[_sat_sensor()],
+            measurements=[_brf_config("m1"), _brf_config("m2")],
+        )
 
 
 class TestHDRFValidation:
     def test_hdrf_references_nonexistent_sensor_raises(self):
-        irr = _irradiance_config("irr1")
         hdrf = HDRFConfig(
-            id="hdrf1",
-            radiance_sensor_id="ghost_sensor",
-            irradiance_measurement_id="irr1",
+            id="hdrf1", radiance_sensor_id="ghost_sensor", irradiance_sensor_id="irr1"
         )
         with pytest.raises(ValueError):
+            _make_config(sensors=[_irradiancemeter()], measurements=[hdrf])
+
+    @pytest.mark.parametrize(
+        "irradiance_sensor_id, match",
+        [
+            ("ghost_pyr", "not a known sensor"),
+            ("rad1", "not an irradiancemeter"),
+            ("down", "does not face straight up"),
+        ],
+    )
+    def test_hdrf_rejects_unsuitable_irradiance_sensor(
+        self, irradiance_sensor_id, match
+    ):
+        hdrf = HDRFConfig(
+            id="hdrf1",
+            radiance_sensor_id="rad1",
+            irradiance_sensor_id=irradiance_sensor_id,
+        )
+        with pytest.raises(ValueError, match=match):
             _make_config(
-                sensors=[_sat_sensor()],
-                measurements=[irr, hdrf],
+                sensors=[
+                    _ground_sensor("rad1"),
+                    _irradiancemeter("down", zenith=180.0),
+                ],
+                measurements=[hdrf],
             )
 
-    def test_hdrf_references_nonexistent_irradiance_raises(self):
-        sensor = _ground_sensor("rad1")
-        hdrf = HDRFConfig(
-            id="hdrf1",
-            radiance_sensor_id="rad1",
-            irradiance_measurement_id="ghost_irr",
+    def test_bhr_rejects_a_downward_irradiance_sensor(self):
+        bhr = BHRConfig(
+            id="bhr1",
+            target_x=0.0,
+            target_y=0.0,
+            target_z=0.0,
+            irradiance_sensor_id="down",
         )
-        with pytest.raises(ValueError):
-            _make_config(sensors=[sensor], measurements=[hdrf])
-
-    def test_hdrf_references_non_irradiance_measurement_raises(self):
-        brf = BRFConfig(
-            id="brf1",
-            viewing=AngularFromOriginViewing(
-                origin=[0.0, 0.0, 1.0], zenith=0.0, azimuth=0.0
-            ),
-        )
-        sensor = _ground_sensor("rad1")
-        hdrf = HDRFConfig(
-            id="hdrf1",
-            radiance_sensor_id="rad1",
-            irradiance_measurement_id="brf1",
-        )
-        with pytest.raises(ValueError):
-            _make_config(sensors=[sensor], measurements=[brf, hdrf])
+        with pytest.raises(ValueError, match="BHR 'bhr1'.*does not face straight up"):
+            _make_config(
+                sensors=[_irradiancemeter("down", zenith=180.0)], measurements=[bhr]
+            )
 
     def test_valid_hdrf_reference_mode_passes(self):
-        sensor = _ground_sensor("rad1")
-        irr = _irradiance_config("irr1")
         hdrf = HDRFConfig(
-            id="hdrf1",
-            radiance_sensor_id="rad1",
-            irradiance_measurement_id="irr1",
+            id="hdrf1", radiance_sensor_id="rad1", irradiance_sensor_id="irr1"
         )
-        _make_config(sensors=[sensor], measurements=[irr, hdrf])
+        _make_config(
+            sensors=[_ground_sensor("rad1"), _irradiancemeter()], measurements=[hdrf]
+        )
 
     def test_valid_hdrf_with_auto_generation_passes(self):
         hdrf = HDRFConfig(
@@ -405,24 +425,16 @@ class TestSatelliteSensorInstrument:
         "measurements",
         [
             [BRFConfig(id="m", radiance_sensor_id="sat")],
-            [
-                IrradianceConfig(
-                    id="irr",
-                    location=HemisphericalMeasurementLocation(
-                        target_x=0, target_y=0, target_z=1
-                    ),
-                ),
-                HDRFConfig(
-                    id="m", radiance_sensor_id="sat", irradiance_measurement_id="irr"
-                ),
-            ],
+            [HDRFConfig(id="m", radiance_sensor_id="sat", irradiance_sensor_id="irr")],
         ],
     )
     def test_reference_mode_rejects_a_multispectral_sensor(self, measurements):
         sensor = self._sensor(id="sat", bands=["2"])
 
         with pytest.raises(ValueError, match="results are per band"):
-            _make_config(sensors=[sensor], measurements=measurements)
+            _make_config(
+                sensors=[sensor, _irradiancemeter("irr")], measurements=measurements
+            )
 
     def test_reference_mode_accepts_a_hyperspectral_sensor(self):
         sensor = self._sensor(id="sat", instrument="chime-hsi", target_size_km=0.3)

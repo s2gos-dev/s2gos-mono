@@ -493,7 +493,8 @@ class SurfaceBuilder:
     def _add_disk(self, kdict: dict, obj: dict) -> None:
         """Add a disk object to kernel dictionary.
 
-        Creates a circular disk with Lambertian white material.
+        Creates a circular disk with Lambertian white material, facing +z or along
+        the optional ``normal``.
 
         Args:
             kdict: Kernel dictionary to update
@@ -501,12 +502,18 @@ class SurfaceBuilder:
         """
         center = obj["center"]
         radius = obj["radius"]
+        normal = obj.get("normal", [0.0, 0.0, 1.0])
         disk_id = obj.get("id") or obj.get("object_id", f"disk_{len(kdict)}")
+        up = [1.0, 0.0, 0.0] if abs(normal[2]) > 0.9 else [0.0, 0.0, 1.0]
 
         obj_dict = {
             "type": "disk",
             "to_world": (
-                mi.ScalarTransform4f.translate(center)
+                mi.ScalarTransform4f.look_at(
+                    origin=center,
+                    target=[c + n for c, n in zip(center, normal)],
+                    up=up,
+                )
                 @ mi.ScalarTransform4f.scale(radius)
             ),
             "bsdf": {
@@ -515,8 +522,6 @@ class SurfaceBuilder:
             },
             "id": disk_id,
         }
-        logger.info(f"{obj_dict = }")
-
         kdict[disk_id] = obj_dict
 
     def _add_ply_mesh(self, kdict: dict, obj: dict, scene_dir: UPath) -> None:

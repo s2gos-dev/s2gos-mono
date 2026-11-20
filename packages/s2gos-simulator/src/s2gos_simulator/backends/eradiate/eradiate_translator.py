@@ -25,13 +25,19 @@ from ...config import (
     GroundSensor,
     HCRFConfig,
     HDRFConfig,
+    HemisphericalMeasurementLocation,
     HemisphericalViewing,
-    IrradianceConfig,
     LookAtViewing,
     RectangleTarget,
     SatelliteSensor,
 )
-from ...config.sensors import PostProcessingOptions
+from ...config.sensors import (
+    IRRADIANCEMETER_DISK_LIFT_M,
+    IRRADIANCEMETER_DISK_RADIUS_M,
+    IRRADIANCEMETER_MIN_SEPARATION_M,
+    IRRADIANCEMETER_STANDOFF_M,
+    PostProcessingOptions,
+)
 
 try:
     from eradiate.units import unit_registry as ureg
@@ -41,6 +47,27 @@ except ImportError:
     ERADIATE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+
+def _check_disk_separation(disks: List[Dict[str, Any]]) -> None:
+    """Raise if two irradiancemeter disks would light each other (see `irradiancemeter_disks`)."""
+    from scipy.spatial import cKDTree
+
+    centers = np.array([d["center"] for d in disks]).reshape(-1, 3)
+    normals = np.array([d["normal"] for d in disks]).reshape(-1, 3)
+    mounts = centers - IRRADIANCEMETER_DISK_LIFT_M * normals
+    for i, j in cKDTree(centers).query_pairs(IRRADIANCEMETER_MIN_SEPARATION_M):
+        back_to_back = np.allclose(mounts[i], mounts[j], atol=1e-6) and np.allclose(
+            normals[i], -normals[j], atol=1e-6
+        )
+        if not back_to_back:
+            raise ValueError(
+                f"Irradiancemeter disks '{disks[i]['object_id']}' and "
+                f"'{disks[j]['object_id']}' are "
+                f"{np.linalg.norm(centers[i] - centers[j]):.2f} m apart: keep "
+                f"irradiancemeters at least {IRRADIANCEMETER_MIN_SEPARATION_M} m apart unless "
+                "they share a position and either face the same way or opposite ways"
+            )
 
 
 def _solar_irradiance_dict(illumination) -> Dict[str, Any]:
@@ -236,22 +263,16 @@ class EradiateTranslator:
         self,
         scene_description: SceneDescription,
         scene_dir: UPath,
-        include_irradiance_measures: bool = True,
         sensor_ids: Optional[Set[str]] = None,
-        irradiance_disk_coords: Optional[Dict[str, tuple]] = None,
     ) -> List[Dict[str, Any]]:
-        """Translate generic sensors and measurements to Eradiate measures.
+        """Translate sensors to Eradiate measures.
 
         Args:
             scene_description: Scene description with metadata
             scene_dir: Scene directory path
-            include_irradiance_measures: Whether to include irradiance measurements
             sensor_ids: Optional set of sensor IDs to include. If None, all sensors
                 are included. Use this to filter sensors for specific workflows
                 (e.g., only BRF sensors for BRF workflow).
-            irradiance_disk_coords: Optional mapping of IrradianceConfig ID to
-                (x, y, z) disk coordinates. Required when include_irradiance_measures
-                is True and IrradianceConfig measurements are present.
 
         Returns:
             List of Eradiate measure dictionaries
@@ -293,31 +314,6 @@ class EradiateTranslator:
                 )
             else:
                 raise ValueError(f"Unsupported sensor type: {type(sensor)}")
-
-        if include_irradiance_measures:
-            coords_map = irradiance_disk_coords or {}
-            for measurement in self.simulation_config.measurements:
-                if isinstance(measurement, IrradianceConfig):
-                    disk_coords = coords_map.get(measurement.id)
-                    if disk_coords is None:
-                        # Disk coords not yet available (e.g. called before irradiance
-                        # simulation has run, or from a workflow that doesn't use irradiance).
-                        logger.debug(
-                            f"Skipping irradiance measure '{measurement.id}': "
-                            f"no disk coordinates provided."
-                        )
-                        continue
-                    measures.append(
-                        self.create_irradiance_measure(measurement, disk_coords)
-                    )
-                elif isinstance(
-                    measurement, (HDRFConfig, HCRFConfig, BRFConfig, BHRConfig)
-                ):
-                    continue  # Handled in derived measurements
-                else:
-                    raise ValueError(
-                        f"Unsupported measurement type: {type(measurement)}"
-                    )
 
         return measures
 
@@ -425,31 +421,8 @@ class EradiateTranslator:
             "srf": simulation_srf,
         }
 
-        if hasattr(view, "relative_to_asset") and view.relative_to_asset is not None:
-            view = view.model_copy(deep=True)
-            asset_name = self._resolve_asset_reference(
-                view.relative_to_asset, asset_transforms
-            )
-            asset_transform = asset_transforms[asset_name]
-
-            if hasattr(view, "origin") and view.origin is not None:
-                view.origin = apply_asset_relative_transform(
-                    view.origin, asset_transform
-                )
-
-            if isinstance(view, LookAtViewing):
-                view.target = apply_asset_relative_transform(
-                    view.target, asset_transform
-                )
-
-            # Avoid double application of terrain adjustment
-            if (
-                hasattr(view, "terrain_relative_height")
-                and view.terrain_relative_height
-            ):
-                view.terrain_relative_height = False
-
         if isinstance(view, HemisphericalViewing):
+            view = self._resolve_asset_frame(view, asset_transforms)
             base_measure["type"] = "hdistant"
             base_measure["direction"] = [0, 0, 1] if view.upward_looking else [0, 0, -1]
 
@@ -469,12 +442,24 @@ class EradiateTranslator:
                 )
                 base_measure["target"] = [0.0, 0.0, 0.0]
 
-        elif isinstance(view, (LookAtViewing, AngularFromOriginViewing)):
-            origin, target = self.geometry_utils.adjust_origin_target_for_terrain(
-                view, scene_description, scene_dir
+        elif sensor.instrument == GroundInstrumentType.IRRADIANCEMETER:
+            position, normal = self.resolve_irradiancemeter(
+                sensor, scene_description, scene_dir, asset_transforms
             )
+            base_measure["type"] = "radiancemeter"
+            base_measure["origin"] = (
+                position + IRRADIANCEMETER_STANDOFF_M * normal
+            ).tolist()
+            base_measure["target"] = (
+                position + IRRADIANCEMETER_DISK_LIFT_M * normal
+            ).tolist()
 
+        elif isinstance(view, (LookAtViewing, AngularFromOriginViewing)):
+            origin, target = self._resolve_origin_target(
+                view, scene_description, scene_dir, asset_transforms
+            )
             base_measure["origin"] = origin
+            base_measure["target"] = target
 
             if sensor.instrument in [
                 GroundInstrumentType.PERSPECTIVE_CAMERA,
@@ -492,21 +477,8 @@ class EradiateTranslator:
                     base_measure["projection_model"] = "equisolid"
                 if sensor.lens is not None:
                     base_measure.update(sensor.lens.model_dump(exclude_none=True))
-
-            elif sensor.instrument == GroundInstrumentType.RADIANCEMETER:
-                base_measure["type"] = "radiancemeter"
-
             else:
                 base_measure["type"] = "radiancemeter"
-
-            if isinstance(view, LookAtViewing):
-                base_measure["target"] = target if target is not None else view.target
-
-            elif isinstance(view, AngularFromOriginViewing):
-                target, direction = self.geometry_utils.calculate_target_from_angles(
-                    view, origin
-                )
-                base_measure["target"] = target
 
         else:
             raise ValueError(
@@ -514,6 +486,104 @@ class EradiateTranslator:
             )
 
         return base_measure
+
+    def _resolve_asset_frame(self, view, asset_transforms: Dict[str, _AssetTransform]):
+        """Copy of a viewing with ``relative_to_asset`` resolved to scene coordinates.
+
+        The asset placement already includes the terrain height, so the copy is no
+        longer terrain-relative.
+        """
+        if getattr(view, "relative_to_asset", None) is None:
+            return view
+
+        view = view.model_copy(deep=True)
+        asset_name = self._resolve_asset_reference(
+            view.relative_to_asset, asset_transforms
+        )
+        asset_transform = asset_transforms[asset_name]
+
+        if getattr(view, "origin", None) is not None:
+            view.origin = apply_asset_relative_transform(view.origin, asset_transform)
+        if isinstance(view, LookAtViewing):
+            view.target = apply_asset_relative_transform(view.target, asset_transform)
+        if getattr(view, "terrain_relative_height", False):
+            view.terrain_relative_height = False
+        return view
+
+    def _resolve_origin_target(
+        self,
+        view: Union[LookAtViewing, AngularFromOriginViewing],
+        scene_description: SceneDescription,
+        scene_dir: UPath,
+        asset_transforms: Dict[str, _AssetTransform],
+    ) -> Tuple[List[float], List[float]]:
+        """Absolute origin and target of a pointing view, in scene coordinates."""
+        view = self._resolve_asset_frame(view, asset_transforms)
+        origin, target = self.geometry_utils.adjust_origin_target_for_terrain(
+            view, scene_description, scene_dir
+        )
+        if isinstance(view, AngularFromOriginViewing):
+            target, _ = self.geometry_utils.calculate_target_from_angles(view, origin)
+        return origin, target
+
+    def resolve_irradiancemeter(
+        self,
+        sensor: GroundSensor,
+        scene_description: SceneDescription,
+        scene_dir: UPath,
+        asset_transforms: Dict[str, _AssetTransform],
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Collector position and unit normal of an irradiancemeter, in scene coordinates."""
+        origin, target = self._resolve_origin_target(
+            sensor.viewing, scene_description, scene_dir, asset_transforms
+        )
+        position = np.asarray(origin, dtype=float)
+        normal = np.asarray(target, dtype=float) - position
+        return position, normal / np.linalg.norm(normal)
+
+    def irradiancemeter_disks(
+        self, scene_description: SceneDescription, scene_dir: UPath
+    ) -> SceneDescription:
+        """Copy of the scene with the reference disk of every irradiancemeter.
+
+        Each disk is white Lambertian, faces along its irradiancemeter's normal and sits
+        just off the collector position (see ``IRRADIANCEMETER_DISK_LIFT_M``), so an
+        up/down pair at the same position gets two separate disks. Irradiancemeters
+        with the same position and normal share one disk: all disks are identical,
+        and coincident ones would intersect each other.
+
+        Raises:
+            ValueError: if two disks are closer than
+                ``IRRADIANCEMETER_MIN_SEPARATION_M`` without being an up/down pair on
+                the same mount, as each would reflect light onto the other
+        """
+        from ...irradiancemeter import insert_reference_disks
+
+        asset_transforms = self._extract_asset_transforms(scene_description)
+        disks = {}
+        for sensor in self.simulation_config.sensors:
+            if (
+                getattr(sensor, "instrument", None)
+                != GroundInstrumentType.IRRADIANCEMETER
+            ):
+                continue
+            position, normal = self.resolve_irradiancemeter(
+                sensor, scene_description, scene_dir, asset_transforms
+            )
+            center = position + IRRADIANCEMETER_DISK_LIFT_M * normal
+            key = tuple(np.round([*center, *normal], 6))
+            disks.setdefault(
+                key,
+                {
+                    "object_id": f"irradiancemeter_disk_{sanitize_sensor_id(sensor.id)}",
+                    "type": "disk",
+                    "center": center.tolist(),
+                    "normal": normal.tolist(),
+                    "radius": IRRADIANCEMETER_DISK_RADIUS_M,
+                },
+            )
+        _check_disk_separation(list(disks.values()))
+        return insert_reference_disks(scene_description, list(disks.values()))
 
     def translate_distant_viewing_to_mdistant(
         self,
@@ -602,55 +672,12 @@ class EradiateTranslator:
 
         return measure
 
-    def create_irradiance_measure(
-        self, irradiance_config, disk_coords: Tuple[float, float, float]
-    ) -> Dict[str, Any]:
-        """Create hdistant measure for BOA irradiance measurement.
-
-        The target parameter is set to the white reference disk location.
-
-        Args:
-            irradiance_config: IrradianceConfig with measurement parameters
-            disk_coords: Pre-computed disk position (x, y, z) in scene coordinates
-
-        Returns:
-            Eradiate hdistant measure dictionary with target set to disk location
-        """
-        if irradiance_config.location and irradiance_config.location.srf:
-            srf = self.translate_srf(irradiance_config.location.srf)
-            spp = irradiance_config.location.samples_per_pixel
-        else:
-            srf = {
-                "type": "uniform",
-                "wmin": 380.0,
-                "wmax": 1680.0,
-            }
-            spp = irradiance_config.samples_per_pixel or 512
-
-        x, y, z = disk_coords
-
-        logger.debug(
-            f"Creating hdistant measure '{irradiance_config.id}' with target at "
-            f"({x:.2f}, {y:.2f}, {z:.2f}) m, spp={spp}, ray_offset=0.1m"
-        )
-
-        return {
-            "type": "hdistant",
-            "id": sanitize_sensor_id(irradiance_config.id),
-            "target": [x, y, z],  # Point at disk location
-            "direction": [0, 0, 1],  # Upward-looking hemisphere
-            "ray_offset": 0.1,  # Small offset to prevent self-intersection
-            "srf": srf,
-            "spp": spp,
-        }
-
     def create_distant_flux_measure(
         self,
         bhr_config: BHRConfig,
         target_coords: Tuple[float, float, float],
-        is_reference: bool = False,
     ) -> Dict[str, Any]:
-        """Create distant_flux measure for BHR measurement.
+        """Create the distant_flux measure of a BHR's surface radiosity.
 
         The distant_flux measure computes radiosity (power per unit area)
         by integrating over all directions in a hemisphere. This is used
@@ -659,16 +686,11 @@ class EradiateTranslator:
         Args:
             bhr_config: BHR configuration
             target_coords: Target coordinates (x, y, z) in scene coordinate system
-            is_reference: If True, this is for the white reference simulation
 
         Returns:
             Eradiate distant_flux measure dictionary
         """
-        # Create unique measure ID based on whether this is surface or reference
-        if is_reference:
-            measure_id = f"bhr_reference_{bhr_config.id}"
-        else:
-            measure_id = f"bhr_surface_{bhr_config.id}"
+        measure_id = f"bhr_surface_{bhr_config.id}"
 
         x, y, z = target_coords
 
@@ -680,10 +702,8 @@ class EradiateTranslator:
             f"({x:.2f}, {y:.2f}, {z:.2f}) m, spp={spp}"
         )
 
-        if (
-            not is_reference
-            and bhr_config.viewing is not None
-            and isinstance(bhr_config.viewing.target, RectangleTarget)
+        if bhr_config.viewing is not None and isinstance(
+            bhr_config.viewing.target, RectangleTarget
         ):
             rect = bhr_config.viewing.target
             target = {
@@ -747,6 +767,12 @@ class EradiateTranslator:
                 "wmin": srf.wmin,
                 "wmax": srf.wmax,
             }
+        elif srf.type == "band":
+            return {
+                "type": "band",
+                "wavelengths": srf.wavelengths,
+                "values": srf.values,
+            }
         elif srf.type == "dataset":
             return srf.dataset_id
         elif srf.type == "gaussian":
@@ -808,27 +834,42 @@ class EradiateTranslator:
             samples_per_pixel=hdrf_config.samples_per_pixel or 1000,
         )
 
-    def generate_irradiance_measurement_for_hdrf(
-        self, hdrf_config: HDRFConfig
-    ) -> IrradianceConfig:
-        """Generate irradiance measurement for HDRF.
+    def generate_reference_irradiancemeter(
+        self,
+        sensor_id: str,
+        location: HemisphericalMeasurementLocation,
+        srf,
+        scene_description: SceneDescription,
+    ) -> GroundSensor:
+        """Upward irradiancemeter giving the BOA irradiance at a measurement location.
 
-        Args:
-            hdrf_config: HDRF configuration
-
-        Returns:
-            Generated IrradianceConfig
+        The irradiancemeter sits ``height_offset_m`` above the terrain, raised to
+        ``IRRADIANCEMETER_STANDOFF_M`` so a reference at the surface clears it, or at
+        the absolute ``target_z`` when the location is not terrain-relative.
         """
-        irradiance_id = f"hdrf_irradiance_{hdrf_config.id}"
-
-        # Update location with srf from hdrf_config
-        location_with_srf = hdrf_config.location.model_copy(
-            update={"srf": hdrf_config.srf}
+        if location.target_lat is not None:
+            x, y = CoordinateSystem(
+                scene_description.location["center_lat"],
+                scene_description.location["center_lon"],
+            ).latlon_to_scene(location.target_lat, location.target_lon)
+        else:
+            x, y = location.target_x, location.target_y
+        z = (
+            max(location.height_offset_m, IRRADIANCEMETER_STANDOFF_M)
+            if location.terrain_relative_height
+            else location.target_z
         )
-
-        return IrradianceConfig(
-            id=irradiance_id,
-            location=location_with_srf,
+        return GroundSensor(
+            id=sensor_id,
+            instrument=GroundInstrumentType.IRRADIANCEMETER,
+            viewing=AngularFromOriginViewing(
+                origin=[x, y, z],
+                zenith=0.0,
+                terrain_relative_height=location.terrain_relative_height,
+            ),
+            srf=srf,
+            # Matches the samples of the former 32x32 hemispherical reference film
+            samples_per_pixel=location.samples_per_pixel * 1024,
         )
 
     def generate_camera_sensor_for_hcrf(self, hcrf_config: HCRFConfig) -> GroundSensor:
@@ -851,29 +892,6 @@ class EradiateTranslator:
             srf=hcrf_config.srf,
             samples_per_pixel=hcrf_config.samples_per_pixel or 1000,
             post_processing=PostProcessingOptions(spatial_averaging=True),
-        )
-
-    def generate_irradiance_measurement_for_hcrf(
-        self, hcrf_config: HCRFConfig
-    ) -> IrradianceConfig:
-        """Generate irradiance measurement for HCRF.
-
-        Args:
-            hcrf_config: HCRF configuration
-
-        Returns:
-            Generated IrradianceConfig
-        """
-        irradiance_id = f"hcrf_irradiance_{hcrf_config.id}"
-
-        # Update location with srf from hcrf_config
-        location_with_srf = hcrf_config.location.model_copy(
-            update={"srf": hcrf_config.srf}
-        )
-
-        return IrradianceConfig(
-            id=irradiance_id,
-            location=location_with_srf,
         )
 
     def generate_radiance_sensor_for_brf(self, brf_config: BRFConfig) -> GroundSensor:

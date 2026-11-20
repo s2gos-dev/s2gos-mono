@@ -5,7 +5,9 @@ import pytest
 import xarray as xr
 from pyproj import Transformer
 from s2gos_utils.coordinates import CoordinateSystem
+from s2gos_utils.scene import SceneDescription
 
+from s2gos_simulator.backends.eradiate.backend import EradiateBackend
 from s2gos_simulator.backends.eradiate.eradiate_translator import (
     EradiateTranslator,
 )
@@ -14,6 +16,7 @@ from s2gos_simulator.backends.eradiate.geometry_utils import (
     sanitize_sensor_id,
 )
 from s2gos_simulator.config import (
+    BHRConfig,
     BRFConfig,
     DirectionalIllumination,
     FisheyeLens,
@@ -22,12 +25,12 @@ from s2gos_simulator.config import (
     HCRFConfig,
     HDRFConfig,
     HemisphericalMeasurementLocation,
-    IrradianceConfig,
     ProjectedGrid,
     SatelliteSensor,
     SimulationConfig,
     SpectralResponse,
 )
+from s2gos_simulator.config.sensors import IRRADIANCEMETER_STANDOFF_M
 from s2gos_simulator.config.viewing import (
     AngularFromOriginViewing,
     AngularViewing,
@@ -505,32 +508,118 @@ class TestGroundSensorTranslation:
         assert result["film_resolution"] == [32, 32]
 
 
-class TestIrradianceMeasureCreation:
-    def _make_irradiance_config(self, srf=None):
-        loc = HemisphericalMeasurementLocation(
-            target_x=0.0, target_y=0.0, target_z=1.0, terrain_relative_height=True
+def _irradiancemeter(sensor_id, zenith, origin=(5.0, -3.0, 2.0)):
+    return GroundSensor(
+        id=sensor_id,
+        instrument=GroundInstrumentType.IRRADIANCEMETER,
+        viewing=AngularFromOriginViewing(
+            origin=list(origin), zenith=zenith, terrain_relative_height=True
+        ),
+        srf="par",
+    )
+
+
+class TestIrradiancemeterTranslation:
+    @pytest.fixture
+    def scene(self, minimal_scene, dem_scene_dir):
+        return SceneDescription(
+            name=minimal_scene.name,
+            location=minimal_scene.location,
+            resolution_m=minimal_scene.resolution_m,
         )
 
-        if srf is not None:
-            loc = loc.model_copy(update={"srf": srf})
-        return IrradianceConfig(id="my_irr", location=loc)
+    def _translator(self, directional_illumination, *sensors):
+        config = SimulationConfig(
+            name="test", illumination=directional_illumination, sensors=list(sensors)
+        )
+        return EradiateTranslator(config, GeometryUtils())
 
-    def test_irradiance_measure_defaults(self, translator):
-        irr = self._make_irradiance_config()
-        result = translator.create_irradiance_measure(irr, disk_coords=(5.0, -3.0, 1.2))
+    def test_downward_irradiancemeter_looks_up_at_its_disk(
+        self, directional_illumination, scene, dem_scene_dir
+    ):
+        sensor = _irradiancemeter("irr.out", zenith=180.0)
+        t = self._translator(directional_illumination, sensor)
 
-        assert result["type"] == "hdistant"
-        assert result["direction"] == [0, 0, 1]
-        assert result["ray_offset"] == pytest.approx(0.1)
-        assert result["target"] == pytest.approx([5.0, -3.0, 1.2])
-        assert result["srf"] == {"type": "uniform", "wmin": 380.0, "wmax": 1680.0}
+        measure = t.translate_ground_sensor(sensor, scene, dem_scene_dir, {})
+        (disk,) = t.irradiancemeter_disks(scene, dem_scene_dir).objects
 
-    def test_irradiance_measure_custom_srf(self, translator):
-        custom_srf = SpectralResponse(type="uniform", wmin=400.0, wmax=900.0)
-        irr = self._make_irradiance_config(srf=custom_srf)
-        result = translator.create_irradiance_measure(irr, disk_coords=(0.0, 0.0, 0.0))
-        assert result["srf"]["wmin"] == pytest.approx(400.0)
-        assert result["srf"]["wmax"] == pytest.approx(900.0)
+        z = TERRAIN_HEIGHT + 2.0
+        assert measure["type"] == "radiancemeter"
+        assert measure["origin"] == pytest.approx([5.0, -3.0, z - 0.1])
+        assert measure["target"] == pytest.approx([5.0, -3.0, z - 0.01])
+        assert measure["srf"]["type"] == "band"
+        assert disk["center"] == pytest.approx(measure["target"])
+        assert disk["normal"] == pytest.approx([0.0, 0.0, -1.0])
+        assert disk["object_id"] == "irradiancemeter_disk_irr_out"
+
+    def test_back_to_back_pair_gets_separate_disks(
+        self, directional_illumination, scene, dem_scene_dir
+    ):
+        t = self._translator(
+            directional_illumination,
+            _irradiancemeter("irr_in", zenith=0.0),
+            _irradiancemeter("irr_out", zenith=180.0),
+        )
+
+        up, down = t.irradiancemeter_disks(scene, dem_scene_dir).objects
+
+        assert up["center"][2] - down["center"][2] == pytest.approx(0.02)
+        assert up["normal"] == pytest.approx([0.0, 0.0, 1.0])
+
+    def test_coincident_irradiancemeters_share_a_disk(
+        self, directional_illumination, scene, dem_scene_dir
+    ):
+        t = self._translator(
+            directional_illumination,
+            _irradiancemeter("irr_in", zenith=0.0),
+            _irradiancemeter("par_in", zenith=0.0),
+        )
+
+        assert len(t.irradiancemeter_disks(scene, dem_scene_dir).objects) == 1
+
+    def test_nearby_irradiancemeters_are_rejected(
+        self, directional_illumination, scene, dem_scene_dir
+    ):
+        t = self._translator(
+            directional_illumination,
+            _irradiancemeter("up", zenith=0.0),
+            _irradiancemeter("tilted", zenith=45.0),
+        )
+
+        with pytest.raises(ValueError, match="light each other|apart"):
+            t.irradiancemeter_disks(scene, dem_scene_dir)
+
+    def test_tilted_irradiancemeter_faces_its_azimuth(
+        self, directional_illumination, scene, dem_scene_dir
+    ):
+        sensor = GroundSensor(
+            id="north_wall",
+            instrument=GroundInstrumentType.IRRADIANCEMETER,
+            viewing=AngularFromOriginViewing(
+                origin=[0.0, 0.0, 450.0], zenith=90.0, azimuth=90.0
+            ),
+            srf="par",
+        )
+        t = self._translator(directional_illumination, sensor)
+
+        (disk,) = t.irradiancemeter_disks(scene, dem_scene_dir).objects
+
+        assert disk["normal"] == pytest.approx([0.0, 1.0, 0.0], abs=1e-12)
+        assert disk["center"] == pytest.approx([0.0, 0.01, 450.0])
+
+    def test_irradiancemeter_rejects_camera_fields(self):
+        with pytest.raises(ValueError, match="takes no"):
+            GroundSensor(
+                id="p",
+                instrument=GroundInstrumentType.IRRADIANCEMETER,
+                viewing=AngularFromOriginViewing(origin=[0.0, 0.0, 2.0]),
+                srf="par",
+                fov=10.0,
+            )
+
+    def test_irradiancemeter_must_clear_the_terrain(self):
+        with pytest.raises(ValueError, match="above the terrain"):
+            _irradiancemeter("p", zenith=180.0, origin=(0.0, 0.0, 0.05))
 
 
 class TestSensorAutoGeneration:
@@ -568,12 +657,60 @@ class TestSensorAutoGeneration:
         assert sensor.instrument == GroundInstrumentType.RADIANCEMETER
         assert sensor.srf == srf
 
-    def test_generate_irradiance_for_hdrf(self, translator):
+    def test_generate_reference_irradiancemeter(self, translator, minimal_scene):
         srf = SpectralResponse(type="uniform", wmin=400.0, wmax=900.0)
-        hdrf = self._make_hdrf_config(srf=srf)
-        irr = translator.generate_irradiance_measurement_for_hdrf(hdrf)
-        assert irr.id == "hdrf_irradiance_my_hdrf"
-        assert irr.location.srf == srf
+        location = HemisphericalMeasurementLocation(
+            target_x=3.0,
+            target_y=4.0,
+            target_z=0.0,
+            height_offset_m=1.5,
+            samples_per_pixel=8,
+        )
+
+        sensor = translator.generate_reference_irradiancemeter(
+            "ref", location, srf, minimal_scene
+        )
+
+        assert sensor.instrument == GroundInstrumentType.IRRADIANCEMETER
+        assert sensor.faces_up
+        assert sensor.viewing.origin == pytest.approx([3.0, 4.0, 1.5])
+        assert sensor.viewing.terrain_relative_height
+        assert sensor.srf == srf
+        assert sensor.samples_per_pixel == 8 * 1024
+
+    @pytest.mark.parametrize(
+        "measurement",
+        [
+            HDRFConfig(
+                id="m",
+                instrument="radiancemeter",
+                viewing=LookAtViewing(origin=[0.0, 0.0, 1.0], target=[0.0, 0.0, 0.0]),
+                location=HemisphericalMeasurementLocation(
+                    target_x=0.0, target_y=0.0, target_z=0.0
+                ),
+                reference_height_offset_m=0.1,
+            ),
+            BHRConfig(
+                id="m",
+                target_x=0.0,
+                target_y=0.0,
+                target_z=0.0,
+                reference_height_offset_m=0.0,
+            ),
+        ],
+        ids=["hdrf_default_location", "bhr_on_the_ground"],
+    )
+    def test_auto_generated_reference_clears_the_terrain(
+        self, make_config, minimal_scene, measurement
+    ):
+        backend = EradiateBackend(make_config(measurements=[measurement]))
+
+        backend._auto_generate_sensors_for_measurements(minimal_scene)
+
+        sensor = backend.simulation_config.get_sensor(measurement.irradiance_sensor_id)
+        assert sensor.instrument == GroundInstrumentType.IRRADIANCEMETER
+        assert sensor.faces_up
+        assert sensor.viewing.origin[2] == pytest.approx(IRRADIANCEMETER_STANDOFF_M)
 
     def _make_hcrf_config(self, srf=None):
         return HCRFConfig(
@@ -598,13 +735,6 @@ class TestSensorAutoGeneration:
         sensor = translator.generate_camera_sensor_for_hcrf(hcrf_config)
         assert sensor.id == "hcrf_camera_my_hcrf"
         assert sensor.instrument == GroundInstrumentType.PERSPECTIVE_CAMERA
-
-    def test_generate_irradiance_measurement_for_hcrf(self, translator):
-        srf = SpectralResponse(type="uniform", wmin=400.0, wmax=900.0)
-        hcrf_config = self._make_hcrf_config(srf=srf)
-        irr = translator.generate_irradiance_measurement_for_hcrf(hcrf_config)
-        assert irr.id == "hcrf_irradiance_my_hcrf"
-        assert irr.location.srf == srf
 
     def test_generate_radiance_sensor_for_brf(self, translator):
         brf = self._make_brf_config()

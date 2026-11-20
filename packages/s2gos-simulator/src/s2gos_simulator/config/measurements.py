@@ -131,26 +131,6 @@ class HemisphericalMeasurementLocation(BaseModel):
         return self
 
 
-class IrradianceConfig(BaseModel):
-    """Configuration for BOA irradiance measurement using white reference disk.
-
-    Measures downward hemispheric irradiance at bottom-of-atmosphere using the
-    white reference disk technique:
-
-    - Places a small white Lambertian disk (ρ=1.0) at the measurement location
-    - By sampling the incident radiance we indirectly get the total incident flux (E = π × L)
-    """
-
-    type: Literal["irradiance"] = Field(
-        "irradiance", description="Measurement type (always 'irradiance')"
-    )
-    id: str = Field(description="Unique identifier for this irradiance measurement")
-    location: HemisphericalMeasurementLocation = Field(
-        ..., description="Geographic or scene location for the measurement"
-    )
-    samples_per_pixel: int = Field(512, description="Monte Carlo samples per pixel")
-
-
 class BRFConfig(BaseModel):
     """Configuration for BRF measurement **without** atmosphere.
 
@@ -213,8 +193,9 @@ class HDRFConfig(BaseModel):
 
     HDRF = π × L_r / E_i
 
-    1. Reference mode: Specify radiance_sensor_id + irradiance_measurement_id
-    2. Auto-generation mode: Specify instrument + location/viewing, backend creates sensor + measurement
+    1. Reference mode: Specify radiance_sensor_id + irradiance_sensor_id
+    2. Auto-generation mode: Specify instrument + location/viewing, backend creates the
+       radiance sensor and an upward irradiancemeter at ``location``
     """
 
     type: Literal["hdrf"] = Field(
@@ -222,7 +203,7 @@ class HDRFConfig(BaseModel):
     )
     id: str = Field(description="Unique identifier")
 
-    # Mode 1: Reference existing sensor + measurement
+    # Mode 1: Reference existing sensors
     radiance_sensor_id: Optional[str] = Field(
         None,
         description=(
@@ -230,8 +211,9 @@ class HDRFConfig(BaseModel):
             "satellite sensor, use a pixel measurement for those"
         ),
     )
-    irradiance_measurement_id: Optional[str] = Field(
-        None, description="ID of IrradianceConfig providing BOA irradiance"
+    irradiance_sensor_id: Optional[str] = Field(
+        None,
+        description="ID of an upward-facing irradiancemeter providing BOA irradiance",
     )
 
     # Mode 2: Auto-generation mode
@@ -263,7 +245,7 @@ class HDRFConfig(BaseModel):
         """Validate that either sensor references OR auto-generation specs are provided."""
         has_refs = (
             self.radiance_sensor_id is not None
-            and self.irradiance_measurement_id is not None
+            and self.irradiance_sensor_id is not None
         )
         has_autogen = self.instrument is not None
 
@@ -274,7 +256,7 @@ class HDRFConfig(BaseModel):
 
         if not has_refs and not has_autogen:
             raise ValueError(
-                "Must specify either references (radiance_sensor_id + irradiance_measurement_id) "
+                "Must specify either references (radiance_sensor_id + irradiance_sensor_id) "
                 "OR auto-generation mode (instrument + location/viewing)"
             )
 
@@ -285,11 +267,10 @@ class HDRFConfig(BaseModel):
             if self.instrument == "radiancemeter":
                 if not self.viewing:
                     raise ValueError("instrument='radiancemeter' requires 'viewing'")
-                # For HDRF, location is also needed for irradiance measurement
                 if not self.location:
                     raise ValueError(
                         "instrument='radiancemeter' for HDRF requires 'location' "
-                        "for irradiance measurement generation"
+                        "for its reference irradiancemeter"
                     )
             if not self.reference_height_offset_m:
                 raise ValueError(
@@ -360,7 +341,7 @@ class PixelHDRFConfig(BasePixelMeasurementConfig):
     HDRF = π × L_surface / E_boa
 
     Uses satellite sensor geometry to map pixels to scene coordinates.
-    Requires 2N simulations for N pixels (irradiance + radiance per pixel).
+    Its N reference irradiancemeters share one simulation.
     """
 
     type: Literal["pixel_hdrf"] = Field(
@@ -398,7 +379,7 @@ class PixelBHRConfig(BasePixelMeasurementConfig):
     reference_height_offset_m: float = Field(
         default=0.1,
         ge=0.0,
-        description="Height offset for white reference patch above surface (meters)",
+        description="Height of the reference irradiancemeter above the surface (meters)",
     )
 
 
@@ -407,8 +388,9 @@ class HCRFConfig(BaseModel):
 
     Two modes:
 
-    1. Reference mode: Specify radiance_sensor_id + irradiance_measurement_id
-    2. Auto-generation mode: Specify camera geometry, backend creates a sensor + irradiance measurement.
+    1. Reference mode: Specify radiance_sensor_id + irradiance_sensor_id
+    2. Auto-generation mode: Specify camera geometry, backend creates the camera and an
+       upward irradiancemeter at ``location``.
     """
 
     type: Literal["hcrf"] = Field(
@@ -416,13 +398,14 @@ class HCRFConfig(BaseModel):
     )
     id: str = Field(description="Unique identifier")
 
-    # Mode 1: Reference existing sensor + measurement
+    # Mode 1: Reference existing sensors
     radiance_sensor_id: Optional[str] = Field(
         None,
         description="ID of camera sensor providing conical radiance (must have FOV)",
     )
-    irradiance_measurement_id: Optional[str] = Field(
-        None, description="ID of IrradianceConfig providing BOA irradiance"
+    irradiance_sensor_id: Optional[str] = Field(
+        None,
+        description="ID of an upward-facing irradiancemeter providing BOA irradiance",
     )
 
     # Mode 2: Auto-generation mode
@@ -457,7 +440,7 @@ class HCRFConfig(BaseModel):
         """Validate that either sensor references OR auto-generation specs are provided."""
         has_refs = (
             self.radiance_sensor_id is not None
-            and self.irradiance_measurement_id is not None
+            and self.irradiance_sensor_id is not None
         )
         has_autogen = self.viewing is not None and self.fov is not None
 
@@ -468,7 +451,7 @@ class HCRFConfig(BaseModel):
 
         if not has_refs and not has_autogen:
             raise ValueError(
-                "Must specify either references (radiance_sensor_id + irradiance_measurement_id) "
+                "Must specify either references (radiance_sensor_id + irradiance_sensor_id) "
                 "OR auto-generation mode (viewing + fov)"
             )
 
@@ -493,9 +476,10 @@ class BHRConfig(HemisphericalMeasurementLocation):
 
     BHR = radiosity_surface / radiosity_white_reference
 
-    Uses distant_flux measure type in Eradiate. Requires two simulations
-    per measurement: one for the surface radiosity and one for a white
-    reference patch (ρ=1.0 Lambertian disk) at the same location.
+    The surface radiosity comes from Eradiate's distant_flux measure. The white
+    reference radiosity is the BOA irradiance of an upward irradiancemeter:
+    ``irradiance_sensor_id``, or one generated ``reference_height_offset_m`` above
+    the target when unset.
     """
 
     type: Literal["bhr"] = Field("bhr", description="Measurement type (always 'bhr')")
@@ -506,7 +490,16 @@ class BHRConfig(HemisphericalMeasurementLocation):
     reference_height_offset_m: float = Field(
         default=0.1,
         ge=0.0,
-        description="Height offset for white reference patch above surface (meters)",
+        description=(
+            "Height of the generated reference irradiancemeter above the target (meters)"
+        ),
+    )
+    irradiance_sensor_id: Optional[str] = Field(
+        None,
+        description=(
+            "ID of an upward-facing irradiancemeter providing the white reference. "
+            "Generated at the target when unset"
+        ),
     )
     viewing: Optional[DistantViewing] = Field(
         None,
@@ -519,7 +512,6 @@ class BHRConfig(HemisphericalMeasurementLocation):
 
 MeasurementConfig = Annotated[
     Union[
-        IrradianceConfig,
         BRFConfig,
         HDRFConfig,
         HCRFConfig,

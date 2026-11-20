@@ -36,11 +36,10 @@ from s2gos_simulator.backends.eradiate.backend import (
 from s2gos_simulator.config import (
     AngularFromOriginViewing,
     DirectionalIllumination,
+    GroundInstrumentType,
+    GroundSensor,
     HCRFConfig,
-    HemisphericalMeasurementLocation,
-    IrradianceConfig,
     SimulationConfig,
-    SpectralResponse,
     create_hypstar_sensor,
 )
 from s2gos_utils.io.paths import to_upath
@@ -80,8 +79,8 @@ SERIES_INDICES = [1]  # List of indices or None for all
 TARGET_COORDS = (-23.6015417, 15.1258696)  # (Lat, Lon)
 SENSOR_ORIGIN = [0.022914, 1.16748, 10.5269]
 IRR_HEIGHT = 13.0
-SENSOR_SAMPLES = 4
-IRR_SAMPLES = 4
+SENSOR_SAMPLES = 32
+IRR_SAMPLES = 32768
 
 
 # ==============================================================================
@@ -338,6 +337,33 @@ def build_sim_config(idx: int, geo: dict, l2a_path: str) -> SimulationConfig:
     irradiance_id = f"irradiance_series_{idx:02d}"
     hcrf_id = f"hcrf_series_{idx:02d}"
 
+    hypstar = create_hypstar_sensor(
+        viewing=AngularFromOriginViewing(
+            origin=SENSOR_ORIGIN,
+            zenith=geo["vza"],
+            azimuth=geo["vaa"],
+            up=[0, 0, 1] if geo["vza"] != 180 else [0, 1, 0],
+            # terrain_relative_height=True,
+            relative_to_asset="hypernets_mast_better.xml",
+        ),
+        fov=5.0,
+        resolution=(128, 128),
+        reference_file=l2a_path,
+        sensor_id=sensor_id,
+        samples_per_pixel=SENSOR_SAMPLES,
+    )
+    # Upward irradiancemeter over the target (the scene centre), sharing the HYPSTAR
+    # spectral response so the HCRF divides like-for-like spectra
+    irradiancemeter = GroundSensor(
+        id=irradiance_id,
+        instrument=GroundInstrumentType.IRRADIANCEMETER,
+        viewing=AngularFromOriginViewing(
+            origin=[0.0, 0.0, IRR_HEIGHT], zenith=0.0, terrain_relative_height=True
+        ),
+        srf=hypstar.srf,
+        samples_per_pixel=IRR_SAMPLES,
+    )
+
     return SimulationConfig(
         name=f"hypstar_series_{idx:02d}",
         description=f"Series {idx} at {geo['dt']}",
@@ -348,40 +374,12 @@ def build_sim_config(idx: int, geo: dict, l2a_path: str) -> SimulationConfig:
             azimuth=geo["saa"],
             irradiance_dataset="coddington_2022-1_nm",
         ),
-        # Sensors
-        sensors=[
-            create_hypstar_sensor(
-                viewing=AngularFromOriginViewing(
-                    origin=SENSOR_ORIGIN,
-                    zenith=geo["vza"],
-                    azimuth=geo["vaa"],
-                    up=[0, 0, 1] if geo["vza"] != 180 else [0, 1, 0],
-                    # terrain_relative_height=True,
-                    relative_to_asset="hypernets_mast_better.xml",
-                ),
-                fov=5.0,
-                resolution=(128, 128),
-                reference_file=l2a_path,
-                sensor_id=sensor_id,
-                samples_per_pixel=SENSOR_SAMPLES,
-            ),
-        ],
-        # Measurements (Irradiance + HCRF)
+        sensors=[hypstar, irradiancemeter],
         measurements=[
-            IrradianceConfig(
-                id=irradiance_id,
-                location=HemisphericalMeasurementLocation(
-                    target_lat=TARGET_COORDS[0],
-                    target_lon=TARGET_COORDS[1],
-                    height_offset_m=IRR_HEIGHT,
-                    srf=SpectralResponse(type="uniform", wmin=375, wmax=1685),
-                    samples_per_pixel=IRR_SAMPLES,
-                ),
-            ),
             HCRFConfig(
                 id=hcrf_id,
                 radiance_sensor_id=sensor_id,
-                irradiance_measurement_id=irradiance_id,
+                irradiance_sensor_id=irradiance_id,
             ),
         ],
         backend_hints={"eradiate": {"mode": "ckd"}},

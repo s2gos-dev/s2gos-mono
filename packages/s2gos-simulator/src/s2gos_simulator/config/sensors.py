@@ -55,10 +55,20 @@ class GroundInstrumentType(str, Enum):
 
     HYPSTAR = "hypstar"
     PERSPECTIVE_CAMERA = "perspective_camera"
-    PYRANOMETER = "pyranometer"
-    FLUX_METER = "flux_meter"
+    IRRADIANCEMETER = "irradiancemeter"
     FISHEYE_CAMERA = "fisheye_camera"
     RADIANCEMETER = "radiancemeter"
+
+
+# Reference disk of an irradiancemeter: radius, lift of the disk off the sensor
+# position along its normal (keeps back-to-back pairs apart) and distance of the ray origin
+# from that position. Centimetres, as Eradiate's single-precision modes resolve ~2 mm
+# at 10 km from the scene origin.
+IRRADIANCEMETER_DISK_RADIUS_M = 0.01
+IRRADIANCEMETER_DISK_LIFT_M = 0.01
+IRRADIANCEMETER_STANDOFF_M = 0.1
+# White disks closer than this reflect light onto each other (~1 % at 0.1 m)
+IRRADIANCEMETER_MIN_SEPARATION_M = 0.5
 
 
 class PostProcessingOptions(BaseModel):
@@ -583,7 +593,15 @@ class SatelliteSensor(BaseSensor):
 
 
 class GroundSensor(BaseSensor):
-    """Ground sensor configuration."""
+    """Ground sensor configuration.
+
+    An ``irradiancemeter`` measures the irradiance on a flat collector with an ideal
+    cosine response: its viewing origin is the collector position and its pointing
+    direction is the collector normal, so ``AngularFromOriginViewing(zenith=0)``
+    faces the sky (downwelling irradiance) and ``zenith=180`` faces the ground
+    (reflected flux). Its ``srf`` sets the spectral response, e.g. "par" for PAR
+    (400-700 nm) in W m-2.
+    """
 
     platform_type: Literal[PlatformType.GROUND] = Field(
         PlatformType.GROUND, description="Platform type (always 'ground')"
@@ -618,7 +636,11 @@ class GroundSensor(BaseSensor):
     @field_validator("srf", mode="before")
     @classmethod
     def resolve_srf_preset(cls, v):
-        presets = {"hypstar": HYPSTAR_SRF, "chime": CHIME_SRF}
+        presets = {
+            "hypstar": HYPSTAR_SRF,
+            "chime": CHIME_SRF,
+            "par": PAR_SRF,
+        }
         return presets.get(v, v) if isinstance(v, str) else v
 
     @model_validator(mode="before")
@@ -633,6 +655,10 @@ class GroundSensor(BaseSensor):
 
         inst = data.get("instrument")
         is_hypstar = inst == GroundInstrumentType.HYPSTAR or inst == "HYPSTAR"
+
+        if inst == GroundInstrumentType.IRRADIANCEMETER:
+            # CKD needs at least 32 samples per 10 nm spectral bin
+            data.setdefault("samples_per_pixel", 32768)
 
         if is_hypstar:
             if data.get("fov") is None:
@@ -658,13 +684,14 @@ class GroundSensor(BaseSensor):
 
     @model_validator(mode="after")
     def validate_compatibility_and_id(self):
-        camera_instruments = [
+        pointing_instruments = [
             GroundInstrumentType.HYPSTAR,
             GroundInstrumentType.PERSPECTIVE_CAMERA,
             GroundInstrumentType.FISHEYE_CAMERA,
+            GroundInstrumentType.IRRADIANCEMETER,
         ]
 
-        if self.instrument in camera_instruments:
+        if self.instrument in pointing_instruments:
             if not isinstance(self.viewing, (LookAtViewing, AngularFromOriginViewing)):
                 raise ValueError(
                     f"'{self.instrument.value}' requires a pointing view "
@@ -679,6 +706,9 @@ class GroundSensor(BaseSensor):
                 f"'lens' is only used by 'fisheye_camera', not '{self.instrument.value}'."
             )
 
+        if self.instrument == GroundInstrumentType.IRRADIANCEMETER:
+            self._validate_irradiancemeter()
+
         if self.id is None:
             if hasattr(self.viewing, "origin"):
                 self.id = (
@@ -690,6 +720,42 @@ class GroundSensor(BaseSensor):
                 self.id = f"ground_{self.instrument.value}"
 
         return self
+
+    def _validate_irradiancemeter(self):
+        unused = [
+            name
+            for name in ("fov", "resolution", "lens", "post_processing")
+            if getattr(self, name) is not None
+        ]
+        if unused:
+            raise ValueError(f"Irradiancemeter '{self.id}' takes no {unused}")
+        if (
+            self.viewing.terrain_relative_height
+            and self.viewing.relative_to_asset is None
+            and self.viewing.origin[2] < IRRADIANCEMETER_STANDOFF_M
+        ):
+            raise ValueError(
+                f"Irradiancemeter '{self.id}' must sit at least {IRRADIANCEMETER_STANDOFF_M} m "
+                f"above the terrain, got {self.viewing.origin[2]} m"
+            )
+
+    @property
+    def faces_up(self) -> bool:
+        """Whether the sensor points straight up (a horizontal, sky-facing collector)."""
+        view = self.viewing
+        if isinstance(view, AngularFromOriginViewing):
+            return view.zenith == 0.0
+        if isinstance(view, LookAtViewing):
+            dx, dy, dz = (t - o for t, o in zip(view.target, view.origin))
+            return dx == 0.0 and dy == 0.0 and dz > 0.0
+        return False
+
+
+PAR_SRF = SpectralResponse(
+    type="band",
+    wavelengths=[399.99, 400.0, 700.0, 700.01],
+    values=[0.0, 1.0, 1.0, 0.0],
+)
 
 
 # HYPSTAR (HYPERNETS Land Network) spectral characteristics

@@ -6,17 +6,20 @@ import pytest
 from s2gos_simulator.config import (
     AstroObjectIllumination,
     Band,
+    BHRConfig,
     DirectionalIllumination,
     GroundInstrumentType,
     GroundSensor,
-    HemisphericalMeasurementLocation,
-    IrradianceConfig,
     MultispectralInstrument,
     SatelliteSensor,
     SimulationConfig,
     SpectralResponse,
 )
-from s2gos_simulator.config.viewing import AngularViewing, LookAtViewing
+from s2gos_simulator.config.viewing import (
+    AngularFromOriginViewing,
+    AngularViewing,
+    LookAtViewing,
+)
 
 
 def _illumination():
@@ -46,16 +49,6 @@ def _ground_sensor(sensor_id="ground1"):
             terrain_relative_height=False,
         ),
     )
-
-
-def _location():
-    return HemisphericalMeasurementLocation(
-        target_x=0.0, target_y=0.0, target_z=0.0, terrain_relative_height=False
-    )
-
-
-def _irradiance_config(irr_id="irr1"):
-    return IrradianceConfig(id=irr_id, location=_location())
 
 
 def _make_config(**kwargs):
@@ -186,13 +179,29 @@ class TestFromJson:
         assert sensor.viewing.terrain_relative_height is False
 
     def test_from_json_preserves_measurement_fields(self, tmp_path):
-        irr = _irradiance_config("irr1")
-        config = _make_config(sensors=[_sat_sensor()], measurements=[irr])
+        bhr = BHRConfig(
+            id="bhr1",
+            target_x=0.0,
+            target_y=0.0,
+            target_z=0.0,
+            terrain_relative_height=False,
+        )
+        config = _make_config(sensors=[_sat_sensor()], measurements=[bhr])
         restored = SimulationConfig.from_json(self._write(config, tmp_path))
         assert len(restored.measurements) == 1
         measurement = restored.measurements[0]
-        assert isinstance(measurement, IrradianceConfig)
-        assert measurement.id == "irr1"
-        assert measurement.location.target_x == pytest.approx(0.0)
-        assert measurement.location.target_y == pytest.approx(0.0)
-        assert measurement.location.terrain_relative_height is False
+        assert isinstance(measurement, BHRConfig)
+        assert measurement.id == "bhr1"
+        assert measurement.target_x == pytest.approx(0.0)
+        assert measurement.terrain_relative_height is False
+
+    def test_from_json_preserves_an_irradiancemeter(self, tmp_path):
+        irradiancemeter = GroundSensor(
+            id="irr_out",
+            instrument=GroundInstrumentType.IRRADIANCEMETER,
+            viewing=AngularFromOriginViewing(origin=[1.0, 2.0, 24.3], zenith=180.0),
+            srf="par",
+        )
+        config = _make_config(sensors=[irradiancemeter])
+        restored = SimulationConfig.from_json(self._write(config, tmp_path))
+        assert restored.sensors[0] == irradiancemeter

@@ -1,3 +1,5 @@
+import pytest
+
 from s2gos_simulator.config import (
     HYPSTAR_SRF,
     SpectralRegion,
@@ -40,6 +42,23 @@ class TestTranslateSRFUniform:
         assert result["type"] == "uniform"
         assert result["wmin"] == 400.0
         assert result["wmax"] == 800.0
+
+
+class TestTranslateSRFBand:
+    def test_translate_srf_band_type(self, translator):
+        srf = SpectralResponse(
+            type="band", wavelengths=[399.0, 400.0, 700.0, 701.0], values=[0, 1, 1, 0]
+        )
+        assert _srf_from(translator)(srf) == {
+            "type": "band",
+            "wavelengths": [399.0, 400.0, 700.0, 701.0],
+            "values": [0.0, 1.0, 1.0, 0.0],
+        }
+        assert srf.integral() == pytest.approx(301.0)
+
+    def test_band_srf_rejects_mismatched_values(self):
+        with pytest.raises(ValueError, match="same length"):
+            SpectralResponse(type="band", wavelengths=[400.0, 700.0], values=[1.0])
 
 
 class TestTranslateSRFGaussian:

@@ -20,7 +20,6 @@ from .config import (
     HDRFConfig,
     HemisphericalMeasurementLocation,
     HemisphericalViewing,
-    IrradianceConfig,
     LookAtViewing,
     PixelBHRConfig,
     PixelBRFConfig,
@@ -58,7 +57,6 @@ __all__ = [
     "GroundInstrumentType",
     "create_hypstar_sensor",
     # Measurement Configs
-    "IrradianceConfig",
     "HDRFConfig",
     "HCRFConfig",
     "BRFConfig",

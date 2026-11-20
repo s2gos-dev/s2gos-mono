@@ -38,7 +38,6 @@ from ...config import (
     SimulationConfig,
 )
 from ...hdrf_processor import HDRFProcessor
-from ...irradiance_processor import IrradianceProcessor
 from ...processors.sensor_processor import SensorProcessor
 from ...products import PRODUCT_WRITERS
 
@@ -71,6 +70,9 @@ class EradiateBackend(SimulationBackend):
         eradiate_hints = simulation_config.backend_hints.get("eradiate", {})
         self._eradiate_mode = eradiate_hints.get("mode", "mono")
         self._eradiate_moment = bool(eradiate_hints.get("moment", False))
+        self._isolate_irradiancemeters = bool(
+            eradiate_hints.get("isolate_irradiancemeters", True)
+        )
 
         if ERADIATE_AVAILABLE:
             try:
@@ -122,7 +124,6 @@ class EradiateBackend(SimulationBackend):
             "hcrf",
             "brf",
             "bhr",
-            "boa_irradiance",
             "pixel_hdrf",
             "pixel_brf",
             "pixel_bhr",
@@ -152,8 +153,7 @@ class EradiateBackend(SimulationBackend):
                 if sensor.instrument not in [
                     GroundInstrumentType.HYPSTAR,
                     GroundInstrumentType.PERSPECTIVE_CAMERA,
-                    GroundInstrumentType.PYRANOMETER,
-                    GroundInstrumentType.FLUX_METER,
+                    GroundInstrumentType.IRRADIANCEMETER,
                     GroundInstrumentType.FISHEYE_CAMERA,
                     GroundInstrumentType.RADIANCEMETER,
                 ]:
@@ -174,8 +174,10 @@ class EradiateBackend(SimulationBackend):
 
         Automatically detects measurement types and executes appropriate workflow:
         - BRF: No atmosphere
-        - HDRF/HCRF: With atmosphere, uses BOA irradiance from white disk
-        - Standard: Regular radiance measurements
+        - Standard: Regular radiance measurements, with atmosphere
+        - Irradiancemeters: irradiance from white reference disks, in their own
+          experiment unless the 'isolate_irradiancemeters' Eradiate hint is False
+        - HDRF/HCRF/BHR: derived from the radiance and the reference irradiancemeters
 
         Args:
             scene_description: Scene description from s2gos_generator
@@ -202,82 +204,103 @@ class EradiateBackend(SimulationBackend):
         mkdir(output_dir)
 
         self._expand_pixel_measurement_configs(scene_description, scene_dir)
-        self._auto_generate_sensors_for_measurements()
+        self._auto_generate_sensors_for_measurements(scene_description)
 
         self._log_simulation_summary()
 
-        # Initialize processors
         brf_proc = BRFProcessor(self)
         bhr_proc = BHRProcessor(self)
         hdrf_proc = HDRFProcessor(self)
-        irr_proc = IrradianceProcessor(self)
 
-        # Separate BRF and BHR measurements from others (they have special workflows)
-        brf_configs = brf_proc.get_brf_configs()
-        bhr_configs = bhr_proc.get_bhr_configs()
-        non_brf_measurements = [
-            m
-            for m in self.simulation_config.measurements
-            if not isinstance(m, BRFConfig) and not isinstance(m, BHRConfig)
-        ]
-
-        # Extract BRF sensor IDs so we can exclude them from standard/HDRF workflow
         brf_sensor_ids = brf_proc.get_brf_sensor_ids()
-
-        non_brf_sensor_ids = (
-            {s.id for s in self.simulation_config.sensors if s.id not in brf_sensor_ids}
-            if brf_sensor_ids
-            else None
-        )  # None means "all sensors"
-
+        irradiancemeter_ids = {
+            s.id
+            for s in self.simulation_config.sensors
+            if getattr(s, "instrument", None) == GroundInstrumentType.IRRADIANCEMETER
+        }
+        radiance_ids = (
+            {
+                s.id
+                for s in self.simulation_config.sensors
+                if not getattr(s, "for_reference_only", False)
+            }
+            - brf_sensor_ids
+            - irradiancemeter_ids
+        )
         requires_hdrf = hdrf_proc.requires_hdrf()
-        requires_irr = irr_proc.requires_irradiance()
 
         all_results = {}
 
-        # Run BRF workflow if we have BRF measurements (NO atmosphere)
-        if brf_configs:
-            brf_results = self._run_brf_workflow(
-                scene_description,
-                scene_dir,
-                output_dir,
-                brf_proc,
-                **kwargs,
+        if brf_proc.get_brf_configs():
+            all_results.update(
+                self._run_brf_workflow(
+                    scene_description, scene_dir, output_dir, brf_proc, **kwargs
+                )
             )
-            all_results.update(brf_results)
 
-        # Run BHR workflow if we have BHR measurements
-        if bhr_configs:
-            bhr_results = bhr_proc.execute_bhr_measurements(
-                scene_description,
-                scene_dir,
-                output_dir / "derived",
-                radiosity_dir=output_dir / "radiosity",
-            )
-            all_results.update(bhr_results)
-
-        if non_brf_measurements or self.simulation_config.sensors:
-            if requires_hdrf or requires_irr:
-                hdrf_results = self._run_combined_workflow(
-                    scene_description,
+        radiance_dir = output_dir / "radiance" if requires_hdrf else output_dir
+        if irradiancemeter_ids and not self._isolate_irradiancemeters:
+            logger.info("\nRadiance sensors and irradiancemeters in one experiment")
+            all_results.update(
+                self._run_standard_simulation(
+                    self.eradiate_translator.irradiancemeter_disks(
+                        scene_description, scene_dir
+                    ),
                     scene_dir,
-                    output_dir,
-                    irr_proc,
-                    hdrf_proc,
-                    sensor_ids=non_brf_sensor_ids,
+                    radiance_dir,
+                    sensor_ids=radiance_ids | irradiancemeter_ids,
                     **kwargs,
                 )
-                all_results.update(hdrf_results)
-            else:
-                logger.info("\nStandard workflow")
-                standard_results = self._run_standard_simulation(
+            )
+        else:
+            if radiance_ids:
+                logger.info("\nRadiance sensors")
+                all_results.update(
+                    self._run_standard_simulation(
+                        scene_description,
+                        scene_dir,
+                        radiance_dir,
+                        sensor_ids=radiance_ids,
+                        **kwargs,
+                    )
+                )
+            if irradiancemeter_ids:
+                logger.info("\nIrradiancemeters")
+                all_results.update(
+                    self._run_standard_simulation(
+                        self.eradiate_translator.irradiancemeter_disks(
+                            scene_description, scene_dir
+                        ),
+                        scene_dir,
+                        output_dir / "irradiance",
+                        sensor_ids=irradiancemeter_ids,
+                        **kwargs,
+                    )
+                )
+
+        derived_dir = output_dir / "derived"
+        if requires_hdrf:
+            for derived_id, dataset in hdrf_proc.compute_h_reflectances(
+                all_results, derived_dir
+            ).items():
+                dataset.attrs["id"] = derived_id
+                if self.result_processor.save_result(
+                    derived_id, dataset, derived_dir, result_type="derived"
+                ):
+                    all_results[derived_id] = dataset
+                else:
+                    logger.warning(f"Failed to save derived measure '{derived_id}'")
+
+        if bhr_proc.get_bhr_configs():
+            all_results.update(
+                bhr_proc.execute_bhr_measurements(
                     scene_description,
                     scene_dir,
-                    output_dir,
-                    sensor_ids=non_brf_sensor_ids,
-                    **kwargs,
+                    derived_dir,
+                    irradiance_results=all_results,
+                    radiosity_dir=output_dir / "radiosity",
                 )
-                all_results.update(standard_results)
+            )
 
         logger.info(f"\n✓ Simulation complete: {len(all_results)} total datasets")
         return all_results
@@ -287,21 +310,18 @@ class EradiateBackend(SimulationBackend):
         scene_description: SceneDescription,
         scene_dir: UPath,
         output_dir: UPath,
-        include_irradiance_measures: bool = True,
         sensor_ids: Optional[set] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """Run radiance simulation with atmosphere (used for plain sensor runs).
 
         This is NOT used for BRF (no atmosphere), that is handled by `_run_brf_workflow`.
-        NOT used for BOA irradiance measurements, that is handled by `IrradianceProcessor`
         Atmosphere is built from scene description via `create_experiment(atmosphere="auto")`.
 
         Args:
             scene_description: Scene description
             scene_dir: Scene directory path
             output_dir: Output directory
-            include_irradiance_measures: Whether to include irradiance measurements
             sensor_ids: Optional set of sensor IDs to include. If None, all sensors
                 are included.
             **kwargs: Additional options
@@ -314,10 +334,7 @@ class EradiateBackend(SimulationBackend):
         logger.info("Running experiments")
         logger.info("=" * 60)
         experiment = self.create_experiment(
-            scene_description,
-            scene_dir,
-            include_irradiance_measures,
-            sensor_ids=sensor_ids,
+            scene_description, scene_dir, sensor_ids=sensor_ids
         )
 
         all_saved_results = {}
@@ -412,76 +429,6 @@ class EradiateBackend(SimulationBackend):
                     saved[measure_id] = dataset
             return saved
 
-    def _run_combined_workflow(
-        self,
-        scene_description: SceneDescription,
-        scene_dir: UPath,
-        output_dir: UPath,
-        irradiance_processor: IrradianceProcessor,
-        hdrf_processor: HDRFProcessor,
-        sensor_ids: Optional[set] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
-        """Execute combined workflow for BOA Irradiance, HDRF/HCRF measurements.
-
-        Runs two simulations with atmosphere:
-        1. Radiance simulation for all sensors
-        2. BOA irradiance simulation using white reference disk(s)
-        Then derives HDRF/HCRF from the ratio (see HDRFProcessor).
-
-        Args:
-            scene_description: Scene description
-            scene_dir: Scene directory path
-            output_dir: Output directory
-            irradiance_processor: IrradianceProcessor instance
-            sensor_ids: Optional set of sensor IDs to include. If None, all sensors
-                are included. Use this to exclude BRF sensors when running alongside
-                BRF workflow.
-            **kwargs: Additional options
-
-        Returns:
-            Results by id: xarray Datasets, and a DataTree for each sensor written as
-            one product
-        """
-        logger.info("=" * 60)
-        logger.info("Running radiance simulation Irradiance Measurements")
-        logger.info("=" * 60)
-        sensor_results = self._run_standard_simulation(
-            scene_description,
-            scene_dir,
-            output_dir / "radiance",
-            include_irradiance_measures=False,
-            sensor_ids=sensor_ids,
-            **kwargs,
-        )
-
-        irr_results, _ = irradiance_processor.execute_irradiance_measurements(
-            scene_description, scene_dir, output_dir / "boa_irradiance"
-        )
-
-        combined_results = {**sensor_results, **irr_results}
-
-        derived_output_dir = output_dir / "derived"
-
-        derived_results = hdrf_processor.compute_h_reflectances(
-            combined_results, derived_output_dir
-        )
-
-        for derived_name, dataset in derived_results.items():
-            dataset.attrs["id"] = derived_name
-            success = self.result_processor.save_result(
-                derived_name, dataset, derived_output_dir, result_type="derived"
-            )
-            if not success:
-                logger.warning(f"Failed to save derived measure '{derived_name}'")
-
-        postprocessed_results = {**combined_results, **derived_results}
-        logger.debug(f"Combined workflow results: {list(postprocessed_results.keys())}")
-        logger.info(
-            f"\n✓ Combined workflow complete: {len(postprocessed_results)} total datasets"
-        )
-        return postprocessed_results
-
     def _run_brf_workflow(
         self,
         scene_description: SceneDescription,
@@ -517,7 +464,6 @@ class EradiateBackend(SimulationBackend):
         experiment = self.create_experiment(
             scene_description,
             scene_dir,
-            include_irradiance_measures=False,
             atmosphere=None,  # NO ATMOSPHERE for BRF
             sensor_ids=brf_sensor_ids,
         )
@@ -573,18 +519,15 @@ class EradiateBackend(SimulationBackend):
         self,
         scene_description: SceneDescription,
         scene_dir: UPath,
-        include_irradiance_measures: bool = True,
         atmosphere: Optional[str] = "auto",
         sensor_ids: Optional[set] = None,
         measures: Optional[list] = None,
-        irradiance_disk_coords: Optional[Dict[str, tuple]] = None,
     ):
         """Create Eradiate experiment from scene description.
 
         Args:
             scene_description: Scene description with all scene data
             scene_dir: Base directory for resolving file paths
-            include_irradiance_measures: Whether to include irradiance measurements
             atmosphere: Atmosphere option:
                 - "auto": Create atmosphere from scene config (default)
                 - None: No atmosphere (for BRF measurements)
@@ -593,11 +536,8 @@ class EradiateBackend(SimulationBackend):
                 (e.g., only BRF sensors for BRF workflow).
             measures: Pre-built Eradiate measure dicts. When provided,
                 translate_sensors() is bypassed and these measures are used directly.
-                include_irradiance_measures and sensor_ids are ignored.
+                sensor_ids is ignored.
                 Use this when the caller owns measure construction (e.g. BHR distant_flux).
-            irradiance_disk_coords: Optional mapping of IrradianceConfig ID to
-                (x, y, z) disk coordinates. Passed through to translate_sensors()
-                when measures is None.
 
         Returns:
             AtmosphereExperiment configured for the scene
@@ -652,11 +592,7 @@ class EradiateBackend(SimulationBackend):
 
         if measures is None:
             measures = self.eradiate_translator.translate_sensors(
-                scene_description,
-                scene_dir,
-                include_irradiance_measures,
-                sensor_ids,
-                irradiance_disk_coords=irradiance_disk_coords,
+                scene_description, scene_dir, sensor_ids
             )
 
         logger.debug(
@@ -926,68 +862,75 @@ class EradiateBackend(SimulationBackend):
                 terrain_relative_height=False,
             )
 
-    def _auto_generate_sensors_for_measurements(self) -> List[str]:
+    def _auto_generate_sensors_for_measurements(
+        self, scene_description: SceneDescription
+    ) -> List[str]:
         """Auto-generate sensors for measurements that require them.
+
+        HDRF and HCRF in auto-generation mode get their radiance sensor and an
+        upward reference irradiancemeter at their location, BHR without
+        ``irradiance_sensor_id`` gets the irradiancemeter of its white reference.
 
         Returns:
             List of generated sensor IDs
         """
+        translator = self.eradiate_translator
         generated_sensor_ids = []
 
         for measurement in self.simulation_config.measurements:
             if (
-                isinstance(measurement, HDRFConfig)
+                isinstance(measurement, (HDRFConfig, HCRFConfig))
                 and measurement.radiance_sensor_id is None
             ):
-                radiance_sensor = (
-                    self.eradiate_translator.generate_radiance_sensor_for_hdrf(
+                if isinstance(measurement, HDRFConfig):
+                    radiance_sensor = translator.generate_radiance_sensor_for_hdrf(
                         measurement
                     )
-                )
-                irradiance_measurement = (
-                    self.eradiate_translator.generate_irradiance_measurement_for_hdrf(
+                else:
+                    radiance_sensor = translator.generate_camera_sensor_for_hcrf(
                         measurement
                     )
+                irradiancemeter = translator.generate_reference_irradiancemeter(
+                    f"{measurement.type}_irradiance_{measurement.id}",
+                    measurement.location,
+                    measurement.srf,
+                    scene_description,
                 )
 
-                self.simulation_config.sensors.append(radiance_sensor)
-                self.simulation_config.measurements.append(irradiance_measurement)
-
+                self.simulation_config.sensors.extend(
+                    [radiance_sensor, irradiancemeter]
+                )
                 measurement.radiance_sensor_id = radiance_sensor.id
-                measurement.irradiance_measurement_id = irradiance_measurement.id
+                measurement.irradiance_sensor_id = irradiancemeter.id
 
-                generated_sensor_ids.append(radiance_sensor.id)
+                generated_sensor_ids.extend([radiance_sensor.id, irradiancemeter.id])
                 logging.info(
                     f"Auto-generated radiance sensor '{radiance_sensor.id}' and "
-                    f"irradiance measurement '{irradiance_measurement.id}' for HDRF '{measurement.id}'"
+                    f"irradiancemeter '{irradiancemeter.id}' for '{measurement.id}'"
                 )
 
             elif (
-                isinstance(measurement, HCRFConfig)
-                and measurement.radiance_sensor_id is None
+                isinstance(measurement, BHRConfig)
+                and measurement.irradiance_sensor_id is None
             ):
-                camera_sensor = (
-                    self.eradiate_translator.generate_camera_sensor_for_hcrf(
-                        measurement
-                    )
+                ref = measurement.reference_height_offset_m
+                location = measurement.model_copy(
+                    update={
+                        "height_offset_m": measurement.height_offset_m + ref,
+                        "target_z": None
+                        if measurement.target_z is None
+                        else measurement.target_z + ref,
+                    }
                 )
-                irradiance_measurement = (
-                    self.eradiate_translator.generate_irradiance_measurement_for_hcrf(
-                        measurement
-                    )
+                irradiancemeter = translator.generate_reference_irradiancemeter(
+                    f"bhr_reference_{measurement.id}",
+                    location,
+                    measurement.srf,
+                    scene_description,
                 )
-
-                self.simulation_config.sensors.append(camera_sensor)
-                self.simulation_config.measurements.append(irradiance_measurement)
-
-                measurement.radiance_sensor_id = camera_sensor.id
-                measurement.irradiance_measurement_id = irradiance_measurement.id
-
-                generated_sensor_ids.append(camera_sensor.id)
-                logging.info(
-                    f"Auto-generated camera sensor '{camera_sensor.id}' and "
-                    f"irradiance measurement '{irradiance_measurement.id}' for HCRF '{measurement.id}'"
-                )
+                self.simulation_config.sensors.append(irradiancemeter)
+                measurement.irradiance_sensor_id = irradiancemeter.id
+                generated_sensor_ids.append(irradiancemeter.id)
 
             elif (
                 isinstance(measurement, BRFConfig)

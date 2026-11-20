@@ -182,3 +182,39 @@ class TestAlignAndBroadcast:
         _, ref_out = align_and_broadcast_datasets(rad, ref, fill_value=0.0)
         assert ref_out.sel(w=400.0).item() == pytest.approx(0.0)
         assert ref_out.sel(w=900.0).item() == pytest.approx(0.0)
+
+
+def test_hcrf_alone_triggers_derivation():
+    from types import SimpleNamespace
+
+    from s2gos_simulator.config import (
+        AngularFromOriginViewing,
+        DirectionalIllumination,
+        GroundInstrumentType,
+        GroundSensor,
+        HCRFConfig,
+        SimulationConfig,
+    )
+    from s2gos_simulator.hdrf_processor import HDRFProcessor
+
+    config = SimulationConfig(
+        name="t",
+        illumination=DirectionalIllumination(zenith=30.0, azimuth=0.0),
+        sensors=[
+            GroundSensor(
+                id="cam",
+                instrument=GroundInstrumentType.PERSPECTIVE_CAMERA,
+                viewing=AngularFromOriginViewing(origin=[0.0, 0.0, 2.0], zenith=180.0),
+            ),
+            GroundSensor(
+                id="irr",
+                instrument=GroundInstrumentType.IRRADIANCEMETER,
+                viewing=AngularFromOriginViewing(origin=[0.0, 0.0, 2.0]),
+            ),
+        ],
+        measurements=[
+            HCRFConfig(id="h", radiance_sensor_id="cam", irradiance_sensor_id="irr")
+        ],
+    )
+
+    assert HDRFProcessor(SimpleNamespace(simulation_config=config)).requires_hdrf()
