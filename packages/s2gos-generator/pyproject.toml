@@ -35,7 +35,8 @@ dependencies = [
     "mercantile",
     "odc-stac",
     "pystac-client",
-    "boto3"
+    "boto3",
+    "fast-simplification>=0.2.0,<0.3",
 ]
 
 [dependency-groups]

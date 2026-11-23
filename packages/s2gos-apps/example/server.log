@@ -1,0 +1,8 @@
+2026-11-23 14:31:18,266 INFO uvicorn.error: Started server process [443433]
+2026-11-23 14:31:18,266 INFO uvicorn.error: Waiting for application startup.
+2026-11-23 14:31:18,266 INFO uvicorn.error: Application startup complete.
+2026-11-23 14:31:18,266 INFO uvicorn.error: Uvicorn running on http://127.0.0.1:39173 (Press CTRL+C to quit)
+2026-11-23 15:02:50,887 INFO uvicorn.error: Started server process [456107]
+2026-11-23 15:02:50,887 INFO uvicorn.error: Waiting for application startup.
+2026-11-23 15:02:50,887 INFO uvicorn.error: Application startup complete.
+2026-11-23 15:02:50,887 INFO uvicorn.error: Uvicorn running on http://127.0.0.1:55241 (Press CTRL+C to quit)

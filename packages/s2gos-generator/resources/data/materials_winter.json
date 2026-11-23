@@ -142,7 +142,7 @@
     "asphalt": {
       "type": "diffuse",
       "reflectance": {
-        "path": "spectra/spectrum_manmade_road_pavingasphalt_0674uuuasp.nc",
+        "path": "spectra/spectrum_paving_asphalt.nc",
         "variable": "reflectance"
       }
     },
@@ -163,21 +163,21 @@
     "cement_cinder": {
       "type": "diffuse",
       "reflectance": {
-        "path": "spectra/spectrum_manmade_generalconstructionmaterial_cementcinderblock_0432uuucnc.nc",
+        "path": "spectra/spectrum_concrete.nc",
         "variable": "reflectance"
       }
     },
     "shingle": {
       "type": "diffuse",
       "reflectance": {
-        "path": "spectra/spectrum_manmade_roofingmaterial_shingle_0683uuuasp.nc",
+        "path": "spectra/spectrum_roofing_tile.nc",
         "variable": "reflectance"
       }
     },
     "slate": {
       "type": "diffuse",
       "reflectance": {
-        "path": "spectra/rock_metamorphic_slate_solid_vswir_ward91_jpl_perkin.nc",
+        "path": "spectra/spectrum_roofing_tile.nc",
         "variable": "reflectance"
       }
     }

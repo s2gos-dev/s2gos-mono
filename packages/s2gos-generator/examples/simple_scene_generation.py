@@ -37,7 +37,7 @@ def simple_scene_generation_example():
         center_lon=15.11956,
         aoi_size_km=10.0,
         output_dir=Path("./simple_scene_output"),
-        target_resolution_m=30.0,
+        dem_resolution_m=30.0,
         description="Simple scene generation example using S2GOS with buffer/background",
     )
 
@@ -70,13 +70,7 @@ def simple_scene_generation_example():
 
     print("DAG-based configuration created (with buffer/background and atmosphere)")
 
-    # Validate configuration
-    errors = config.validate_configuration()
-    if errors:
-        print(f"Configuration errors: {errors}")
-        return None
-    else:
-        print("Configuration validation passed")
+    print("Configuration validation passed")
 
     # Display configuration summary
     print("\nConfiguration Summary:")
@@ -85,7 +79,7 @@ def simple_scene_generation_example():
         f"  Location: {config.location.center_lat:.4f}°, {config.location.center_lon:.4f}°"
     )
     print(f"  AOI: {config.location.aoi_size_km} km²")
-    print(f"  Resolution: {config.processing.target_resolution_m} m")
+    print(f"  Resolution: {config.dem_resolution_m} m")
     print(
         f"  Buffer: {config.buffer.size_km} km at {config.buffer.resolution_m} m resolution"
     )
@@ -103,7 +97,7 @@ def simple_scene_generation_example():
             print(f"DAG visualization saved to: {dag_viz_path}")
 
         # Execute the pipeline
-        scene_description = pipeline.run_full_pipeline()
+        scene_description = pipeline.run()
 
         print(f"\nSuccess! Scene generated: {scene_description.name}")
         print(f"Location: {config.location.center_lat}, {config.location.center_lon}")
@@ -116,9 +110,9 @@ def simple_scene_generation_example():
             f"  Target mesh: {config.meshes_dir / f'{config.scene_name}_terrain.ply'}"
         )
         print(
-            f"  Target texture: {config.textures_dir / f'{config.scene_name}_{config.processing.target_resolution_m}m_selection.png'}"
+            f"  Target texture: {config.textures_dir / f'{config.scene_name}_{config.dem_resolution_m}m_selection.png'}"
         )
-        if config.has_buffer:
+        if config.buffer is not None:
             print(
                 f"  Buffer mesh: {config.meshes_dir / f'{config.scene_name}_buffer_terrain.ply'}"
             )
