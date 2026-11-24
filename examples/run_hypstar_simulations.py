@@ -80,8 +80,8 @@ SERIES_INDICES = [1]  # List of indices or None for all
 TARGET_COORDS = (-23.6015417, 15.1258696)  # (Lat, Lon)
 SENSOR_ORIGIN = [0.022914, 1.16748, 10.5269]
 IRR_HEIGHT = 13.0
-SENSOR_SAMPLES = 4
-IRR_SAMPLES = 4
+SENSOR_SAMPLES = 32
+IRR_SAMPLES = 32
 
 
 # ==============================================================================
