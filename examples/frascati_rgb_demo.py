@@ -11,7 +11,7 @@ from s2gos_generator.core.config import (
     VegetationPlacementConfig,
     VegetationSpecies,
     WaysConfig,
-    WaterConfig,
+    #WaterConfig,
     create_scene_config,
 )
 from s2gos_generator.core.pipeline import SceneGenerationPipeline
@@ -76,7 +76,7 @@ config = create_scene_config(
 
 
 config.ways = WaysConfig()
-config.water = WaterConfig()
+#config.water = WaterConfig()
 config.texture_resolution_m = 3.0
 
 config.buildings = BuildingsConfig(
@@ -180,20 +180,20 @@ else:
             #         apply_srf=False, generate_rgb_image=True
             #     ),
             # ),
-            # GroundSensor(
-            #     id="zoom_sensor",
-            #     instrument=GroundInstrumentType.PERSPECTIVE_CAMERA,
-            #     viewing=LookAtViewing(
-            #         origin=[7500.0, -5500.0, 1100], target=[7500.0, -5500.0, 0], up=[0, 1, 0]
-            #     ),
-            #     srf=SpectralResponse(type="delta", wavelengths=[440.0, 550.0, 660.0]),
-            #     fov=45,
-            #     resolution=[1920, 1080],
-            #     samples_per_pixel=4,
-            #     post_processing=PostProcessingOptions(
-            #         apply_srf=False, generate_rgb_image=True
-            #     ),
-            # ),
+            GroundSensor(
+                id="zoom_sensor",
+                instrument=GroundInstrumentType.PERSPECTIVE_CAMERA,
+                viewing=LookAtViewing(
+                    origin=[7500.0, -5500.0, 1100], target=[7500.0, -5500.0, 0], up=[0, 1, 0]
+                ),
+                srf=SpectralResponse(type="delta", wavelengths=[440.0, 550.0, 660.0]),
+                fov=45,
+                resolution=[1920, 1080],
+                samples_per_pixel=4,
+                post_processing=PostProcessingOptions(
+                    apply_srf=False, generate_rgb_image=True
+                ),
+            ),
             #             GroundSensor(
             #     id="zoom_sensor_2",
             #     instrument=GroundInstrumentType.PERSPECTIVE_CAMERA,
