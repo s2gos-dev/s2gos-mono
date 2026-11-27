@@ -268,9 +268,17 @@ def _checked_ref(entry: dict, relative: str) -> PathRef:
     """Resolve one table path, insisting a local store actually exists."""
     ref = resolve(relative)
     if _is_local(ref) and not exists(ref):
+        # The details go to the server log only: the message below reaches API clients
+        # (job status), so it names no storage path or configuration.
+        logger.error(
+            "%r points at %r, which does not exist. Check RESULTS_BASE (currently %r), "
+            "or set S2GOS_DEMO_RESULTS.",
+            entry["title"],
+            ref.href,
+            RESULTS_BASE,
+        )
         raise FileNotFoundError(
-            f"'{entry['title']}' points at {ref.href!r}, which does not exist. "
-            f"Check RESULTS_BASE (currently {RESULTS_BASE!r}), or set S2GOS_DEMO_RESULTS."
+            f"The precalculated result '{entry['title']}' is not available at the moment."
         )
     return ref
 
