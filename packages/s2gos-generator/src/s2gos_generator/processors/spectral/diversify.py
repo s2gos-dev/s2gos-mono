@@ -79,7 +79,9 @@ def diversify_selection_texture(
                 n_missing,
                 n_pixels,
             )
-        matches = match_clusters_to_library(palette, library, cfg.max_sam_angle_deg)
+        matches = match_clusters_to_library(
+            palette, library, cfg.max_sam_angle_deg, cfg.sam_weight
+        )
         per_class.append((esa_class, label_map, matches))
         matched_ids.extend(m.material_id for m in matches if m is not None)
 

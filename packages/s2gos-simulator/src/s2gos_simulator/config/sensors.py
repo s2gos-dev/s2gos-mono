@@ -1,10 +1,37 @@
 from __future__ import annotations
 
+import math
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    NamedTuple,
+    Optional,
+    Tuple,
+    Union,
+)
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+import numpy as np
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveFloat,
+    PositiveInt,
+    field_validator,
+    model_validator,
+)
+from pyproj import Transformer
+from s2gos_utils.coordinates import CoordinateSystem
 
+from .instruments import (
+    CHIME_SRF,
+    INSTRUMENTS,
+    HyperspectralInstrument,
+    Instrument,
+)
 from .spectral import SpectralRegion, SpectralResponse, SRFType, WavelengthGrid
 from .viewing import (
     AngularFromOriginViewing,
@@ -23,119 +50,6 @@ class PlatformType(str, Enum):
     GROUND = "ground"
 
 
-class SatellitePlatform(str, Enum):
-    """Supported satellite platforms."""
-
-    SENTINEL_2A = "sentinel-2a"
-    SENTINEL_2B = "sentinel-2b"
-    SENTINEL_3A = "sentinel-3a"
-    SENTINEL_3B = "sentinel-3b"
-    LANDSAT_8 = "landsat-8"
-    LANDSAT_9 = "landsat-9"
-    MODIS_TERRA = "modis-terra"
-    MODIS_AQUA = "modis-aqua"
-    CHIME = "chime"
-    ENDMAP = "endmap"
-    CUSTOM = "custom"  # For user-defined platforms with custom SRF
-
-
-class SentinelMSIBand(str, Enum):
-    """Sentinel-2 MSI band identifiers."""
-
-    B01 = "1"
-    B02 = "2"
-    B03 = "3"
-    B04 = "4"
-    B05 = "5"
-    B06 = "6"
-    B07 = "7"
-    B08 = "8"
-    B8A = "8a"
-    B09 = "9"
-    B10 = "10"
-    B11 = "11"
-    B12 = "12"
-
-
-class SentinelOLCIBand(str, Enum):
-    """Sentinel-3 OLCI band identifiers."""
-
-    OA01 = "1"
-    OA02 = "2"
-    OA03 = "3"
-    OA04 = "4"
-    OA05 = "5"
-    OA06 = "6"
-    OA07 = "7"
-    OA08 = "8"
-    OA09 = "9"
-    OA10 = "10"
-    OA11 = "11"
-    OA12 = "12"
-    OA13 = "13"
-    OA14 = "14"
-    OA15 = "15"
-    OA16 = "16"
-    OA17 = "17"
-    OA18 = "18"
-    OA19 = "19"
-    OA20 = "20"
-    OA21 = "21"
-
-
-class LandsatOLIBand(str, Enum):
-    """Landsat OLI band identifiers."""
-
-    B1 = "1"  # Coastal aerosol
-    B2 = "2"  # Blue
-    B3 = "3"  # Green
-    B4 = "4"  # Red
-    B5 = "5"  # NIR
-    B6 = "6"  # SWIR 1
-    B7 = "7"  # SWIR 2
-    B8 = "8"  # Panchromatic
-    B9 = "9"  # Cirrus
-
-
-class SatelliteInstrument(str, Enum):
-    """Supported satellite instruments."""
-
-    MSI = "msi"  # Sentinel-2 MultiSpectral Instrument
-    OLCI = "olci"  # Sentinel-3 Ocean and Land Colour Instrument
-    OLI = "oli"  # Landsat Operational Land Imager
-    MODIS = "modis"  # MODIS sensor
-    VNIR = "vnir"  # Generic VNIR instrument
-    HSI = "hsi"  # Hyperspectral instrument
-    CUSTOM = "custom"  # For custom instruments
-
-
-# Platform to instrument mapping
-PLATFORM_INSTRUMENTS = {
-    SatellitePlatform.SENTINEL_2A: [SatelliteInstrument.MSI],
-    SatellitePlatform.SENTINEL_2B: [SatelliteInstrument.MSI],
-    SatellitePlatform.SENTINEL_3A: [SatelliteInstrument.OLCI],
-    SatellitePlatform.SENTINEL_3B: [SatelliteInstrument.OLCI],
-    SatellitePlatform.LANDSAT_8: [SatelliteInstrument.OLI],  # TODO: Implement
-    SatellitePlatform.LANDSAT_9: [SatelliteInstrument.OLI],  # TODO: Implement
-    SatellitePlatform.MODIS_TERRA: [SatelliteInstrument.MODIS],  # TODO: Implement
-    SatellitePlatform.MODIS_AQUA: [SatelliteInstrument.MODIS],  # TODO: Implement
-    SatellitePlatform.CHIME: [SatelliteInstrument.HSI],
-    SatellitePlatform.ENDMAP: [SatelliteInstrument.HSI],  # TODO: Implement
-    SatellitePlatform.CUSTOM: [SatelliteInstrument.CUSTOM],
-}
-
-# Instrument to band mapping
-INSTRUMENT_BANDS = {
-    SatelliteInstrument.MSI: SentinelMSIBand,
-    SatelliteInstrument.OLCI: SentinelOLCIBand,
-    SatelliteInstrument.OLI: LandsatOLIBand,  # TODO: Implement
-    SatelliteInstrument.MODIS: None,  # TODO: Implement
-    SatelliteInstrument.VNIR: None,
-    SatelliteInstrument.HSI: None,
-    SatelliteInstrument.CUSTOM: None,  # Accept any string for custom
-}
-
-
 class GroundInstrumentType(str, Enum):
     """Enum for ground instrument types for robustness."""
 
@@ -143,30 +57,26 @@ class GroundInstrumentType(str, Enum):
     PERSPECTIVE_CAMERA = "perspective_camera"
     PYRANOMETER = "pyranometer"
     FLUX_METER = "flux_meter"
-    DHP_CAMERA = "dhp_camera"
+    FISHEYE_CAMERA = "fisheye_camera"
     RADIANCEMETER = "radiancemeter"
 
 
 class PostProcessingOptions(BaseModel):
     """Post-processing pipeline options for ground sensors.
 
-    Controls spatial averaging, SRF convolution, circular FOV mask, and RGB output.
+    Controls spatial averaging, SRF convolution and RGB output.
     """
 
     apply_srf: bool = Field(default=True, description="Apply Gaussian SRF convolution")
     spatial_averaging: bool = Field(
-        default=False, description="Average over spatial dimensions (x_index, y_index)"
+        default=False,
+        description=(
+            "Average over spatial dimensions (x_index, y_index). For HYPSTAR and "
+            "fisheye_camera results, the mean over the image circle"
+        ),
     )
     spatial_statistic: Literal["mean", "median"] = Field(
         default="mean", description="Statistic for spatial averaging"
-    )
-    apply_circular_mask: bool = Field(
-        default=False,
-        description=(
-            "Apply circular FOV mask before spatial averaging. "
-            "Pixels outside the circular FOV are set to NaN and excluded. "
-            "Enable for HYPSTAR-style circular aperture sensors."
-        ),
     )
     generate_rgb_image: bool = Field(
         default=False,
@@ -187,6 +97,44 @@ class PostProcessingOptions(BaseModel):
     )
 
 
+class FisheyeLens(BaseModel):
+    """Lens of a fisheye camera, passed to Eradiate's ``fisheye`` measure.
+
+    Pixel quantities are expressed at ``calibration_resolution``, which defaults to
+    the film resolution. Unset fields fall back to Eradiate's defaults: the optical
+    centre at the film centre and the image circle inscribed in the film.
+    """
+
+    projection_model: Literal[
+        "equidistant", "equisolid", "stereographic", "orthographic", "polynomial"
+    ] = Field(
+        default="equisolid",
+        description="Radial mapping from the angle to the optical axis to image radius",
+    )
+    lens_coefficients: Optional[List[float]] = Field(
+        default=None,
+        description=(
+            "Polynomial coefficients [c0, c1, ...] of rho(theta) = c0*theta + "
+            "c1*theta**2 + ..., theta in radians (polynomial model only)"
+        ),
+    )
+    center_x: Optional[float] = Field(
+        default=None,
+        description="Optical centre x in pixels from the left edge of the image",
+    )
+    center_y: Optional[float] = Field(
+        default=None,
+        description="Optical centre y in pixels from the top edge of the image",
+    )
+    image_circle_radius: Optional[float] = Field(
+        default=None, gt=0.0, description="Image circle radius in pixels"
+    )
+    calibration_resolution: Optional[Tuple[int, int]] = Field(
+        default=None,
+        description="Resolution (width, height) the pixel quantities are given at",
+    )
+
+
 class BaseSensor(BaseModel):
     """Base sensor configuration."""
 
@@ -195,38 +143,100 @@ class BaseSensor(BaseModel):
     )
     platform_type: PlatformType = Field(..., description="Platform type identifier")
     viewing: ViewingType = Field(..., description="Viewing geometry configuration")
-    srf: Optional[SRFType] = Field(None, description="Spectral response function")
-
-    @field_validator("srf", mode="before")
-    @classmethod
-    def resolve_srf_preset(cls, v):
-        if not isinstance(v, str):
-            return v
-
-        presets = {
-            "hypstar": lambda: HYPSTAR_SRF,
-            "chime": lambda: CHIME_SRF,
-        }
-
-        if v in presets:
-            return presets[v]()
-
-        return v
-
     produces: List[Literal["radiance", "irradiance", "hdrf", "brf", "bhr"]] = Field(
         ["radiance"],
         description="List of radiative quantities to be produced by this sensor configuration",
     )
     samples_per_pixel: int = Field(
-        64, ge=1, description="Number of Monte Carlo samples per pixel"
+        64, ge=1, description="Number of Monte Carlo samples per pixel."
     )
     noise_model: Optional[Dict[str, Any]] = Field(
         None, description="Noise model configuration"
     )
 
 
+class ProjectedGrid(BaseModel):
+    """Pixel lattice of a projected tile, e.g. a Sentinel-2 MGRS tile in UTM."""
+
+    crs: str = Field(..., description="CRS of the tile, e.g. 'EPSG:32733'")
+    origin: Tuple[float, float] = Field(
+        ..., description="(x, y) of the tile's upper-left corner in `crs`"
+    )
+
+    @classmethod
+    def utm(cls, lat: float, lon: float) -> ProjectedGrid:
+        """WGS 84 UTM zone of a point, with the lattice through the zone's origin."""
+        zone = int((lon + 180.0) // 6.0) % 60 + 1
+        return cls(
+            crs=f"EPSG:{(32600 if lat >= 0 else 32700) + zone}", origin=(0.0, 0.0)
+        )
+
+    def snapped_bounds(
+        self,
+        lat: float,
+        lon: float,
+        size: Tuple[float, float],
+        step: Tuple[float, float],
+    ) -> Dict[str, float]:
+        """Rectangle of `size` (width, height) centered on a point, in `crs` units,
+        with its upper-left corner moved to the nearest node of the `step` lattice."""
+        x, y = Transformer.from_crs("EPSG:4326", self.crs, always_xy=True).transform(
+            lon, lat
+        )
+        width, height = size
+        x0, y0 = self.origin
+        xmin = x0 + round((x - width / 2 - x0) / step[0]) * step[0]
+        ymax = y0 + round((y + height / 2 - y0) / step[1]) * step[1]
+        return {"xmin": xmin, "xmax": xmin + width, "ymin": ymax - height, "ymax": ymax}
+
+
+class SceneRectangle(NamedTuple):
+    """Sensor footprint in scene coordinates (meters).
+
+    Attributes:
+        center: (x, y) of the footprint center
+        size: (width, height) along the footprint's own axes
+        rotation: Counter-clockwise angle (degrees) from the scene x axis to the
+            footprint's x axis, the Eradiate azimuth convention
+    """
+
+    center: Tuple[float, float]
+    size: Tuple[float, float]
+    rotation: float = 0.0
+
+    @property
+    def up(self) -> Tuple[float, float, float]:
+        """Unit vector of the footprint's north in scene coordinates."""
+        angle = math.radians(self.rotation)
+        return (-math.sin(angle), math.cos(angle), 0.0)
+
+    def pixel_center(self, row, col, resolution: Tuple[int, int]):
+        """Scene (x, y) of the center of pixel (row, col) of a film.
+
+        Row 0 is the footprint's first row and col 0 its first column, north and west
+        when the footprint is not rotated.
+
+        ``row`` and ``col`` may be integers or arrays of them.
+        """
+        width, height = resolution
+        u = ((col + 0.5) / width - 0.5) * self.size[0]
+        v = (0.5 - (row + 0.5) / height) * self.size[1]
+        angle = math.radians(self.rotation)
+        cos, sin = math.cos(angle), math.sin(angle)
+        return (
+            self.center[0] + u * cos - v * sin,
+            self.center[1] + u * sin + v * cos,
+        )
+
+
 class SatelliteSensor(BaseSensor):
-    """Satellite sensor configuration."""
+    """Satellite sensor: an instrument looking at a target footprint.
+
+    A multispectral instrument is simulated as one measure per band, a hyperspectral one
+    as a single measure over its spectral response.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     platform_type: Literal[PlatformType.SATELLITE] = Field(
         PlatformType.SATELLITE, description="Platform type (always 'satellite')"
@@ -234,17 +244,34 @@ class SatelliteSensor(BaseSensor):
     viewing: AngularViewing = Field(
         ..., description="Viewing geometry (zenith/azimuth angles)"
     )
-    platform: SatellitePlatform = Field(
-        ..., description="Satellite platform identifier"
+    instrument: Union[str, Instrument] = Field(
+        ...,
+        description=(
+            "Key of a built-in instrument in INSTRUMENTS (e.g. 'sentinel_2a-msi', "
+            "'chime-hsi'), or a custom instrument"
+        ),
     )
-    instrument: SatelliteInstrument = Field(
-        ..., description="Satellite instrument identifier"
+    bands: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Bands to simulate, each as its own measure. Defaults to every band of a "
+            "multispectral instrument. Leave unset for a hyperspectral instrument"
+        ),
     )
-    band: str = Field(
-        ..., description="Band identifier (validated against instrument-specific enum)"
+    band_viewing: Dict[str, AngularViewing] = Field(
+        default_factory=dict,
+        description=(
+            "Per-band viewing geometry overriding 'viewing' (e.g. the per-band "
+            "angles of a real Sentinel-2 acquisition)"
+        ),
     )
-    film_resolution: Tuple[int, int] = Field(
-        ..., description="Pixel grid dimensions (width, height) for 2D imaging"
+    film_resolution: Optional[Tuple[PositiveInt, PositiveInt]] = Field(
+        None,
+        description=(
+            "Pixel grid (width, height) applied to every band. Defaults to each "
+            "band's native GSD, in which case target_size_km must be a whole "
+            "multiple of it. Required when the instrument has no GSD"
+        ),
     )
     target_center_lat: float = Field(
         ..., description="Target center latitude in WGS84 decimal degrees"
@@ -252,9 +279,47 @@ class SatelliteSensor(BaseSensor):
     target_center_lon: float = Field(
         ..., description="Target center longitude in WGS84 decimal degrees"
     )
-    target_size_km: Union[float, Tuple[float, float]] = Field(
+    target_size_km: Union[PositiveFloat, Tuple[PositiveFloat, PositiveFloat]] = Field(
         ...,
-        description="Target area size: float for square (km), tuple for rectangular (width_km, height_km)",
+        description=(
+            "Target area size: float for square (km), tuple for rectangular "
+            "(width_km, height_km). In the projected grid's units when there is one, "
+            "otherwise ground kilometers along the grid axes"
+        ),
+    )
+    output_format: Optional[Literal["eopf"]] = Field(
+        None,
+        description=(
+            "'eopf' writes the bands as one EOPF L1C store (Sentinel-2 MSI only), "
+            "georeferenced on the `projected_grid` and orthorectified. Unset, each "
+            "band is saved as its own dataset"
+        ),
+    )
+    grid: Optional[ProjectedGrid] = Field(
+        None,
+        description=(
+            "Tile the footprint is aligned to: its upper-left corner moves to the "
+            "nearest node of the coarsest band's pixel lattice. Every band must then "
+            "be at its native GSD"
+        ),
+    )
+    grid_rotation: float = Field(
+        0.0,
+        description=(
+            "Counter-clockwise rotation of the pixel grid from north-up in degrees "
+            "(Eradiate azimuth), for a grid that is not projected. Columns point along "
+            "azimuth grid_rotation and rows along grid_rotation - 90. Must stay 0 with "
+            "a `projected_grid`, which sets the rotation itself"
+        ),
+    )
+    orthorectified: bool = Field(
+        False,
+        description=(
+            "Whether the pixel grid lies on the terrain, at the mean height over the "
+            "footprint, as for Sentinel-2 L1C and SLSTR L1B. Otherwise it lies at "
+            "z = 0, standing in for the ellipsoid, as for OLCI L1B. Always True for "
+            "output_format='eopf'"
+        ),
     )
     for_reference_only: bool = Field(
         default=False,
@@ -268,91 +333,253 @@ class SatelliteSensor(BaseSensor):
         ),
     )
 
+    @field_validator("instrument")
+    @classmethod
+    def check_instrument_key(cls, v):
+        if isinstance(v, str) and v not in INSTRUMENTS:
+            raise ValueError(
+                f"Unknown instrument {v!r}. Available: {sorted(INSTRUMENTS)}"
+            )
+        return v
+
     @model_validator(mode="after")
     def validate_and_set_defaults(self):
-        """Validate platform/instrument/band combination and set defaults."""
-
-        if self.platform != SatellitePlatform.CUSTOM:
-            valid_instruments = PLATFORM_INSTRUMENTS.get(self.platform, [])
-            if self.instrument not in valid_instruments:
-                raise ValueError(
-                    f"Instrument '{self.instrument.value}' is not valid for platform '{self.platform.value}'. "
-                    f"Valid instruments: {[inst.value for inst in valid_instruments]}"
-                )
-
-        if (
-            self.platform != SatellitePlatform.CUSTOM
-            and self.instrument != SatelliteInstrument.CUSTOM
-        ):
-            band_enum = INSTRUMENT_BANDS.get(self.instrument)
-            if band_enum is not None:
-                try:
-                    valid_band = band_enum(self.band)
-                    self.band = valid_band.value
-                except ValueError:
-                    valid_bands = [band.value for band in band_enum]
-                    raise ValueError(
-                        f"Band '{self.band}' is not valid for instrument '{self.instrument.value}'. "
-                        f"Valid bands: {valid_bands}"
-                    )
-
-        if self.platform == SatellitePlatform.CUSTOM and self.srf is None:
+        """Check the bands against the instrument and fill in the defaults."""
+        if self.is_hyperspectral:
+            self._check_hyperspectral()
+        else:
+            self._resolve_bands()
+        self._set_defaults()
+        for band in self.measured_bands:
+            self.band_film_resolution(band)  # raises if the grid doesn't fit
+        if self.output_format == "eopf":
+            self._check_eopf()
+            self.orthorectified = True
+        if self.grid is not None:
+            self._check_native_pixels()
+        if self.projected_grid is not None and self.grid_rotation != 0.0:
             raise ValueError(
-                "Custom platform requires an explicit SRF. "
-                "Please provide an SRF using the 'srf' parameter."
+                f"Sensor '{self.id}' has a projected grid, which sets its rotation: "
+                "leave grid_rotation at 0"
             )
-
-        if self.viewing.target is None:
-            self.viewing.target = [0.0, 0.0, 0.0]
-
-        # TODO: Could be less eradiate specific?
-        if self.srf is None and self.platform != SatellitePlatform.CUSTOM:
-            platform_norm = self.platform.value.replace("-", "_")
-            self.srf = f"{platform_norm}-{self.instrument.value}-{self.band}"
-
-        if self.id is None:
-            if self.platform == SatellitePlatform.CUSTOM:
-                base_id = f"custom_{self.instrument.value}_{self.band}"
-            else:
-                platform_clean = self.platform.value.replace("-", "_")
-                base_id = f"{platform_clean}_{self.instrument.value}_{self.band}"
-
-            if self.viewing.zenith > 0:
-                self.id = f"{base_id}_oblique{int(self.viewing.zenith)}"
-            else:
-                self.id = f"{base_id}_nadir"
-
-        # Validate film resolution limits
-        width, height = self.film_resolution
-        if width <= 0 or height <= 0:
-            raise ValueError("Film resolution dimensions must be positive integers")
-        if width > 2048 or height > 2048:
-            raise ValueError(
-                f"Film resolution {self.film_resolution} exceeds maximum of 2048x2048 pixels. "
-                "Consider reducing resolution for memory and performance reasons."
-            )
-
         return self
 
+    def _check_eopf(self):
+        if self.spec.name != "msi":
+            raise ValueError(
+                f"output_format='eopf' needs a Sentinel-2 MSI instrument, sensor "
+                f"'{self.id}' has '{self.spec.name}'"
+            )
+
+    def _check_native_pixels(self):
+        for band in self.measured_bands:
+            gsd = (
+                self.spec.gsd_m
+                if self.is_hyperspectral
+                else self.spec.bands[band].gsd_m
+            )
+            if gsd is None or not all(
+                math.isclose(size, gsd) for size in self.pixel_size_m(band)
+            ):
+                raise ValueError(
+                    f"Sensor '{self.id}' has a grid, so band {band!r} must be at its "
+                    f"native GSD ({gsd} m): leave film_resolution unset"
+                )
+
+    def _check_hyperspectral(self):
+        if self.bands is not None or self.band_viewing:
+            raise ValueError(
+                f"Hyperspectral instrument '{self.spec.name}' takes no bands or "
+                "band_viewing"
+            )
+
+    def _resolve_bands(self):
+        known = list(self.spec.bands)
+        if self.bands is None:
+            self.bands = known
+        if not self.bands or len(set(self.bands)) != len(self.bands):
+            raise ValueError(f"'bands' must be non-empty and unique, got {self.bands}")
+        unknown = [band for band in self.bands if band not in known]
+        if unknown:
+            raise ValueError(
+                f"Bands {unknown} are not bands of instrument '{self.spec.name}'. "
+                f"Valid bands: {known}"
+            )
+        outside = sorted(set(self.band_viewing) - set(self.bands))
+        if outside:
+            raise ValueError(f"band_viewing has bands not in 'bands': {outside}")
+
+    def _set_defaults(self):
+        for viewing in [self.viewing, *self.band_viewing.values()]:
+            if viewing.target is None:
+                viewing.target = [0.0, 0.0, 0.0]
+        if self.id is None:
+            zenith = int(self.viewing.zenith)
+            view = f"oblique{zenith}" if zenith > 0 else "nadir"
+            self.id = f"{self.spec.platform}_{self.spec.name}_{view}".replace("-", "_")
+
     @property
-    def pixel_size_m(self) -> Tuple[float, float]:
-        """
-        Calculate ground pixel size in meters.
+    def spec(self) -> Instrument:
+        """The instrument: the `INSTRUMENTS` entry for a key, else the inline one."""
+        if isinstance(self.instrument, str):
+            return INSTRUMENTS[self.instrument]
+        return self.instrument
 
-        Returns:
-            Tuple of (pixel_size_x_m, pixel_size_y_m) in meters per pixel
-        """
+    @property
+    def is_hyperspectral(self) -> bool:
+        """Whether the sensor is one measure over its instrument's spectral response."""
+        return isinstance(self.spec, HyperspectralInstrument)
+
+    @property
+    def srf(self) -> Optional[SRFType]:
+        """Spectral response applied after the simulation (hyperspectral only)."""
+        return self.spec.srf if self.is_hyperspectral else None
+
+    @property
+    def measured_bands(self) -> List[Optional[str]]:
+        """Band of each measure: `bands`, or a single None for a hyperspectral sensor."""
+        return [None] if self.is_hyperspectral else self.bands
+
+    def _footprint_m(self) -> Tuple[float, float]:
         if isinstance(self.target_size_km, (int, float)):
-            # Square area
-            width_km = height_km = self.target_size_km
-        else:
-            # Rectangular area
-            width_km, height_km = self.target_size_km
+            return self.target_size_km * 1000, self.target_size_km * 1000
+        width_km, height_km = self.target_size_km
+        return width_km * 1000, height_km * 1000
 
-        pixel_size_x = (width_km * 1000) / self.film_resolution[0]
-        pixel_size_y = (height_km * 1000) / self.film_resolution[1]
+    @property
+    def projected_grid(self) -> Optional[ProjectedGrid]:
+        """Projected grid of the footprint: `grid`, else for an 'eopf' sensor the UTM
+        zone of the target, as EOPF products are always in UTM like real L1C tiles.
+        None otherwise.
+        """
+        if self.grid is not None:
+            return self.grid
+        if self.output_format == "eopf":
+            return ProjectedGrid.utm(self.target_center_lat, self.target_center_lon)
+        return None
 
-        return pixel_size_x, pixel_size_y
+    def grid_bounds(self) -> Dict[str, float]:
+        """Footprint in the `projected_grid` CRS, upper-left corner on the coarsest band's lattice.
+
+        Raises:
+            ValueError: if the sensor has no `projected_grid`
+        """
+        grid = self.projected_grid
+        if grid is None:
+            raise ValueError(
+                f"Sensor '{self.id}' has no projected grid: set grid or "
+                "output_format='eopf'"
+            )
+        sizes = [self.pixel_size_m(band) for band in self.measured_bands]
+        return grid.snapped_bounds(
+            self.target_center_lat,
+            self.target_center_lon,
+            self._footprint_m(),
+            (max(s[0] for s in sizes), max(s[1] for s in sizes)),
+        )
+
+    def target_rectangle(self, coords: CoordinateSystem) -> SceneRectangle:
+        """Footprint in scene coordinates.
+
+        Without a `projected_grid` it is centered on the target and rotated by
+        `grid_rotation`. With one it is the `grid_bounds` rectangle, turned by the angle
+        between grid north and the scene's north and scaled from grid to scene meters,
+        so its pixels follow the grid's.
+        """
+        grid = self.projected_grid
+        if grid is None:
+            return SceneRectangle(
+                center=coords.latlon_to_scene(
+                    self.target_center_lat, self.target_center_lon
+                ),
+                size=self._footprint_m(),
+                rotation=self.grid_rotation,
+            )
+        b = self.grid_bounds()
+        lon, lat = Transformer.from_crs(
+            grid.crs, "EPSG:4326", always_xy=True
+        ).transform(
+            [b["xmin"], b["xmax"], b["xmax"], b["xmin"]],
+            [b["ymin"], b["ymin"], b["ymax"], b["ymax"]],
+        )
+        ll, lr, ur, ul = (
+            np.array(coords.latlon_to_scene(la, lo)) for la, lo in zip(lat, lon)
+        )
+        x_axis = (lr - ll + ur - ul) / 2
+        y_axis = (ul - ll + ur - lr) / 2
+        return SceneRectangle(
+            center=tuple((ll + lr + ur + ul) / 4),
+            size=(float(np.hypot(*x_axis)), float(np.hypot(*y_axis))),
+            rotation=math.degrees(math.atan2(x_axis[1], x_axis[0])),
+        )
+
+    def resolve_band(self, band: Optional[str] = None) -> Optional[str]:
+        """The given band, the only band when none is given, or None if hyperspectral.
+
+        Raises:
+            ValueError: if a band is given to a hyperspectral sensor, the band is not
+                one of `bands`, or none is given for a multi-band sensor.
+        """
+        if self.is_hyperspectral and band is not None:
+            raise ValueError(f"Hyperspectral sensor '{self.id}' has no bands")
+        if self.is_hyperspectral:
+            return None
+        if band is None and len(self.bands) > 1:
+            raise ValueError(f"Sensor '{self.id}' has bands {self.bands}, specify one")
+        if band is None:
+            return self.bands[0]
+        if band not in self.bands:
+            raise ValueError(f"Sensor '{self.id}' has no band {band!r} ({self.bands})")
+        return band
+
+    def band_film_resolution(self, band: Optional[str] = None) -> Tuple[int, int]:
+        """Pixel grid (width, height) of a band: `film_resolution`, else its native GSD.
+
+        Raises:
+            ValueError: if no GSD is known, or the footprint is not a whole multiple
+                of it.
+        """
+        if self.film_resolution is not None:
+            return self.film_resolution
+        gsd = self.spec.gsd_m if self.is_hyperspectral else self.spec.bands[band].gsd_m
+        if gsd is None:
+            raise ValueError(
+                f"film_resolution is required for sensor '{self.id}': instrument "
+                f"'{self.spec.name}' has no native GSD for band {band!r}"
+            )
+        footprint_m = self._footprint_m()
+        film = tuple(round(size / gsd) for size in footprint_m)
+        if not all(math.isclose(n * gsd, size) for n, size in zip(film, footprint_m)):
+            raise ValueError(
+                f"Footprint {self.target_size_km} km is not a whole multiple of "
+                f"band {band!r}'s {gsd:g} m GSD"
+            )
+        return film
+
+    def band_srf(self, band: Optional[str] = None) -> SRFType:
+        """SRF of a measure: the hyperspectral instrument's, else the band's."""
+        return self.spec.srf if self.is_hyperspectral else self.spec.bands[band].srf
+
+    def viewing_for(self, band: Optional[str] = None) -> AngularViewing:
+        """Viewing geometry of a band: its `band_viewing` override, else `viewing`."""
+        return self.band_viewing.get(band, self.viewing)
+
+    def band_measure_id(self, band: Optional[str] = None) -> str:
+        """Id of a measure: `<id>_<band>`, or the sensor id for a hyperspectral sensor.
+
+        A band's results keep their name whichever other bands are simulated.
+        """
+        return self.id if self.is_hyperspectral else f"{self.id}_{band}"
+
+    def pixel_size_m(self, band: Optional[str] = None) -> Tuple[float, float]:
+        """Pixel size (x, y) of a band in meters.
+
+        In the projected grid's units when there is one, otherwise on the ground along
+        the grid axes.
+        """
+        width_m, height_m = self._footprint_m()
+        width, height = self.band_film_resolution(band)
+        return width_m / width, height_m / height
 
 
 class GroundSensor(BaseSensor):
@@ -367,16 +594,32 @@ class GroundSensor(BaseSensor):
     ] = Field(..., description="Viewing geometry")
     fov: Optional[float] = Field(
         None,
-        description="Field of view in degrees (for camera-like instruments: HYPSTAR, perspective_camera, dhp_camera)",
+        description=(
+            "Field of view in degrees (for camera-like instruments: HYPSTAR, "
+            "perspective_camera, fisheye_camera). For HYPSTAR and fisheye_camera, the "
+            "full angle of the circular FOV, or for a polynomial lens the full angle "
+            "its calibration was fitted over"
+        ),
     )
     resolution: Optional[List[int]] = Field(
         None,
-        description="Film resolution [width, height] (for camera-like instruments: HYPSTAR, perspective_camera, dhp_camera)",
+        description="Film resolution [width, height] (for camera-like instruments: HYPSTAR, perspective_camera, fisheye_camera)",
+    )
+    lens: Optional[FisheyeLens] = Field(
+        None,
+        description="Fisheye lens (fisheye_camera only), Eradiate defaults when unset",
     )
     post_processing: Optional[PostProcessingOptions] = Field(
         None,
         description="Post-processing pipeline options (spatial averaging, SRF, circular mask, etc.)",
     )
+    srf: Optional[SRFType] = Field(None, description="Spectral response function")
+
+    @field_validator("srf", mode="before")
+    @classmethod
+    def resolve_srf_preset(cls, v):
+        presets = {"hypstar": HYPSTAR_SRF, "chime": CHIME_SRF}
+        return presets.get(v, v) if isinstance(v, str) else v
 
     @model_validator(mode="before")
     @classmethod
@@ -403,9 +646,7 @@ class GroundSensor(BaseSensor):
                 data["resolution"] = [32, 32]
 
             if data.get("post_processing") is None:
-                data["post_processing"] = PostProcessingOptions(
-                    apply_circular_mask=True
-                )
+                data["post_processing"] = PostProcessingOptions(spatial_averaging=True)
 
             if data.get("srf") is None:
                 data["srf"] = SpectralResponse(
@@ -420,7 +661,7 @@ class GroundSensor(BaseSensor):
         camera_instruments = [
             GroundInstrumentType.HYPSTAR,
             GroundInstrumentType.PERSPECTIVE_CAMERA,
-            GroundInstrumentType.DHP_CAMERA,
+            GroundInstrumentType.FISHEYE_CAMERA,
         ]
 
         if self.instrument in camera_instruments:
@@ -429,6 +670,14 @@ class GroundSensor(BaseSensor):
                     f"'{self.instrument.value}' requires a pointing view "
                     f"('directional' or 'angular_from_origin'), not '{self.viewing.type}'."
                 )
+
+        if (
+            self.lens is not None
+            and self.instrument != GroundInstrumentType.FISHEYE_CAMERA
+        ):
+            raise ValueError(
+                f"'lens' is only used by 'fisheye_camera', not '{self.instrument.value}'."
+            )
 
         if self.id is None:
             if hasattr(self.viewing, "origin"):
@@ -443,25 +692,6 @@ class GroundSensor(BaseSensor):
         return self
 
 
-# CHIME (Copernicus Hyperspectral Imaging Mission) spectral characteristics
-# Based on early ESA specifications:
-# - Spectral range: 400-2500 nm
-# - Spectral resolution: < 11 nm (worst case at FOV edge)
-# - Spectral Sampling Interval (SSI): 8.4 nm
-# - Spatial resolution: 30 m
-# - Swath: ~130 km
-CHIME_SPECTRAL_REGIONS = [
-    SpectralRegion(name="VNIR", wmin_nm=400.0, wmax_nm=1000.0, fwhm_nm=8.5),
-    SpectralRegion(name="SWIR1", wmin_nm=1000.0, wmax_nm=1800.0, fwhm_nm=10.0),
-    SpectralRegion(name="SWIR2", wmin_nm=1800.0, wmax_nm=2500.0, fwhm_nm=11.0),
-]
-
-CHIME_SRF = SpectralResponse(
-    type="gaussian",
-    spectral_regions=CHIME_SPECTRAL_REGIONS,
-    output_grid=WavelengthGrid(mode="regular", wmin_nm=400, wmax_nm=2500, step_nm=8.4),
-)
-
 # HYPSTAR (HYPERNETS Land Network) spectral characteristics
 # - VNIR detector (Si): 380–1000 nm, FWHM ≈ 3 nm
 # - SWIR detector (InGaAs): 1000–1680 nm, FWHM ≈ 10 nm
@@ -474,92 +704,6 @@ HYPSTAR_SRF = SpectralResponse(
     type="gaussian",
     spectral_regions=HYPSTAR_SPECTRAL_REGIONS,
 )
-
-
-def create_chime_sensor(
-    target_center_lat: float,
-    target_center_lon: float,
-    target_size_km: Union[float, Tuple[float, float]] = 1.0,
-    zenith: float = 0.0,
-    azimuth: float = 0.0,
-    samples_per_pixel: int = 64,
-    ssi_nm: float = 8.4,
-    fwhm_nm: Optional[float] = None,
-    spectral_regions: Optional[List[SpectralRegion]] = None,
-    wmin_nm: float = 400.0,
-    wmax_nm: float = 2500.0,
-    sensor_id: Optional[str] = None,
-    **kwargs,
-) -> SatelliteSensor:
-    """Create a CHIME hyperspectral satellite sensor with sensible defaults.
-
-    CHIME (Copernicus Hyperspectral Imaging Mission) specifications:
-    - Spectral range: 400-2500 nm
-    - Spectral resolution: < 11 nm (FWHM)
-    - Spectral Sampling Interval (SSI): 8.4 nm
-    - Spatial resolution: 30 m
-    - Swath: ~130 km
-
-    The sensor uses Gaussian SRF post-processing with wavelength-dependent FWHM
-    to simulate the instrument's spectral response characteristics.
-
-    Args:
-        target_center_lat: Target center latitude (WGS84 decimal degrees)
-        target_center_lon: Target center longitude (WGS84 decimal degrees)
-        target_size_km: Target area size (km). Float for square, tuple for (width, height)
-        zenith: Viewing zenith angle (0=nadir). Default 0.0
-        azimuth: Viewing azimuth angle. Default 0.0
-        samples_per_pixel: Monte Carlo samples per pixel. Default 64
-        ssi_nm: Spectral Sampling Interval (nm). Default 8.4 per CHIME spec
-        fwhm_nm: Single FWHM for all wavelengths (overrides spectral_regions)
-        spectral_regions: Wavelength-dependent FWHM regions. If None, uses CHIME defaults
-        wmin_nm: Minimum wavelength (nm). Default 400.0
-        wmax_nm: Maximum wavelength (nm). Default 2500.0
-        sensor_id: Optional sensor ID. Auto-generated if not provided
-        **kwargs: Additional sensor parameters
-
-    Returns:
-        SatelliteSensor configured for CHIME hyperspectral simulation
-    """
-    # Use CHIME default spectral regions if not provided
-    if spectral_regions is None and fwhm_nm is None:
-        spectral_regions = CHIME_SPECTRAL_REGIONS
-
-    # Build Gaussian SRF configuration
-    srf = SpectralResponse(
-        type="gaussian",
-        fwhm_nm=fwhm_nm,
-        spectral_regions=spectral_regions if fwhm_nm is None else None,
-        output_grid=WavelengthGrid(
-            mode="regular",
-            wmin_nm=wmin_nm,
-            wmax_nm=wmax_nm,
-            step_nm=ssi_nm,
-        ),
-    )
-
-    # Generate sensor ID if not provided
-    if sensor_id is None:
-        if zenith > 0:
-            sensor_id = f"chime_hsi_oblique{int(zenith)}"
-        else:
-            sensor_id = "chime_hsi_nadir"
-    film_size = (target_size_km * 1000) // 30
-    adjusted_target_size = (film_size * 30) / 1000
-    return SatelliteSensor(
-        id=sensor_id,
-        platform=SatellitePlatform.CHIME,
-        instrument=SatelliteInstrument.HSI,
-        band="full",  # Hyperspectral uses full spectrum, not discrete bands
-        viewing=AngularViewing(zenith=zenith, azimuth=azimuth),
-        film_resolution=(film_size, film_size),
-        target_center_lat=target_center_lat,
-        target_center_lon=target_center_lon,
-        target_size_km=adjusted_target_size,
-        samples_per_pixel=samples_per_pixel,
-        srf=srf,
-        **kwargs,
-    )
 
 
 def create_hypstar_sensor(
@@ -576,6 +720,7 @@ def create_hypstar_sensor(
     HYPSTAR (HYPERNETS Land Network) specifications:
     - VNIR detector (Si): 380–1000 nm, FWHM ≈ 3 nm
     - SWIR detector (InGaAs): 1000–1680 nm, FWHM ≈ 10 nm
+    - 5° circular radiance FOV, rendered as an equisolid fisheye
 
     When reference_file is provided, SRF post-processing outputs wavelengths
     from that file (for direct comparison against real HYPSTAR observations).
@@ -610,9 +755,7 @@ def create_hypstar_sensor(
 
     kwargs.setdefault(
         "post_processing",
-        PostProcessingOptions(
-            apply_circular_mask=True, spatial_averaging=True, generate_rgb_image=True
-        ),
+        PostProcessingOptions(spatial_averaging=True, generate_rgb_image=True),
     )
 
     return GroundSensor(

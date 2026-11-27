@@ -228,6 +228,17 @@ class WayExclusionConfig(BaseModel):
     )
 
 
+class BuildingExclusionConfig(BaseModel):
+    """Controls how vegetation reacts to building footprints."""
+
+    enabled: bool = Field(
+        True, description="Exclude vegetation from building footprints"
+    )
+    buffer_m: float = Field(
+        1.0, ge=0.0, description="Extra buffer (m) around building footprints"
+    )
+
+
 class VegetationPlacementConfig(BaseModel):
     """Configuration for multi-species vegetation placement system.
 
@@ -303,6 +314,9 @@ class VegetationPlacementConfig(BaseModel):
         description="Random seed for reproducible scene generation. If None, uses system entropy.",
     )
     way_exclusion: WayExclusionConfig = Field(default_factory=WayExclusionConfig)
+    building_exclusion: BuildingExclusionConfig = Field(
+        default_factory=BuildingExclusionConfig
+    )
 
     model_config = {
         "validate_assignment": True,

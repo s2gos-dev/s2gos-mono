@@ -5,6 +5,7 @@ Chain: footprints are loaded and extruded (`meshing`), each pitched roof is lift
 Felkel & Obdrzalek's algorithm (`skeleton`).
 """
 
+from .footprints import footprints_from_sidecar, footprints_to_sidecar
 from .meshing import (
     BuildingMeshes,
     BuildingMeshStats,
@@ -21,6 +22,8 @@ __all__ = [
     "BuildingMeshes",
     "BuildingMeshStats",
     "build_meshes",
+    "footprints_from_sidecar",
+    "footprints_to_sidecar",
     "load_building_footprints",
     "make_dem_elevation_sampler",
     "quadkeys_for_bbox",

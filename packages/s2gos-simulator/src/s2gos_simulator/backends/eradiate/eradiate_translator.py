@@ -8,7 +8,6 @@ import logging
 from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 import numpy as np
-import xarray as xr
 from s2gos_utils.coordinates import CoordinateSystem
 from s2gos_utils.scene import SceneDescription
 from upath import UPath
@@ -280,8 +279,11 @@ class EradiateTranslator:
                 continue
 
             if isinstance(sensor, SatelliteSensor):
-                measures.append(
-                    self.translate_satellite_sensor(sensor, scene_description)
+                measures.extend(
+                    self.translate_satellite_sensor(
+                        sensor, band, scene_description, scene_dir
+                    )
+                    for band in sensor.measured_bands
                 )
             elif isinstance(sensor, GroundSensor):
                 measures.append(
@@ -320,13 +322,23 @@ class EradiateTranslator:
         return measures
 
     def translate_satellite_sensor(
-        self, sensor: SatelliteSensor, scene_description: SceneDescription
+        self,
+        sensor: SatelliteSensor,
+        band: Optional[str],
+        scene_description: SceneDescription,
+        scene_dir: UPath,
     ) -> Dict[str, Any]:
-        """Translate satellite sensor to Eradiate mpdistant measure.
+        """Translate one measure of a satellite sensor to an Eradiate mpdistant measure.
+
+        The target is the sensor's `target_rectangle`, with its up vector toward the
+        grid's first row. It lies at the mean terrain height beneath it when
+        orthorectified, otherwise at z = 0, the scene's sea level.
 
         Args:
             sensor: Satellite sensor configuration
+            band: One of `sensor.measured_bands`
             scene_description: Scene description with location
+            scene_dir: Scene directory containing the DEM
 
         Returns:
             Eradiate measure dictionary
@@ -340,31 +352,36 @@ class EradiateTranslator:
                 "Scene description missing center_lat or center_lon in location"
             )
 
-        coords = CoordinateSystem(scene_center_lat, scene_center_lon)
-
-        if isinstance(sensor.target_size_km, (int, float)):
-            width_km = height_km = sensor.target_size_km
-        else:
-            width_km, height_km = sensor.target_size_km
-
-        target_bounds = coords.create_rectangle(
-            sensor.target_center_lat, sensor.target_center_lon, width_km, height_km
+        footprint = sensor.target_rectangle(
+            CoordinateSystem(scene_center_lat, scene_center_lon)
         )
+        film_resolution = sensor.band_film_resolution(band)
+        z = 0.0
+        if sensor.orthorectified:
+            width, height = film_resolution
+            rows, cols = np.mgrid[:height, :width]
+            z = self.geometry_utils.mean_terrain_elevation(
+                scene_description,
+                scene_dir,
+                *footprint.pixel_center(rows, cols, film_resolution),
+            )
 
+        viewing = sensor.viewing_for(band)
         measure_config = {
             "type": "mpdistant",
             "construct": "from_angles",
-            "angles": [sensor.viewing.zenith, sensor.viewing.azimuth],
-            "id": sanitize_sensor_id(sensor.id),
-            "film_resolution": sensor.film_resolution,
+            "angles": [viewing.zenith, viewing.azimuth],
+            "id": sanitize_sensor_id(sensor.band_measure_id(band)),
+            "film_resolution": film_resolution,
             "target": {
                 "type": "rectangle",
-                "xmin": target_bounds["xmin"],
-                "xmax": target_bounds["xmax"],
-                "ymin": target_bounds["ymin"],
-                "ymax": target_bounds["ymax"],
+                "xyz": [*footprint.center, z],
+                "size_x": footprint.size[0],
+                "size_y": footprint.size[1],
+                "n": [0.0, 0.0, 1.0],
+                "up": list(footprint.up),
             },
-            "srf": self.translate_srf(sensor.srf),
+            "srf": self.translate_srf(sensor.band_srf(band)),
             "spp": sensor.samples_per_pixel,
         }
 
@@ -409,6 +426,7 @@ class EradiateTranslator:
         }
 
         if hasattr(view, "relative_to_asset") and view.relative_to_asset is not None:
+            view = view.model_copy(deep=True)
             asset_name = self._resolve_asset_reference(
                 view.relative_to_asset, asset_transforms
             )
@@ -460,22 +478,20 @@ class EradiateTranslator:
 
             if sensor.instrument in [
                 GroundInstrumentType.PERSPECTIVE_CAMERA,
-                GroundInstrumentType.DHP_CAMERA,
+                GroundInstrumentType.FISHEYE_CAMERA,
+                GroundInstrumentType.HYPSTAR,
             ]:
-                base_measure["type"] = "perspective"
-                base_measure["film_resolution"] = sensor.resolution or [1024, 1024]
-                base_measure["fov"] = sensor.fov or (
-                    180.0
-                    if sensor.instrument == GroundInstrumentType.DHP_CAMERA
-                    else 70.0
+                is_fisheye = (
+                    sensor.instrument != GroundInstrumentType.PERSPECTIVE_CAMERA
                 )
+                base_measure["type"] = "fisheye" if is_fisheye else "perspective"
+                base_measure["film_resolution"] = sensor.resolution or [1024, 1024]
+                base_measure["fov"] = sensor.fov or (180.0 if is_fisheye else 70.0)
                 base_measure["up"] = view.up or [0, 0, 1]
-
-            elif sensor.instrument == GroundInstrumentType.HYPSTAR:
-                base_measure["type"] = "perspective"
-                base_measure["film_resolution"] = sensor.resolution or [5, 5]
-                base_measure["fov"] = sensor.fov or 5.0
-                base_measure["up"] = view.up or [0, 0, 1]
+                if sensor.instrument == GroundInstrumentType.HYPSTAR:
+                    base_measure["projection_model"] = "equisolid"
+                if sensor.lens is not None:
+                    base_measure.update(sensor.lens.model_dump(exclude_none=True))
 
             elif sensor.instrument == GroundInstrumentType.RADIANCEMETER:
                 base_measure["type"] = "radiancemeter"
@@ -488,7 +504,7 @@ class EradiateTranslator:
 
             elif isinstance(view, AngularFromOriginViewing):
                 target, direction = self.geometry_utils.calculate_target_from_angles(
-                    view
+                    view, origin
                 )
                 base_measure["target"] = target
 
@@ -745,8 +761,8 @@ class EradiateTranslator:
                     wmin = min(grid.wavelengths_nm)
                     wmax = max(grid.wavelengths_nm)
                 else:
-                    # from_file: wavelengths only known at runtime; derive
-                    # simulation range from spectral_regions if present.
+                    # from_file: wavelengths are only known at runtime, so derive
+                    # the simulation range from spectral_regions if present.
                     if srf.spectral_regions:
                         wmin = min(r.wmin_nm for r in srf.spectral_regions)
                         wmax = max(r.wmax_nm for r in srf.spectral_regions)
@@ -879,50 +895,21 @@ class EradiateTranslator:
             samples_per_pixel=brf_config.samples_per_pixel or 512,
         )
 
-    def get_sensor_by_id(self, sensor_id: str):
-        """Find sensor config by ID.
+    def get_sensor_band(self, measure_id: str) -> Tuple[Optional[Any], Optional[str]]:
+        """Find the sensor, and for satellite sensors the band, behind a measure.
 
         Args:
-            sensor_id: Sensor ID to find
+            measure_id: Sanitized id of a measure (see `sanitize_sensor_id`)
 
         Returns:
-            Sensor configuration or None
+            (sensor, band), with band None unless `measure_id` is a satellite band
+            measure, or (None, None) when no sensor matches
         """
         for sensor in self.simulation_config.sensors:
-            if sensor.id == sensor_id:
-                return sensor
-        return None
-
-    def apply_post_processing_to_sensors(
-        self, sensor_results: Dict[str, xr.Dataset]
-    ) -> Dict[str, xr.Dataset]:
-        """Apply post-processing to sensor results.
-
-        Args:
-            sensor_results: Dictionary of sensor results
-
-        Returns:
-            Dictionary of post-processed results
-        """
-        from ...processors.sensor_processor import SensorProcessor
-
-        sensor_processor = SensorProcessor(self.simulation_config)
-        processed_results = {}
-
-        for sensor_id, dataset in sensor_results.items():
-            logger.debug(f"Processing sensor: {sensor_id}")
-            sensor = self.get_sensor_by_id(sensor_id)
-            if sensor:
-                logger.debug(f"Found sensor config: {sensor_id}")
-                post_processed_dataset = sensor_processor.process_sensor_result(
-                    dataset, sensor
-                )
-                # Only save raw version if post-processing changed the data
-                if post_processed_dataset is not dataset:
-                    logger.debug(f"Post-processing applied: {sensor_id}")
-                    processed_results[f"{sensor_id}_raw_eradiate"] = dataset
-                processed_results[sensor_id] = post_processed_dataset
-            else:
-                logger.debug(f"No sensor config found: {sensor_id}, passing through")
-                processed_results[sensor_id] = dataset
-        return processed_results
+            if isinstance(sensor, SatelliteSensor):
+                for band in sensor.measured_bands:
+                    if sanitize_sensor_id(sensor.band_measure_id(band)) == measure_id:
+                        return sensor, band
+            if sanitize_sensor_id(sensor.id) == measure_id:
+                return sensor, None
+        return None, None

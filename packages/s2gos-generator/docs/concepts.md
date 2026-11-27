@@ -42,6 +42,8 @@ The target is defined by a centre coordinate and an AOI size in kilometres ([`Sc
 
 The **buffer zone** (optional) surrounds the target at a coarser resolution. Its purpose is to reduce adjacency and edge-of-scene artifacts.
 
+Its mesh is a ring around the target. It shares the target's boundary vertices, so the two surfaces meet without a gap or an overlap.
+
 Configure via [`BufferConfig`][s2gos_generator.core.config.scene.BufferConfig]:
 
 ```python
@@ -50,12 +52,12 @@ buffer = BufferConfig(size_km=60.0, resolution_m=100.0)
 
 ### Background
 
-The **background zone** (optional) is the outermost ring, extending the scene to the horizon. It uses a flat surface at a fixed elevation — no DEM data is used.
+The **background zone** (optional) is the outermost ring, extending the scene to the horizon. It uses a flat surface 1 m below the lowest point of the target and buffer DEMs, so it never covers terrain.
 
 Configure via [`BackgroundConfig`][s2gos_generator.core.config.scene.BackgroundConfig]:
 
 ```python
-background = BackgroundConfig(size_km=200.0, resolution_m=200.0, elevation=0.0)
+background = BackgroundConfig(size_km=200.0, resolution_m=200.0)
 ```
 
 ## Buildings
@@ -128,14 +130,16 @@ For each configured class the pipeline:
 2. Clusters the per-pixel reflectance of that class into `clusters_per_class`
    groups with k-means.
 3. Matches each cluster to the closest **diffuse** material in a spectral library
-   using the Spectral Angle Mapper (SAM, [Kruse et al., 1993](#references)), which 
-   compares spectral *shape* independent of brightness.
+   using the Spectral Angle Mapper (SAM, [Kruse et al., 1993](#references)), which
+   compares spectral *shape* independent of brightness. Setting `sam_weight` below
+   1 blends in a normalised Euclidean distance, so materials of the same shape but
+   different brightness are told apart.
 4. Paints the matched materials back into the class's pixels in the selection
    texture.
 
-An optional SAM-angle threshold acts as a quality gate: clusters with no
-sufficiently close library match keep their base landcover material rather than
-being forced onto a poor fit. Reading Sentinel-2 from the Copernicus Data Space
+An optional SAM-angle threshold acts as a quality gate: only candidates within
+that angle of a cluster are ranked, and clusters with none keep their base
+landcover material rather than being forced onto a poor fit. Reading Sentinel-2 from the Copernicus Data Space
 requires S3 credentials.
 
 See [Spectral material matching configuration](configuration.md#spectral-material-matching)
@@ -152,7 +156,7 @@ After generation, the output directory looks like:
 
 ```
 <output_dir>/<scene_name>/
-├── meshes/          # PLY mesh files (target, buffer, background)
+├── meshes/          # PLY mesh files (target, buffer)
 ├── textures/        # Material texture images
 ├── data/            # Intermediate data (clipped DEM, landcover)
 └── scene.yaml       # SceneDescription file for the simulator

@@ -2,8 +2,13 @@ import math
 
 import numpy as np
 import pytest
+import xarray as xr
+from pyproj import Transformer
+from s2gos_utils.coordinates import CoordinateSystem
 
-from s2gos_simulator.backends.eradiate.eradiate_translator import EradiateTranslator
+from s2gos_simulator.backends.eradiate.eradiate_translator import (
+    EradiateTranslator,
+)
 from s2gos_simulator.backends.eradiate.geometry_utils import (
     GeometryUtils,
     sanitize_sensor_id,
@@ -11,14 +16,14 @@ from s2gos_simulator.backends.eradiate.geometry_utils import (
 from s2gos_simulator.config import (
     BRFConfig,
     DirectionalIllumination,
+    FisheyeLens,
     GroundInstrumentType,
     GroundSensor,
     HCRFConfig,
     HDRFConfig,
     HemisphericalMeasurementLocation,
     IrradianceConfig,
-    SatelliteInstrument,
-    SatellitePlatform,
+    ProjectedGrid,
     SatelliteSensor,
     SimulationConfig,
     SpectralResponse,
@@ -39,9 +44,8 @@ from s2gos_simulator.config.viewing import (
 def _make_sentinel_sensor(**kwargs):
     defaults = dict(
         id="test_sat",
-        platform=SatellitePlatform.SENTINEL_2A,
-        instrument=SatelliteInstrument.MSI,
-        band="2",
+        instrument="sentinel_2a-msi",
+        bands=["2"],
         viewing=AngularViewing(zenith=0.0, azimuth=0.0),
         film_resolution=(10, 10),
         target_center_lat=-42.0,
@@ -60,18 +64,40 @@ def _make_translator_for_sensor(sensor, illumination=None):
     return EradiateTranslator(config, GeometryUtils())
 
 
+TERRAIN_HEIGHT = 400.0
+
+
+def _write_dem(scene, scene_dir, axis, elevation):
+    scene.name, scene.resolution_m = "test", 10.0
+    xr.Dataset(
+        {"elevation": (("y", "x"), elevation)}, coords={"y": axis, "x": axis}
+    ).to_zarr(str(scene_dir / "data" / "dem_test_10.0m.zarr"))
+    return scene_dir
+
+
+@pytest.fixture
+def dem_scene_dir(minimal_scene, scene_dir):
+    """Scene directory with a flat DEM at TERRAIN_HEIGHT."""
+    axis = np.linspace(-20000.0, 20000.0, 5)
+    return _write_dem(minimal_scene, scene_dir, axis, np.full((5, 5), TERRAIN_HEIGHT))
+
+
 class TestSatelliteSensorTranslation:
-    def test_translate_satellite_sensor_structure(self, translator, minimal_scene):
+    def test_translate_satellite_sensor_structure(
+        self, translator, minimal_scene, dem_scene_dir
+    ):
         sensor = _make_sentinel_sensor(
             id="sentinel.2a.test",  # specific ID to test sanitization
             viewing=AngularViewing(zenith=15.0, azimuth=90.0),
             film_resolution=(128, 64),
         )
 
-        result = translator.translate_satellite_sensor(sensor, minimal_scene)
+        result = translator.translate_satellite_sensor(
+            sensor, "2", minimal_scene, dem_scene_dir
+        )
 
         assert result["type"] == "mpdistant"
-        assert result["id"] == "sentinel_2a_test"
+        assert result["id"] == "sentinel_2a_test_2"
 
         assert result["construct"] == "from_angles"
         assert result["angles"] == [15.0, 90.0]
@@ -80,7 +106,130 @@ class TestSatelliteSensorTranslation:
 
         target = result["target"]
         assert target["type"] == "rectangle"
-        assert {"xmin", "xmax", "ymin", "ymax"}.issubset(target.keys())
+        assert target["up"] == [0.0, 1.0, 0.0]
+        assert target["xyz"] == [0.0, 0.0, 0.0]
+
+    def test_grid_georeferences_the_footprint_without_eopf(
+        self, translator, minimal_scene, dem_scene_dir
+    ):
+        """The tile grid turns the footprint to UTM north whatever the output format,
+        and a sensor that is not orthorectified stays at z = 0."""
+        grid = ProjectedGrid(crs="EPSG:32720", origin=(399960.0, 5400040.0))
+        sensor = _make_sentinel_sensor(film_resolution=None, grid=grid)
+
+        target = translator.translate_satellite_sensor(
+            sensor, "2", minimal_scene, dem_scene_dir
+        )["target"]
+
+        angle = math.radians(1.0)
+        assert target["up"] == pytest.approx(
+            [math.sin(angle), math.cos(angle), 0.0], abs=1e-3
+        )
+        assert target["xyz"][2] == 0.0
+
+    def test_rotated_orthorectified_footprint(
+        self, translator, minimal_scene, dem_scene_dir
+    ):
+        """A swath grid rotated -30 deg (clockwise) has columns heading 120 deg and lies
+        on the terrain."""
+        import mitsuba as mi
+        from eradiate.scenes.measure import Target
+
+        sensor = _make_sentinel_sensor(
+            target_size_km=(2.0, 1.0),
+            film_resolution=(20, 10),
+            grid_rotation=-30.0,
+            orthorectified=True,
+        )
+
+        target = Target.convert(
+            translator.translate_satellite_sensor(
+                sensor, "2", minimal_scene, dem_scene_dir
+            )["target"]
+        )
+
+        center = np.array(target.to_world @ mi.ScalarPoint3f(0.0, 0.0, 0.0))
+        column_edge = np.array(target.to_world @ mi.ScalarPoint3f(1.0, 0.0, 0.0))
+        column_edge -= center
+        assert center[2] == pytest.approx(TERRAIN_HEIGHT)
+        heading = math.degrees(math.atan2(column_edge[0], column_edge[1]))
+        assert heading == pytest.approx(120.0)
+        assert math.hypot(*column_edge[:2]) == pytest.approx(1000.0)
+
+    def test_eopf_needs_sentinel2_msi(self):
+        with pytest.raises(ValueError, match="Sentinel-2 MSI"):
+            _make_sentinel_sensor(
+                instrument="chime-hsi", bands=None, output_format="eopf"
+            )
+
+    def test_sentinel2_footprint_follows_utm_north(
+        self, translator, minimal_scene, dem_scene_dir
+    ):
+        """At 42° S, 1.5° west of UTM zone 20's central meridian, grid north is 1° west of north."""
+        sensor = _make_sentinel_sensor(output_format="eopf")
+        target = translator.translate_satellite_sensor(
+            sensor, "2", minimal_scene, dem_scene_dir
+        )["target"]
+
+        angle = math.radians(1.0)
+        assert target["xyz"][2] == pytest.approx(TERRAIN_HEIGHT)
+        assert target["up"] == pytest.approx(
+            [math.sin(angle), math.cos(angle), 0.0], abs=1e-3
+        )
+
+    def test_satellite_footprint_at_mean_terrain_height(
+        self, translator, minimal_scene, scene_dir
+    ):
+        """A 1 km footprint over a valley 600 m deep at its center averages 450 m.
+
+        The footprint is turned 1° to UTM north and snapped to the 100 m pixels, which
+        moves the mean by a few meters.
+        """
+        valley = np.full((5, 5), 600.0)
+        valley[2, 2] = 0.0
+        axis = np.array([-1000.0, -500.0, 0.0, 500.0, 1000.0])
+        _write_dem(minimal_scene, scene_dir, axis, valley)
+
+        target = translator.translate_satellite_sensor(
+            _make_sentinel_sensor(output_format="eopf"), "2", minimal_scene, scene_dir
+        )["target"]
+
+        assert target["xyz"][2] == pytest.approx(450.0, abs=10.0)
+
+    def test_satellite_sensor_on_grid_targets_tile_footprint(
+        self, translator, minimal_scene, dem_scene_dir
+    ):
+        import mitsuba as mi
+        from eradiate.scenes.measure import Target
+
+        sensor = _make_sentinel_sensor(
+            bands=["4"],
+            film_resolution=None,
+            target_size_km=10.0,
+            grid=ProjectedGrid(crs="EPSG:32720", origin=(399960.0, 5400040.0)),
+            output_format="eopf",
+        )
+        loc = minimal_scene.location
+        coords = CoordinateSystem(loc["center_lat"], loc["center_lon"])
+        tile = sensor.grid_bounds()
+        to_lonlat = Transformer.from_crs("EPSG:32720", "EPSG:4326", always_xy=True)
+
+        target = Target.convert(
+            translator.translate_satellite_sensor(
+                sensor, "4", minimal_scene, dem_scene_dir
+            )["target"]
+        )
+
+        for local, corner in [
+            ((-1, 1), (tile["xmin"], tile["ymax"])),
+            ((1, 1), (tile["xmax"], tile["ymax"])),
+            ((1, -1), (tile["xmax"], tile["ymin"])),
+        ]:
+            lon, lat = to_lonlat.transform(*corner)
+            world = target.to_world @ mi.ScalarPoint3f(*local, 0.0)
+            assert [world[0], world[1]] == pytest.approx(
+                coords.latlon_to_scene(lat, lon), abs=0.5
+            )
 
     def test_sensor_for_reference_only(
         self, directional_illumination, minimal_scene, scene_dir
@@ -99,7 +248,9 @@ class TestSatelliteSensorTranslation:
 
         assert measures == []
 
-    def test_sensor_selection(self, directional_illumination, minimal_scene, scene_dir):
+    def test_sensor_selection(
+        self, directional_illumination, minimal_scene, dem_scene_dir
+    ):
         include_sensor = _make_sentinel_sensor(id="include")
         exclude_sensor = _make_sentinel_sensor(id="exclude")
 
@@ -111,10 +262,45 @@ class TestSatelliteSensorTranslation:
         )
 
         t = EradiateTranslator(config, GeometryUtils())
-        measures = t.translate_sensors(minimal_scene, scene_dir, sensor_ids="include")
+        measures = t.translate_sensors(
+            minimal_scene, dem_scene_dir, sensor_ids="include"
+        )
 
         assert len(measures) == 1
-        assert measures[0]["id"] == "include"
+        assert measures[0]["id"] == "include_2"
+
+    def test_multiband_sensor_gives_one_measure_per_band(
+        self, directional_illumination, minimal_scene, dem_scene_dir
+    ):
+        sensor = _make_sentinel_sensor(
+            bands=["2", "8a", "1"],
+            film_resolution=None,
+            target_size_km=1.2,
+            band_viewing={"8a": AngularViewing(zenith=5.0, azimuth=170.0)},
+        )
+        config = SimulationConfig(
+            name="test",
+            illumination=directional_illumination,
+            sensors=[sensor],
+            measurements=[],
+        )
+
+        measures = EradiateTranslator(config, GeometryUtils()).translate_sensors(
+            minimal_scene, dem_scene_dir
+        )
+
+        assert [m["id"] for m in measures] == [
+            "test_sat_2",
+            "test_sat_8a",
+            "test_sat_1",
+        ]
+        assert [m["film_resolution"] for m in measures] == [
+            (120, 120),
+            (60, 60),
+            (20, 20),
+        ]
+        assert [m["angles"] for m in measures] == [[0.0, 0.0], [5.0, 170.0], [0.0, 0.0]]
+        assert measures[1]["srf"] == "sentinel_2a-msi-8a"
 
     def test_translate_satellite_sensor_scene_missing_location_raises(
         self, translator, minimal_scene
@@ -123,22 +309,22 @@ class TestSatelliteSensorTranslation:
 
         minimal_scene.location = {"center_lon": -64.5}
         with pytest.raises(ValueError, match="center_lat"):
-            translator.translate_satellite_sensor(sensor, minimal_scene)
+            translator.translate_satellite_sensor(sensor, "2", minimal_scene, None)
 
         minimal_scene.location = {"center_lat": -42.0}
         with pytest.raises(ValueError, match="center_lon"):
-            translator.translate_satellite_sensor(sensor, minimal_scene)
+            translator.translate_satellite_sensor(sensor, "2", minimal_scene, None)
 
     def test_satellite_sensor_pixel_size_calculation(self):
         s1 = _make_sentinel_sensor(film_resolution=(100, 100), target_size_km=1.0)
-        px1, py1 = s1.pixel_size_m
+        px1, py1 = s1.pixel_size_m("2")
         assert px1 == pytest.approx(10.0)
         assert py1 == pytest.approx(10.0)
 
         s2 = _make_sentinel_sensor(
             film_resolution=(200, 100), target_size_km=(2.0, 1.0)
         )
-        px2, py2 = s2.pixel_size_m
+        px2, py2 = s2.pixel_size_m("2")
         assert px2 == pytest.approx(10.0)
         assert py2 == pytest.approx(10.0)
 
@@ -252,6 +438,49 @@ class TestGroundSensorTranslation:
         assert result["fov"] == pytest.approx(70.0)
         assert result["film_resolution"] == [512, 512]
 
+    def test_ground_fisheye_camera(self, translator, minimal_scene, scene_dir):
+        viewing = LookAtViewing(
+            origin=[0, 0, 2],
+            target=[0, 0, 10],
+            up=[0, 1, 0],
+            terrain_relative_height=False,
+        )
+        default = GroundSensor(
+            id="fish", instrument=GroundInstrumentType.FISHEYE_CAMERA, viewing=viewing
+        )
+        result = self._translate_ground(translator, default, minimal_scene, scene_dir)
+
+        assert result["type"] == "fisheye"
+        assert result["fov"] == pytest.approx(180.0)
+        assert result["film_resolution"] == [1024, 1024]
+        assert result["up"] == pytest.approx([0, 1, 0])
+        assert "projection_model" not in result
+
+        lens = FisheyeLens(
+            projection_model="polynomial",
+            lens_coefficients=[0.62, 0.0, -0.02],
+            center_x=512.3,
+            center_y=509.8,
+            image_circle_radius=500.0,
+            calibration_resolution=(1024, 1024),
+        )
+        calibrated = GroundSensor(
+            id="fish",
+            instrument=GroundInstrumentType.FISHEYE_CAMERA,
+            viewing=viewing,
+            lens=lens,
+        )
+        result = self._translate_ground(
+            translator, calibrated, minimal_scene, scene_dir
+        )
+
+        assert result["projection_model"] == "polynomial"
+        assert result["lens_coefficients"] == [0.62, 0.0, -0.02]
+        assert result["center_x"] == 512.3
+        assert result["center_y"] == 509.8
+        assert result["image_circle_radius"] == 500.0
+        assert tuple(result["calibration_resolution"]) == (1024, 1024)
+
     def test_ground_hypstar(self, translator, minimal_scene, scene_dir):
         sensor = GroundSensor(
             id="hyp",
@@ -266,7 +495,8 @@ class TestGroundSensorTranslation:
         result = self._translate_ground(translator, sensor, minimal_scene, scene_dir)
 
         assert result["id"] == "hyp"
-        assert result["type"] == "perspective"
+        assert result["type"] == "fisheye"
+        assert result["projection_model"] == "equisolid"
         assert result["srf"] == {"type": "uniform", "wmin": 380.0, "wmax": 1680.0}
         assert result["origin"] == pytest.approx([0, 0, 1])
         assert result["target"] == pytest.approx([0, 0, 0])
@@ -443,6 +673,38 @@ class TestTerrainRelativeAdjustment:
 
         assert result["origin"][2] == pytest.approx(6.0)
         assert result["target"][2] == pytest.approx(5.0)
+
+    def test_angular_from_origin_terrain_relative_keeps_direction(
+        self, translator, minimal_scene, scene_dir, monkeypatch
+    ):
+        # The target must be built from the terrain-adjusted origin, otherwise the
+        # terrain elevation leaks into the pointing direction.
+        monkeypatch.setattr(
+            translator.geometry_utils,
+            "query_terrain_elevation",
+            lambda *args, **kwargs: 500.0,
+        )
+        zenith, azimuth = 120.0, 337.0
+        sensor = GroundSensor(
+            id="hyp",
+            instrument=GroundInstrumentType.HYPSTAR,
+            viewing=AngularFromOriginViewing(
+                origin=[0.0, 0.0, 10.0],
+                zenith=zenith,
+                azimuth=azimuth,
+                terrain_relative_height=True,
+            ),
+        )
+        result = translator.translate_ground_sensor(
+            sensor, minimal_scene, scene_dir, {}
+        )
+
+        assert result["origin"] == pytest.approx([0.0, 0.0, 510.0])
+        direction = np.array(result["target"]) - np.array(result["origin"])
+        direction /= np.linalg.norm(direction)
+        zen, az = np.deg2rad(zenith), np.deg2rad(azimuth)
+        expected = [np.sin(zen) * np.cos(az), np.sin(zen) * np.sin(az), np.cos(zen)]
+        assert direction == pytest.approx(expected, abs=1e-9)
 
     def test_mdistant_point_target_terrain_adjusted(
         self, translator, minimal_scene, scene_dir, monkeypatch

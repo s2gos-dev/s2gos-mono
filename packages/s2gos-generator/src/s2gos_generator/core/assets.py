@@ -33,6 +33,7 @@ class SceneAssets:
     hamster_paths_file: Optional[UPath] = None
     ways_file: Optional[UPath] = None
     buildings_objects_file: Optional[UPath] = None
+    building_footprints_file: Optional[UPath] = None
 
     sentinel2_file: Optional[UPath] = None
     matched_materials_file: Optional[UPath] = None

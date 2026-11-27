@@ -25,7 +25,7 @@ import xarray as xr
 from shapely.geometry import MultiPolygon, Polygon
 
 from .roof import build_hip_roof, compute_pitched_geometry
-from ..terrain_mesh.builder import _make_elevation_fn, extract_dem
+from ..terrain_mesh.builder import extract_dem, make_elevation_fn
 
 
 def _parse_height(value, story_height: float, default: float) -> tuple[float, bool]:
@@ -144,7 +144,7 @@ def make_dem_elevation_sampler(dem_path) -> Callable[[np.ndarray], np.ndarray]:
     """Open the DEM zarr and return a fast bilinear elevation sampler."""
     dem = xr.open_zarr(dem_path)["elevation"]
     x, y, elev = extract_dem(dem)
-    return _make_elevation_fn(x, y, elev)
+    return make_elevation_fn(x, y, elev)
 
 
 def _build_one_building(

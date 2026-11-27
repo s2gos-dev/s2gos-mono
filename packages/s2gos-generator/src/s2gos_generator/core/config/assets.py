@@ -164,6 +164,10 @@ class MaterialRegion(BaseModel):
     Used in [SceneGenConfig][s2gos_generator.core.config.scene.SceneGenConfig]
     via the ``material_regions`` field. The ``material_name`` must reference a
     [Material][s2gos_utils.scene.materials.definitions.Material] known to the scene.
+
+    Regions are painted last, over landcover, spectral matches and ways. A way
+    under a region takes the region material but keeps its flattened terrain and
+    its vegetation clearance.
     """
 
     region_id: str = Field(..., description="Unique identifier for this region")

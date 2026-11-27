@@ -315,3 +315,29 @@ def test_select_tile_files_returns_overlapping_present_tile(tmp_path):
     assert select_tile_files(tmp_path, bbox, "index.csv") == [
         tmp_path / f"{inside}.gpkg"
     ]
+
+
+def test_footprints_sidecar_round_trip():
+    """Scene-local footprints survive a sidecar round trip; empties are dropped."""
+    from shapely.geometry import GeometryCollection
+
+    from s2gos_generator.processors.buildings import (
+        footprints_from_sidecar,
+        footprints_to_sidecar,
+    )
+
+    square = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
+    multi = MultiPolygon([square, Polygon([(20, 20), (25, 20), (25, 25)])])
+    gdf = gpd.GeoDataFrame(geometry=[square, multi, GeometryCollection()])
+
+    restored = footprints_from_sidecar(footprints_to_sidecar(gdf))
+
+    assert len(restored) == 2
+    assert restored[0].equals(square)
+    assert restored[1].equals(multi)
+
+
+def test_footprints_from_sidecar_rejects_unknown_version():
+    from s2gos_generator.processors.buildings import footprints_from_sidecar
+
+    assert footprints_from_sidecar({"version": 99, "footprints": [{}]}) == []

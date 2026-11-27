@@ -10,6 +10,7 @@ from .sam import (
     cluster_class_reflectance,
     match_clusters_to_library,
     spectral_angle,
+    spectral_distance,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "cluster_class_reflectance",
     "match_clusters_to_library",
     "spectral_angle",
+    "spectral_distance",
 ]

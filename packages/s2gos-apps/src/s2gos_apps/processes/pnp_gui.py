@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 PNP_LAT = -46.9097
 PNP_LON = -72.4500
 PNP_SIZE_KM = 10.0
+# Largest footprint inside the PNP area that holds whole 30 m CHIME pixels (333).
+CHIME_SIZE_KM = 9.99
 TOWER_COORDS = (-220.0, 850.0)  # meters in scene coordinates
 coord_system = CoordinateSystem(PNP_LAT, PNP_LON)
 
@@ -202,9 +204,7 @@ def pnp_gui_generation(
     )
 
     config.buffer = BufferConfig(size_km=30.0, resolution_m=60.0)
-    config.background = BackgroundConfig(
-        size_km=120.0, resolution_m=350.0, elevation=0.0
-    )
+    config.background = BackgroundConfig(size_km=120.0, resolution_m=350.0)
     config.processing.flatten_dem = False
 
     # Configure multi-species vegetation placement
@@ -313,7 +313,7 @@ def pnp_gui_simulation(
         str,
         Field(
             ...,
-            description="Scene to sue for simulation",
+            description="Scene to use for simulation",
             title="Scene name",
         ),
     ],
@@ -363,13 +363,13 @@ def pnp_gui_simulation(
 
     Supported observation types:
     - CHIME: Hyperspectral satellite sensor
-    - MSI: Sentinel-2 multispectral sensor (configurable bands)
+    - MSI: Sentinel-2 multispectral sensor imaging all 13 bands
     - HYPSTAR: Ground-based hyperspectral sensor with HCRF processing
     - RGB_CAMERA: Perspective camera viewing tower from configurable position
-    - SATELLITE_PIXEL_HDRF: [PLACEHOLDER - To be implemented]
+    - SATELLITE_PIXEL_HDRF: HDRF of the CHIME pixel holding the tower
 
     Args:
-        scene_name: Name  of scene to be used
+        scene_name: Name of scene to be used
         month: Month for simulation (determines observation date)
         hour_utc: Hour of observation in UTC
         observation: Observation type configuration
@@ -377,8 +377,7 @@ def pnp_gui_simulation(
         sim_name: Name of simulation run
 
     Returns:
-        Path to simulation output directory, or None if observation type
-        is not yet implemented or simulation fails
+        Path to simulation output directory, or None if simulation fails
     """
     from s2gos_simulator.config import (
         AngularFromOriginViewing,
@@ -392,12 +391,9 @@ def pnp_gui_simulation(
         LookAtViewing,
         PixelHDRFConfig,
         PostProcessingOptions,
-        SatelliteInstrument,
-        SatellitePlatform,
         SatelliteSensor,
         SimulationConfig,
         SpectralResponse,
-        create_chime_sensor,
     )
 
     from s2gos_apps.sim_util import simulation_from_config
@@ -423,61 +419,48 @@ def pnp_gui_simulation(
 
     if observation == ObservationType.CHIME:
         sensors.append(
-            create_chime_sensor(
+            SatelliteSensor(
+                instrument="chime-hsi",
+                viewing=AngularViewing(zenith=3.0, azimuth=0.0),
                 target_center_lat=PNP_LAT,
                 target_center_lon=PNP_LON,
-                target_size_km=PNP_SIZE_KM,
-                zenith=3.0,
+                target_size_km=CHIME_SIZE_KM,
                 samples_per_pixel=spp,
             )
         )
 
     elif observation == ObservationType.MSI:
-        bands = ["1", "2", "3", "4", "5", "6", "7", "8", "8a", "9", "10", "11", "12"]
-        for band in bands:
-            sensors.append(
-                SatelliteSensor(
-                    id=f"s2a_b{band}",
-                    platform=SatellitePlatform.SENTINEL_2A,
-                    instrument=SatelliteInstrument.MSI,
-                    band=band,
-                    target_center_lat=PNP_LAT,
-                    target_center_lon=PNP_LON,
-                    target_size_km=PNP_SIZE_KM,
-                    film_resolution=(1000, 1000),
-                    viewing=AngularViewing(zenith=3.0, azimuth=0.0),
-                    samples_per_pixel=spp,
-                )
-            )
-
-    elif observation == ObservationType.SATELLITE_PIXEL_HDRF:
         sensors.append(
-            create_chime_sensor(
-                sensor_id="chime_for_pixel_hdrf",
+            SatelliteSensor(
+                id="s2a",
+                instrument="sentinel_2a-msi",
                 target_center_lat=PNP_LAT,
                 target_center_lon=PNP_LON,
                 target_size_km=PNP_SIZE_KM,
-                zenith=3.0,
+                film_resolution=(1000, 1000),
+                viewing=AngularViewing(zenith=3.0, azimuth=0.0),
+                samples_per_pixel=spp,
+            )
+        )
+
+    elif observation == ObservationType.SATELLITE_PIXEL_HDRF:
+        sensors.append(
+            SatelliteSensor(
+                id="chime_for_pixel_hdrf",
+                instrument="chime-hsi",
+                viewing=AngularViewing(zenith=3.0, azimuth=0.0),
+                target_center_lat=PNP_LAT,
+                target_center_lon=PNP_LON,
+                target_size_km=CHIME_SIZE_KM,
                 samples_per_pixel=spp,
                 for_reference_only=True,
             )
         )
-        # 3x3 around tower pixel
         measurements.append(
             PixelHDRFConfig(
                 id="chime_pixel_HDRF",
                 satellite_sensor_id="chime_for_pixel_hdrf",
-                pixel_indices=[
-                    # (137, 158),
-                    # (137, 159),
-                    # (137, 160),
-                    # (138, 158),
-                    (138, 159),
-                    # (138, 160),
-                    # (139, 158),
-                    # (139, 159),
-                    # (139, 160),
-                ],
+                pixel_indices=[(138, 159)],
                 height_offset_m=45,
                 samples_per_pixel=4,
                 srf=SpectralResponse(type="uniform", wmin=400, wmax=2500),
@@ -501,7 +484,6 @@ def pnp_gui_simulation(
                 samples_per_pixel=spp,
                 srf=SpectralResponse(type="uniform", wmin=380, wmax=1680),
                 post_processing=PostProcessingOptions(
-                    apply_circular_mask=True,
                     generate_rgb_image=True,
                     rgb_wavelengths=(660.0, 550.0, 440.0),
                     rgb_brightness_factor=1.8,

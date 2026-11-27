@@ -63,7 +63,7 @@ create_hypstar_sensor(
 ```
 
 [`create_hypstar_sensor`][s2gos_simulator.config.sensors.create_hypstar_sensor] pre-configures the Gaussian SRF (VNIR 3 nm / SWIR 10 nm FWHM),
-circular-mask post-processing, and spatial averaging. Passing `reference_file` aligns the
+and averages the 5° circular FOV, rendered as an equisolid fisheye, over its image circle. Passing `reference_file` aligns the
 output wavelength grid to that of the real L2A dataset for direct comparison.
 
 ### Angle conversion (HYPSTAR → Eradiate)

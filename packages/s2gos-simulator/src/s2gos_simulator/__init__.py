@@ -32,7 +32,6 @@ from .config import (
     SpectralRegion,
     SpectralResponse,
     WavelengthGrid,
-    create_chime_sensor,
     create_hypstar_sensor,
 )
 from .hdrf_processor import HDRFProcessor
@@ -57,7 +56,6 @@ __all__ = [
     "WavelengthGrid",
     "PlatformType",
     "GroundInstrumentType",
-    "create_chime_sensor",
     "create_hypstar_sensor",
     # Measurement Configs
     "IrradianceConfig",

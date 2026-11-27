@@ -34,7 +34,7 @@ def extract_dem(dem_data: xr.DataArray) -> tuple[np.ndarray, np.ndarray, np.ndar
     return x, y, dem_data.values
 
 
-def _make_elevation_fn(x: np.ndarray, y: np.ndarray, elev: np.ndarray):
+def make_elevation_fn(x: np.ndarray, y: np.ndarray, elev: np.ndarray):
     """Return a bilinear interpolation callable for the given DEM arrays."""
     dx = (x[-1] - x[0]) / (len(x) - 1)
     dy = (y[-1] - y[0]) / (len(y) - 1)
@@ -46,6 +46,17 @@ def _make_elevation_fn(x: np.ndarray, y: np.ndarray, elev: np.ndarray):
         return map_coordinates(elev, np.vstack((y_idx, x_idx)), order=1, mode="nearest")
 
     return elevation_fn
+
+
+def grid_faces(nx: int, ny: int) -> np.ndarray:
+    """Two triangles per cell of an ny × nx row-major vertex grid."""
+    q = np.arange(nx * ny).reshape(ny, nx)[:-1, :-1].ravel()
+    return np.vstack(
+        [
+            np.column_stack([q, q + 1, q + nx + 1]),
+            np.column_stack([q, q + nx + 1, q + nx]),
+        ]
+    )
 
 
 def build_decimated_grid(
@@ -182,7 +193,7 @@ def build_refined_mesh(
         Adaptive :class:`trimesh.Trimesh`.
     """
     x, y, elev = extract_dem(dem_data)
-    elevation_fn = _make_elevation_fn(x, y, elev)
+    elevation_fn = make_elevation_fn(x, y, elev)
     grid = build_decimated_grid(
         x,
         y,

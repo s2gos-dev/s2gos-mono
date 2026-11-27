@@ -163,22 +163,24 @@ def _aoi_field(site: str) -> Any:
     id="observation-simulation-demo",
     title="Reference-site observation simulations (free tier)",
     description=(
-            "Returns pre-computed S2GOS radiative-transfer simulation results for one of "
-            "five reference sites (Gobabeb, Frascati, Pisa, Jaén, Patagonia NP), a season "
-            "(December or June) and an instrument (Sentinel-2 MSI, HYPSTAR-XR, or an "
-            "oblique aerial RGB camera). No new simulation is run and the area of interest "
-            "is fixed per site: this is a browse-only demonstration of what the full, paid S2GOS "
-            "service produces, offered as the free-tier entry point. "
+        "Returns pre-computed S2GOS radiative-transfer simulation results for one of "
+        "five reference sites (Gobabeb, Frascati, Pisa, Jaén, Patagonia NP), a season "
+        "(December or June) and an instrument (Sentinel-2 MSI, HYPSTAR-XR, or an "
+        "oblique aerial RGB camera). No new simulation is run and the area of interest "
+        "is fixed per site: this is a browse-only demonstration of what the full, paid S2GOS "
+        "service produces, offered as the free-tier entry point. "
     ),
     outputs={
-        "dataset": Field(description="Simulation result as a Zarr store, openable with xarray."),
+        "dataset": Field(
+            description="Simulation result as a Zarr store, openable with xarray."
+        ),
         "image": Field(
             description="Rendered image. Only the RGB camera produces one; null otherwise."
         ),
         "metadata": Field(
             description=(
-                    "What was requested and what was served (site, season, instrument, "
-                    "acquisition time, dataset facts)."
+                "What was requested and what was served (site, season, instrument, "
+                "acquisition time, dataset facts)."
             )
         ),
     },
@@ -216,7 +218,7 @@ def free_tier(
         ),
     ] = "msi",
 ) -> tuple[PathRef | dict, PathRef | None, dict]:
-    """Serve precalculated results for varios AOIs, instruments and seasons."""
+    """Serve precalculated results for various AOIs, instruments and seasons."""
     entry = lookup(site, season, instrument)
 
     bands = entry.get("bands")

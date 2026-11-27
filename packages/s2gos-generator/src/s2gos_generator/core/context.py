@@ -4,11 +4,12 @@ import json
 import logging
 from typing import Dict, List, Optional
 
+from s2gos_utils.io.paths import open_file
 from shapely.geometry import box
 from upath import UPath
 
 from .assets import SceneAssets
-from .config import SceneGenConfig
+from .config import SceneGenConfig, WaysConfig
 
 
 class SceneResourceContext:
@@ -68,6 +69,7 @@ class SceneResourceContext:
         self._coord_system: Optional[object] = None
         self._exclusion_zone_geometries: Optional[list] = None
         self._ways: Optional[list] = None
+        self._building_footprints: Optional[list] = None
         self._way_polygons_by_material: Optional[dict] = None
         self._matched_materials: Optional[dict] = None
 
@@ -161,13 +163,29 @@ class SceneResourceContext:
             self._ways = self._load_ways_from_sidecar()
         return self._ways
 
+    def _load_building_footprints_from_sidecar(self) -> list:
+        from ..processors.buildings import footprints_from_sidecar
+
+        if self.assets.building_footprints_file is None:
+            return []
+        with open_file(self.assets.building_footprints_file, "r") as f:
+            return footprints_from_sidecar(json.load(f))
+
+    @property
+    def building_footprints(self) -> list:
+        """Scene-local building footprint polygons, lazily loaded from the sidecar."""
+        if self._building_footprints is None:
+            self._building_footprints = self._load_building_footprints_from_sidecar()
+        return self._building_footprints
+
     @property
     def way_polygons_by_material(self) -> dict:
         """Merged way footprints per material, derived from the ways list.
 
         Computed once and cached. Each value is the unary_union of all buffered
         centerlines for that material — the geometry the texture painter needs,
-        without storing it redundantly in the sidecar.
+        without storing it redundantly in the sidecar. Keys are in paint order
+        (``WaysConfig.MATERIAL_PAINT_PRIORITY``, lowest first).
         """
         if self._way_polygons_by_material is None:
             from shapely.ops import unary_union
@@ -176,8 +194,14 @@ class SceneResourceContext:
             for way in self.ways:
                 poly = way.centerline.buffer(way.width / 2, cap_style="flat")
                 by_mat.setdefault(way.material, []).append(poly)
+
+            priority = WaysConfig.MATERIAL_PAINT_PRIORITY
+            ordered_mats = sorted(
+                by_mat.keys(),
+                key=lambda m: priority.index(m) if m in priority else -1,
+            )
             self._way_polygons_by_material = {
-                mat: unary_union(polys) for mat, polys in by_mat.items()
+                mat: unary_union(by_mat[mat]) for mat in ordered_mats
             }
         return self._way_polygons_by_material
 
